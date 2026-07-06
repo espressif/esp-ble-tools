@@ -1,0 +1,11 @@
+.venv/
+.venv-build/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.spec
+logs/
+uv.lock
+ble_log_console_*
