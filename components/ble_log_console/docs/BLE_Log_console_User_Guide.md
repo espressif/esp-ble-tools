@@ -328,9 +328,19 @@ Please check:
 - Whether the wiring between the ESP device and the serial port tool or SPI Bridge is correct.
 - In SPI Bridge mode, whether the GPIOs corresponding to MOSI, SCLK, and CS in the ESP device firmware match the actual wiring.
 
+### Source environment setup fails.
+
+The source launcher depends on the local Python environment, package index access, and system PATH settings. The install scripts try to prepare these automatically, but different PC environments may need manual setup. The required items are:
+
+- Python 3.10 or later.
+- `uv`, available from `PATH`.
+- Access to the Python package dependencies declared in `pyproject.toml`.
+
+If the script cannot complete the setup, install the required items manually, then run `uv sync --all-extras` in the source directory before using the launcher script.
+
 ### How do I confirm the firmware version flashed on ESP32P4?
 
-The ESP32P4 Bridge firmware prints version information in the serial log when it starts. To confirm the version, connect the ESP32P4 to the PC through the USB serial port, then open the serial monitor:
+The current ESP32P4 Bridge firmware version is `1.0`. The firmware prints version information in the serial log when it starts. To confirm the version, connect the ESP32P4 to the PC through the USB serial port, then open the serial monitor:
 
 ```bash
 idf.py -p <PORT> monitor

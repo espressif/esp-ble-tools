@@ -78,14 +78,16 @@ CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM
 
 ### 快速启动（推荐）
 
-使用自带启动脚本。脚本会自动激活 ESP-IDF 环境、安装额外依赖，并将所有参数转发给 `console.py`：
+首次使用时先准备源码环境，之后使用启动脚本。启动脚本会将所有参数转发给 `console.py`：
 
 ```bash
 # Linux / macOS
-<esp-idf 根目录>/tools/bt/ble_log_console/run.sh
+./install.sh
+./run.sh
 
 # Windows
-<esp-idf 根目录>\tools\bt\ble_log_console\run.bat
+.\install.bat
+.\run.bat
 ```
 
 不带参数启动时，工具会打开 **Launch Screen**。你可以在界面中：
@@ -245,13 +247,13 @@ RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Los
 
 ```bash
 # Linux / macOS
-<esp-idf 根目录>/tools/bt/ble_log_console/build.sh
+./build.sh
 
 # Windows
-<esp-idf 根目录>\tools\bt\ble_log_console\build.bat
+.\build.bat
 ```
 
-脚本会自动激活 ESP-IDF 环境、安装 PyInstaller、构建可执行文件、将其放置在当前工作目录下，并清理中间产物。
+构建前请先运行一次 `install.sh` 或 `install.bat`。构建脚本会复用已准备好的本地环境，构建可执行文件、将其放置在当前工作目录下，并清理中间产物。
 
 构建脚本会使用当前 `VERSION` 生成文件名，不会自动递增版本号。输出文件名会包含平台和版本号，例如：
 

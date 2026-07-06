@@ -78,12 +78,16 @@ Default Bridge wiring:
 
 ### Launcher scripts
 
+Prepare the source environment once, then use the launcher script.
+
 ```bash
 # Linux / macOS
-<esp-idf-root>/tools/bt/ble_log_console/run.sh
+./install.sh
+./run.sh
 
 # Windows
-<esp-idf-root>\tools\bt\ble_log_console\run.bat
+.\install.bat
+.\run.bat
 ```
 
 ### Command line
@@ -120,16 +124,18 @@ Subcommands:
 
 ## Saved Files
 
-Default capture path:
+Default capture files:
 
 ```text
 logs/ble_log_YYYYMMDD_HHMMSS.bin
+logs/ble_log_YYYYMMDD_HHMMSS_part002.bin
 ```
 
 When UART PORT 0 `REDIR` text logs are present:
 
 ```text
 logs/ble_log_YYYYMMDD_HHMMSS_console.log
+logs/ble_log_YYYYMMDD_HHMMSS_console_part002.log
 ```
 
 ## Keyboard Shortcuts
@@ -146,22 +152,24 @@ logs/ble_log_YYYYMMDD_HHMMSS_console.log
 
 ## Building Executable
 
+Run `install.sh` or `install.bat` once before building.
+
 ```bash
 # Linux / macOS
-<esp-idf-root>/tools/bt/ble_log_console/build.sh
+./build.sh
 
 # Windows
-<esp-idf-root>\tools\bt\ble_log_console\build.bat
+.\build.bat
 ```
 
-The build scripts run `build_exe.py` with the current `VERSION`, move the executable to the caller's working directory, and clean up intermediate files.
+The build scripts reuse the prepared local environment, run `build_exe.py` with the current `VERSION`, move the executable to the caller's working directory, and clean up intermediate files.
 
 Output filenames include platform and version:
 
 ```text
-ble_log_console_ubuntu_v1.0.1
-ble_log_console_macos_v1.0.1
-ble_log_console_windows_v1.0.1.exe
+ble_log_console_ubuntu_v1.0.2
+ble_log_console_macos_v1.0.2
+ble_log_console_windows_v1.0.2.exe
 ```
 
 Direct `build_exe.py` usage:
@@ -175,10 +183,8 @@ python build_exe.py --version 1.2.3
 ## Development
 
 ```bash
-cd <esp-idf-root>
-. ./export.sh
-cd tools/bt/ble_log_console
-python -m pytest tests/ -v
+./install.sh
+uv run --extra test pytest tests/ -v
 ```
 
 ## Troubleshooting

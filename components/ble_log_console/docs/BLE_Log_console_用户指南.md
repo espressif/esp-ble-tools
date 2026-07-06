@@ -338,11 +338,19 @@ python console.py --mode spi --port <PORT>
 - ESP 设备和串口工具或 SPI Bridge 之间的接线是否正确。
 - SPI Bridge 模式下，ESP 设备固件中的 MOSI、SCLK、CS 对应 GPIO 是否与实际接线一致。
 
+### 源码环境安装失败。
 
+源码启动依赖本机 Python 环境、依赖源访问和系统 PATH 配置。安装脚本会尽量自动准备这些内容，但不同电脑环境可能需要手动处理。必要项包括：
+
+- Python 3.10 或更高版本。
+- `uv`，并且可以在 `PATH` 中被找到。
+- 可以访问 `pyproject.toml` 中声明的 Python 依赖包。
+
+如果脚本无法完成环境准备，请手动安装上述必要项，然后在源码目录下执行 `uv sync --all-extras`，再运行启动脚本。
 
 ### ESP32P4 烧录的固件如何确定版本？
 
-ESP32P4 Bridge 固件启动时会在串口日志中打印版本信息。确认版本时，请将 ESP32P4 通过 USB 串口连接到电脑，然后打开串口 monitor 查看启动日志。
+当前 ESP32P4 Bridge 固件版本为 `1.0`。固件启动时会在串口日志中打印版本信息。确认版本时，请将 ESP32P4 通过 USB 串口连接到电脑，然后打开串口 monitor 查看启动日志。
 
 ```bash
 idf.py -p <PORT> monitor

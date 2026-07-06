@@ -78,14 +78,16 @@ Default Bridge wiring:
 
 ### Quick Start
 
-Use the launcher script. It activates the ESP-IDF environment, installs extra dependencies, and forwards all arguments to `console.py`:
+Prepare the source environment once, then use the launcher script. The launcher forwards all arguments to `console.py`:
 
 ```bash
 # Linux / macOS
-<esp-idf-root>/tools/bt/ble_log_console/run.sh
+./install.sh
+./run.sh
 
 # Windows
-<esp-idf-root>\tools\bt\ble_log_console\run.bat
+.\install.bat
+.\run.bat
 ```
 
 Without arguments, the tool opens the **Launch Screen**, where you can:
@@ -245,13 +247,13 @@ Use the build scripts to package BLE Log Console as a single-file executable:
 
 ```bash
 # Linux / macOS
-<esp-idf-root>/tools/bt/ble_log_console/build.sh
+./build.sh
 
 # Windows
-<esp-idf-root>\tools\bt\ble_log_console\build.bat
+.\build.bat
 ```
 
-The scripts activate the ESP-IDF environment, install PyInstaller, build the executable, place it in the current working directory, and clean up intermediate files.
+Run `install.sh` or `install.bat` once before building. The build scripts reuse the prepared local environment, build the executable, place it in the current working directory, and clean up intermediate files.
 
 The build scripts use the current `VERSION` for the output filename and do not increment the version automatically. Output filenames include platform and version, for example:
 

@@ -12,6 +12,7 @@ PIP_INDEX_ARGS="${BLE_LOG_CONSOLE_PIP_INDEX_ARGS:-}"
 UV_SYNC_ARGS="${BLE_LOG_CONSOLE_UV_SYNC_ARGS:-}"
 METHOD="auto"
 SYNC=1
+PYTHON_CMD=""
 
 usage() {
     cat <<EOF
@@ -41,6 +42,22 @@ Manual fallback:
 EOF
 }
 
+add_common_uv_paths() {
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+}
+
+find_python() {
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_CMD="python3"
+        return 0
+    fi
+    if command -v python >/dev/null 2>&1; then
+        PYTHON_CMD="python"
+        return 0
+    fi
+    return 1
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --auto|--pip|--script)
@@ -63,14 +80,14 @@ while [ $# -gt 0 ]; do
 done
 
 install_with_pip() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "python3 not found; cannot use the pip install method." >&2
+    if ! find_python; then
+        echo "Python not found; cannot use the pip install method." >&2
         return 1
     fi
 
     echo "Installing environment manager with Python pip ..."
     # shellcheck disable=SC2086
-    python3 -m pip install --user uv $PIP_INDEX_ARGS
+    "$PYTHON_CMD" -m pip install --user uv $PIP_INDEX_ARGS
 }
 
 install_with_script() {
@@ -82,6 +99,8 @@ install_with_script() {
     echo "Installing environment manager from $UV_INSTALL_URL ..."
     curl -LsSf "$UV_INSTALL_URL" | sh
 }
+
+add_common_uv_paths
 
 if ! command -v uv >/dev/null 2>&1; then
     case "$METHOD" in
@@ -97,7 +116,7 @@ if ! command -v uv >/dev/null 2>&1; then
     esac
 fi
 
-export PATH="$HOME/.local/bin:$PATH"
+add_common_uv_paths
 
 if ! command -v uv >/dev/null 2>&1; then
     echo "ERROR: Environment manager was not found after installation." >&2
