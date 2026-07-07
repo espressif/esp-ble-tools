@@ -9,13 +9,17 @@ from threading import Event
 from typing import IO
 
 from src.backend.aggregator.event_aggregator import AggregatorUpdate
+from src.backend.aggregator.event_aggregator import AggregatorSnapshot
 from src.backend.pipeline.controller import run_capture_pipeline_inprocess
 from src.backend.pipeline.controller import CapturePipeline
+from src.backend.pipeline.controller import _result_from_events
+from src.backend.pipeline.reader import ReaderProcessEvent
 from src.backend.writer.raw_writer import RawWriterConfig
 from src.backend.writer.raw_writer import RawWriterProcessEvent
 from src.backend.writer.raw_writer import RawWriterStatus
 from src.backend.support.parser_core.checksum import sum_checksum
 from src.backend.models import BleLogSource
+from src.backend.models import FrameStats
 from src.backend.models import TransportConfig
 from src.backend.models import TransportBitrate
 from src.backend.models import TransportMode
@@ -167,6 +171,43 @@ def test_pipeline_aggregates_parser_events_and_raw_bytes(tmp_path: Path) -> None
     assert result.parser_frames == 3
     assert result.parser_carried_bytes == 0
     assert output_path.read_bytes() == frames
+
+
+def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
+    output_path = tmp_path / 'ble_log.bin'
+    status = RawWriterStatus(
+        base_path=output_path,
+        paths=(output_path,),
+        bytes_written=100,
+        chunks_written=2,
+        current_part=1,
+        finalized=True,
+    )
+
+    result = _result_from_events(
+        [
+            ReaderProcessEvent(
+                kind='parse_backlog_summary',
+                parse_dropped_chunks=2,
+                parse_dropped_bytes=40,
+            ),
+            RawWriterProcessEvent(kind='finalized', status=status),
+            AggregatorSnapshot(
+                stats=FrameStats(),
+                funnel_snapshots=(),
+                buf_util_snapshots=(),
+                captured_bytes=100,
+                parser_raw_bytes=60,
+                parser_frames=3,
+                parser_carried_bytes=0,
+            ),
+        ]
+    )
+
+    assert result.parse_backlog
+    assert result.parse_dropped_chunks == 2
+    assert result.parse_dropped_bytes == 40
+    assert result.parser_lag_bytes == 40
 
 
 def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> None:

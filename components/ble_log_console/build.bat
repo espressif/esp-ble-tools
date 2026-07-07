@@ -31,14 +31,14 @@ if not exist "dist\artifact_name.txt" (
 )
 
 set /p EXE_NAME=<"dist\artifact_name.txt"
-if exist "dist\%EXE_NAME%" (
-    move /Y "dist\%EXE_NAME%" "%CALLER_DIR%\%EXE_NAME%" > nul
-    echo.
-    echo Executable ready: %CALLER_DIR%\%EXE_NAME%
-) else (
-    echo ERROR: Build produced no executable.
+if not exist "dist\%EXE_NAME%" (
+    echo ERROR: Build produced no executable artifact.
     exit /b 1
 )
+
+move /Y "dist\%EXE_NAME%" "%CALLER_DIR%\%EXE_NAME%" > nul
+echo.
+echo Executable ready: %CALLER_DIR%\%EXE_NAME%
 
 rmdir /S /Q "%SCRIPT_DIR%\build" 2> nul
 rmdir /S /Q "%SCRIPT_DIR%\dist" 2> nul

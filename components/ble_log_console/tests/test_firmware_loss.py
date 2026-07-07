@@ -43,8 +43,8 @@ class TestFirmwareLossTracker:
         new_f, new_b = t.record(1, 30, 1200)
         assert new_f == 0
         totals = t.totals()
-        assert totals.total_frames == 130
-        assert totals.total_bytes == 5200
+        assert totals.total_frames == 30
+        assert totals.total_bytes == 1200
 
     def test_normal_after_reset(self) -> None:
         t = FirmwareLossTracker()
@@ -62,7 +62,7 @@ class TestFirmwareLossTracker:
         assert t.totals().total_frames == 0
         assert t.totals().total_bytes == 0
 
-    def test_reset_baselines_preserves_accumulators(self) -> None:
+    def test_reset_baselines_preserves_latest_until_next_report(self) -> None:
         t = FirmwareLossTracker()
         t.record(1, 10, 100)
         d_frames, d_bytes = t.record(1, 15, 150)
@@ -71,6 +71,6 @@ class TestFirmwareLossTracker:
         # Next report is treated as new baseline (no delta)
         d_frames, d_bytes = t.record(1, 20, 200)
         assert d_frames == 0  # baseline re-established
-        # Accumulators preserved from before
+        # Latest snapshot follows the newest ENH_STAT after re-baseline.
         totals = t.totals()
-        assert totals.total_frames == 15  # initial absolute + pre-reset delta
+        assert totals.total_frames == 20

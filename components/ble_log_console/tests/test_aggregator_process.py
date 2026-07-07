@@ -82,6 +82,43 @@ def test_aggregator_loop_emits_update_snapshot_and_finalized_status() -> None:
     assert statuses[-1].kind == 'finalized'
 
 
+def test_aggregator_loop_merges_available_parse_batches_into_one_update() -> None:
+    parser_event_queue: Queue[object] = Queue()
+    raw_stats_queue: Queue[int | None] = Queue()
+    event_queue: Queue[object] = Queue()
+
+    payload = struct.pack('<I', 1234) + b'payload'
+    frame1 = ParsedFrame(source_code=BleLogSource.HOST, frame_sn=1, payload=payload, os_ts_ms=1234)
+    frame2 = ParsedFrame(source_code=BleLogSource.HOST, frame_sn=2, payload=payload, os_ts_ms=1234)
+    raw_stats_queue.put((len(payload) + 20) * 2)
+    raw_stats_queue.put(None)
+    parser_event_queue.put(
+        ParseBatch(
+            raw_bytes=len(payload) + 20,
+            parsed_frames=1,
+            consumed=len(payload) + 20,
+            carried_bytes=0,
+            events=(FrameEvent(frame=frame1, frame_size=frame_size_from_payload(payload)),),
+        )
+    )
+    parser_event_queue.put(
+        ParseBatch(
+            raw_bytes=len(payload) + 20,
+            parsed_frames=1,
+            consumed=len(payload) + 20,
+            carried_bytes=0,
+            events=(FrameEvent(frame=frame2, frame_size=frame_size_from_payload(payload)),),
+        )
+    )
+    parser_event_queue.put(ParseSummary(raw_bytes=(len(payload) + 20) * 2, parsed_frames=2, carried_bytes=0))
+
+    run_aggregator_loop(parser_event_queue, raw_stats_queue, event_queue, snapshot_elapsed_sec=1.0)
+
+    updates = [event for event in _events(event_queue) if isinstance(event, AggregatorUpdate)]
+    assert len(updates) == 1
+    assert updates[0].frames_seen == 2
+
+
 def test_aggregator_loop_emits_periodic_snapshot() -> None:
     parser_event_queue: Queue[object] = Queue()
     raw_stats_queue: Queue[int | None] = Queue()

@@ -116,7 +116,7 @@ class TestStatsAccumulator:
         assert snapshot.loss.total_bytes == 1780  # 1000 + 500 + 200 + 80
 
     def test_firmware_loss_counter_reset(self) -> None:
-        """Counter reset (bench_reset_stat) detected and handled correctly."""
+        """Counter reset follows the latest firmware snapshot."""
         stats = StatsAccumulator()
         self._enh_stat_loss(stats, src_code=1, lost_frames=0, lost_bytes=0)
         self._enh_stat_loss(stats, src_code=1, lost_frames=100, lost_bytes=4000)
@@ -126,18 +126,18 @@ class TestStatsAccumulator:
         assert new_bytes == 0
 
         snapshot = stats.snapshot(0.25)
-        assert snapshot.loss.total_frames == 130
-        assert snapshot.loss.total_bytes == 5200
+        assert snapshot.loss.total_frames == 30
+        assert snapshot.loss.total_bytes == 1200
 
         new_frames, new_bytes = self._enh_stat_loss(stats, src_code=1, lost_frames=50, lost_bytes=2000)
         assert new_frames == 20
         assert new_bytes == 800
         snapshot = stats.snapshot(0.25)
-        assert snapshot.loss.total_frames == 150
-        assert snapshot.loss.total_bytes == 6000
+        assert snapshot.loss.total_frames == 50
+        assert snapshot.loss.total_bytes == 2000
 
     def test_firmware_loss_multiple_resets(self) -> None:
-        """Multiple resets accumulate correctly across all cycles."""
+        """Multiple resets follow the latest firmware snapshot."""
         stats = StatsAccumulator()
         self._enh_stat_loss(stats, src_code=1, lost_frames=0, lost_bytes=0)
         self._enh_stat_loss(stats, src_code=1, lost_frames=50, lost_bytes=2000)
@@ -148,11 +148,11 @@ class TestStatsAccumulator:
         self._enh_stat_loss(stats, src_code=1, lost_frames=5, lost_bytes=200)
 
         snapshot = stats.snapshot(0.25)
-        assert snapshot.loss.total_frames == 85
-        assert snapshot.loss.total_bytes == 3400
+        assert snapshot.loss.total_frames == 5
+        assert snapshot.loss.total_bytes == 200
 
-    def test_firmware_loss_uint32_overflow_treated_as_reset(self) -> None:
-        """uint32 counter overflow is indistinguishable from reset -- handled same way."""
+    def test_firmware_loss_uint32_overflow_follows_latest_snapshot(self) -> None:
+        """uint32 counter wrap/reset follows the latest firmware snapshot."""
         stats = StatsAccumulator()
         self._enh_stat_loss(stats, src_code=1, lost_frames=0xFFFF_FF00, lost_bytes=0)
 
@@ -160,7 +160,7 @@ class TestStatsAccumulator:
         assert new_frames == 0
 
         snapshot = stats.snapshot(0.25)
-        assert snapshot.loss.total_frames == 0xFFFF_FF00 + 50
+        assert snapshot.loss.total_frames == 50
 
 
 class TestRecordFrameWithSN:
@@ -341,7 +341,7 @@ class TestReset:
         assert snapshot.transport.rx_bytes == 1000
         assert stats._per_source_received_bytes == {1: 100}
 
-        # Loss accumulators preserved but baselines reset
+        # Loss latest snapshot preserved until the next ENH_STAT updates it.
         assert snapshot.loss.total_frames == 5
 
         # Next ENH_STAT re-baselines (first report = 0 delta)

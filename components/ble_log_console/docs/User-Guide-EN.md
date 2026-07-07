@@ -81,7 +81,7 @@ Default Bridge wiring:
 Prepare the source environment once, then use the launcher script. The launcher forwards all arguments to `console.py`:
 
 ```bash
-# Linux / macOS
+# Linux
 ./install.sh
 ./run.sh
 
@@ -139,7 +139,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | optional | Transport endpoint. Omit it to use the Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate; must match firmware configuration |
 | `--log-dir` | `-d` | `./logs` | Directory where capture files are saved |
-| `--debug` | none | off | Show internal traffic and firmware-state events |
+| `--debug` | none | off | Show extra parser, traffic, and firmware-state debug events |
 
 Subcommands:
 
@@ -175,7 +175,7 @@ The interface mainly contains a log view and a status panel.
 The log view scrolls in real time and shows:
 
 - **`[INFO]`**: connection, output path, capture progress, and other user notices
-- **`[WARN]`**: frame loss, high traffic, no data, or data that cannot be decoded as BLE Log frames
+- **`[WARN]`**: firmware-reported frame loss, no data, undecodable data, or realtime parser lag
 - Plain text: UART PORT 0 `ESP_LOG` redirect output
 
 Non-debug mode hides most internal state and keeps the log view focused on user-facing notices.
@@ -190,10 +190,12 @@ RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Los
 ```
 
 - **Status**: CONNECTED, RECEIVING, IDLE, or DISCONNECTED
-- **RX / Frames**: total received bytes and parsed BLE Log frame count
+- **RX / Frames**: captured raw bytes and parsed BLE Log frame count
 - **Speed / Max**: current and peak transfer speed
 - **Rate**: current frame rate
 - **Lost**: firmware-reported lost-frame statistics
+
+High realtime traffic notices mean live parsing or UI display may temporarily lag behind raw capture. Raw `.bin` data is saved before parsing; if raw saving itself cannot keep up, the app reports a raw writer or reader backpressure error.
 
 In narrow terminals, the status panel switches to a compact display. During normal operation, `frames` should keep increasing, transfer speed should not be 0, and capture-size prompts should appear after enough data is received.
 
@@ -243,7 +245,7 @@ Press `m` to show per-LBM (Log Buffer Manager) utilization reported by the firmw
 Use the build scripts to package BLE Log Console as a single-file executable:
 
 ```bash
-# Linux / macOS
+# Linux
 ./build.sh
 
 # Windows
@@ -252,12 +254,11 @@ Use the build scripts to package BLE Log Console as a single-file executable:
 
 Run `install.sh` or `install.bat` once before building. The build scripts reuse the prepared local environment, build the executable, place it in the current working directory, and clean up intermediate files.
 
-The build scripts use the current `VERSION` for the output filename and do not increment the version automatically. Output filenames include platform and version, for example:
+The build scripts use the current `VERSION` for the output executable name and do not increment the version automatically. Output executable names include platform and version, for example:
 
 ```text
-ble_log_console_ubuntu_v1.0.1
-ble_log_console_macos_v1.0.1
-ble_log_console_windows_v1.0.1.exe
+ble_log_console_ubuntu_v1.0.3
+ble_log_console_windows_v1.0.3.exe
 ```
 
 To adjust the version while packaging, either update `VERSION` manually first or run `build_exe.py` directly:
@@ -290,10 +291,11 @@ python build_exe.py --version 1.2.3 # Use an explicit version without modifying 
 
 This means the tool has received data, but no valid BLE Log frames were decoded from the internal buffer. Check transport mode, baud rate, firmware configuration, and hardware wiring first.
 
-### Frame loss is severe or High log traffic appears
+### Frame loss is severe or High realtime log traffic appears
 
 - Press `d` to inspect per-source loss.
 - Press `m` to inspect buffer usage.
+- If only High realtime log traffic appears, without a raw writer or backpressure error, raw capture is still continuing and live stats/display may simply lag.
 - In UART mode, check baud rate and serial adapter capability.
 - In SPI Bridge mode, check the Bridge device, SPI wiring, and firmware GPIO configuration.
 - Increase firmware BLE Log buffers or LBM count according to the statistics.

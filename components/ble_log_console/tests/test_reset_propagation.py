@@ -8,7 +8,7 @@ Verifies that reset("init") and reset("flush") dispatch correctly per the spec:
 | Group            | Components                              | INIT_DONE    | FLUSH                              |
 |------------------|-----------------------------------------|--------------|------------------------------------|
 | SN-coupled       | SNGapTracker                            | full reset   | full reset                         |
-| ENH_STAT-coupled | FirmwareLossTracker, FirmwareWritten    | full reset   | reset baselines, keep accumulators |
+| ENH_STAT-coupled | FirmwareLossTracker, FirmwareWritten    | full reset   | reset baselines, keep latest snapshot |
 | Console-local    | TransportMetrics, PeakBurstTracker,     | preserve     | preserve                           |
 |                  | per_source_received, throughput cache   |              |                                    |
 """
@@ -104,7 +104,7 @@ class TestResetPropagation:
                 # 2 pre-flush + 1 post-flush = 3 total received
                 assert snap.received.frames == 3
 
-    def test_flush_preserves_firmware_loss_accumulators(self) -> None:
+    def test_flush_updates_firmware_loss_to_latest_snapshot(self) -> None:
         stats = StatsAccumulator()
         # Build up some loss: baseline then delta
         stats.record_enh_stat(1, 100, 5, 5000, 250)
@@ -116,10 +116,9 @@ class TestResetPropagation:
         funnel = stats.funnel_snapshot()
         for snap in funnel:
             if snap.source == 1:
-                # Initial absolute (5) + delta (5) = 10; flush preserves accum
-                assert snap.buffer_loss.frames == 10
+                assert snap.buffer_loss.frames == 3
 
-    def test_flush_preserves_firmware_written_accumulators(self) -> None:
+    def test_flush_updates_firmware_written_to_latest_snapshot(self) -> None:
         stats = StatsAccumulator()
         stats.record_enh_stat(1, 100, 0, 5000, 0)
         stats.record_enh_stat(1, 200, 0, 10000, 0)
@@ -128,7 +127,7 @@ class TestResetPropagation:
         funnel = stats.funnel_snapshot()
         for snap in funnel:
             if snap.source == 1:
-                assert snap.written.frames == 200  # initial absolute + pre-flush delta preserved
+                assert snap.written.frames == 50
 
     def test_flush_preserves_transport_metrics(self) -> None:
         stats = StatsAccumulator()

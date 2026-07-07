@@ -16,6 +16,7 @@ from typing import IO
 
 CAPTURE_PART_MAX_BYTES = 200 * 1024 * 1024
 FLUSH_INTERVAL_SEC = 1.0
+RAW_FILE_BUFFER_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def capture_part_path(base_path: Path, part_index: int) -> Path:
 
 def _default_file_factory(path: Path) -> IO[bytes]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    return open(path, 'wb')  # noqa: SIM115
+    return open(path, 'wb', buffering=RAW_FILE_BUFFER_BYTES)  # noqa: SIM115
 
 
 def _flush_and_close_file(file_obj: IO[bytes]) -> None:

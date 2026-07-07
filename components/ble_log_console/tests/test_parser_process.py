@@ -52,6 +52,27 @@ def test_parser_loop_emits_batches_and_final_summary() -> None:
     assert final.parsed_frames == 3
 
 
+def test_parser_loop_batches_available_chunks_before_feed() -> None:
+    parse_queue: Queue[bytes | None] = Queue()
+    event_queue: Queue[object] = Queue()
+    frames = _sync_frames()
+    parse_queue.put(frames[:10])
+    parse_queue.put(frames[10:])
+    parse_queue.put(None)
+
+    run_parser_loop(parse_queue, event_queue)
+
+    events = _events(event_queue)
+    batches = [event for event in events if isinstance(event, ParseBatch)]
+    final = events[-1]
+    assert len(batches) == 1
+    assert batches[0].raw_bytes == len(frames)
+    assert batches[0].parsed_frames == 3
+    assert isinstance(final, ParseSummary)
+    assert final.raw_bytes == len(frames)
+    assert final.parsed_frames == 3
+
+
 def test_parser_loop_ignores_empty_chunks() -> None:
     parse_queue: Queue[bytes | None] = Queue()
     event_queue: Queue[object] = Queue()

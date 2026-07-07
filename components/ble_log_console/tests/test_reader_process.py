@@ -149,8 +149,13 @@ class TestReaderProcessLoop:
 
         run_reader_loop(reader, raw_queue, parse_queue, event_queue, stop_event)
 
-        kinds = [event.kind for event in _events(event_queue)]
-        assert kinds == ['opened', 'parse_backlog', 'stopped']
+        events = _events(event_queue)
+        kinds = [event.kind for event in events]
+        assert kinds == ['opened', 'parse_backlog', 'parse_backlog_summary', 'stopped']
+        assert events[1].parse_dropped_chunks == 1
+        assert events[1].parse_dropped_bytes == len(b'one')
+        assert events[2].parse_dropped_chunks == 1
+        assert events[2].parse_dropped_bytes == len(b'one')
         assert raw_queue.get_nowait() == b'one'
         assert raw_queue.get_nowait() is None
 

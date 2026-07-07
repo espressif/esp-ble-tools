@@ -7,7 +7,7 @@ It supports two transport modes:
 - **UART** for serial BLE Log output.
 - **SPI Bridge** for BLE Log data forwarded by a BLE Log SPI USB Bridge device.
 
-**User Guide**: [English](User-Guide-EN.md) | [中文](User-Guide-CN.md)
+**User Guide**: [English](./docs/User-Guide-EN) | [中文](./docs/User-Guide-CN.md)
 
 ## Features
 
@@ -17,7 +17,7 @@ It supports two transport modes:
 - Real-time BLE Log frame parsing.
 - Raw `.bin` capture saved before parsing.
 - UART PORT 0 `ESP_LOG` redirect display and optional `_console.log` output.
-- Live status panel with connection, RX, speed, frame rate, and loss statistics.
+- Live status panel with connection, captured RX bytes, speed, frame rate, and firmware-reported loss statistics.
 - Per-source frame statistics and buffer-utilization views.
 - Versioned standalone executable packaging.
 
@@ -115,7 +115,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | optional | Transport endpoint. Omit to use Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate |
 | `--log-dir` | `-d` | `./logs` | Capture output directory |
-| `--debug` | none | off | Show internal traffic and firmware-state events |
+| `--debug` | none | off | Show extra parser, traffic, and firmware-state debug events |
 
 Subcommands:
 
@@ -137,6 +137,8 @@ When UART PORT 0 `REDIR` text logs are present:
 logs/ble_log_YYYYMMDD_HHMMSS_console.log
 logs/ble_log_YYYYMMDD_HHMMSS_console_part002.log
 ```
+
+Raw `.bin` capture is saved before realtime parsing. High realtime traffic notices mean live parsing or UI display may lag behind raw capture; if raw saving itself cannot keep up, the app reports a raw writer or reader backpressure error.
 
 ## Keyboard Shortcuts
 
@@ -162,9 +164,9 @@ Run `install.sh` or `install.bat` once before building.
 .\build.bat
 ```
 
-The build scripts reuse the prepared local environment, run `build_exe.py` with the current `VERSION`, move the executable to the caller's working directory, and clean up intermediate files.
+The build scripts reuse the prepared local environment, run `build_exe.py` with the current `VERSION`, move the standalone executable to the caller's working directory, and clean up intermediate files.
 
-Output filenames include platform and version:
+Output executable names include platform and version:
 
 ```text
 ble_log_console_ubuntu_v1.0.2

@@ -41,7 +41,7 @@ class TestFirmwareWrittenTracker:
         assert new_f == 0
         assert new_b == 0
         totals = t.totals()
-        assert totals[1] == (130, 5200)
+        assert totals[1] == (30, 1200)
 
     def test_normal_after_reset(self) -> None:
         t = FirmwareWrittenTracker()
@@ -62,7 +62,7 @@ class TestFirmwareWrittenTracker:
         assert new_f == 0
         assert new_b == 0
 
-    def test_reset_baselines_preserves_accum(self) -> None:
+    def test_reset_baselines_preserves_latest_until_next_report(self) -> None:
         t = FirmwareWrittenTracker()
         t.record(1, 0, 0)
         t.record(1, 100, 4000)
@@ -71,9 +71,9 @@ class TestFirmwareWrittenTracker:
         assert new_f == 0
         assert new_b == 0
         totals = t.totals()
-        assert totals[1] == (100, 4000)
+        assert totals[1] == (30, 1200)
 
-    def test_reset_baselines_then_incremental(self) -> None:
+    def test_reset_baselines_then_latest_snapshot_updates(self) -> None:
         t = FirmwareWrittenTracker()
         t.record(1, 0, 0)
         t.record(1, 50, 2000)
@@ -83,4 +83,4 @@ class TestFirmwareWrittenTracker:
         assert new_f == 15
         assert new_b == 600
         totals = t.totals()
-        assert totals[1] == (65, 2600)
+        assert totals[1] == (25, 1000)

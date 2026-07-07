@@ -30,6 +30,7 @@ class AggregatorProcessEvent:
 
 Clock = Callable[[], float]
 SNAPSHOT_INTERVAL_SEC = 0.25
+AGGREGATOR_BATCH_MAX_ITEMS = 64
 
 
 def _put_event(
@@ -38,6 +39,25 @@ def _put_event(
 ) -> None:
     if event_queue is not None:
         event_queue.put(event)
+
+
+def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
+    if not updates:
+        return None
+    return AggregatorUpdate(
+        frames_seen=sum(update.frames_seen for update in updates),
+        redir_texts=tuple(text for update in updates for text in update.redir_texts),
+        internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
+        frame_losses=tuple(loss for update in updates for loss in update.frame_losses),
+        traffic_spikes=tuple(spike for update in updates for spike in update.traffic_spikes),
+    )
+
+
+def _put_merged_updates(event_queue: Any, updates: list[AggregatorUpdate]) -> None:
+    merged = _merge_updates(updates)
+    if merged is not None:
+        _put_event(event_queue, merged)
+        updates.clear()
 
 
 def _handle_raw_item(item: Any, aggregator: CaptureAggregator) -> bool:
@@ -51,21 +71,76 @@ def _consume_raw_count(raw_stats_queue: Any, aggregator: CaptureAggregator) -> b
     return _handle_raw_item(raw_stats_queue.get_nowait(), aggregator)
 
 
-def _handle_parser_item(item: Any, event_queue: Any, aggregator: CaptureAggregator) -> tuple[bool, bool]:
+def _handle_parser_item(
+    item: Any,
+    event_queue: Any,
+    aggregator: CaptureAggregator,
+    updates: list[AggregatorUpdate] | None = None,
+) -> tuple[bool, bool]:
     if isinstance(item, ParseBatch):
-        _put_event(event_queue, aggregator.consume_parser_batch(item))
+        update = aggregator.consume_parser_batch(item)
+        if updates is None:
+            _put_event(event_queue, update)
+        else:
+            updates.append(update)
         return False, False
     if isinstance(item, ParseSummary):
+        if updates is not None:
+            _put_merged_updates(event_queue, updates)
         aggregator.consume_parser_summary(item)
         return True, True
     if isinstance(item, ParserStatus):
+        if updates is not None:
+            _put_merged_updates(event_queue, updates)
         _put_event(event_queue, item)
         return item.kind == 'error', False
     return False, False
 
 
 def _consume_parser_event(parser_event_queue: Any, event_queue: Any, aggregator: CaptureAggregator) -> tuple[bool, bool]:
-    return _handle_parser_item(parser_event_queue.get_nowait(), event_queue, aggregator)
+    updates: list[AggregatorUpdate] = []
+    first_item = parser_event_queue.get_nowait()
+    parser_done, parser_finalized = _handle_parser_item(first_item, event_queue, aggregator, updates)
+    if parser_done:
+        return parser_done, parser_finalized
+
+    for _ in range(AGGREGATOR_BATCH_MAX_ITEMS - 1):
+        try:
+            item = parser_event_queue.get_nowait()
+        except Empty:
+            break
+        parser_done, parser_finalized = _handle_parser_item(item, event_queue, aggregator, updates)
+        if parser_done:
+            return parser_done, parser_finalized
+
+    _put_merged_updates(event_queue, updates)
+    return parser_done, parser_finalized
+
+
+def _consume_blocking_parser_event(
+    parser_event_queue: Any,
+    event_queue: Any,
+    aggregator: CaptureAggregator,
+    *,
+    timeout: float | None = None,
+) -> tuple[bool, bool]:
+    updates: list[AggregatorUpdate] = []
+    first_item = parser_event_queue.get() if timeout is None else parser_event_queue.get(timeout=timeout)
+    parser_done, parser_finalized = _handle_parser_item(first_item, event_queue, aggregator, updates)
+    if parser_done:
+        return parser_done, parser_finalized
+
+    for _ in range(AGGREGATOR_BATCH_MAX_ITEMS - 1):
+        try:
+            item = parser_event_queue.get_nowait()
+        except Empty:
+            break
+        parser_done, parser_finalized = _handle_parser_item(item, event_queue, aggregator, updates)
+        if parser_done:
+            return parser_done, parser_finalized
+
+    _put_merged_updates(event_queue, updates)
+    return parser_done, parser_finalized
 
 
 def run_aggregator_loop(
@@ -113,8 +188,8 @@ def run_aggregator_loop(
 
             if not made_progress:
                 if raw_done:
-                    parser_done, parser_finalized = _handle_parser_item(
-                        parser_event_queue.get(), event_queue, aggregator
+                    parser_done, parser_finalized = _consume_blocking_parser_event(
+                        parser_event_queue, event_queue, aggregator
                     )
                 elif parser_done:
                     raw_done = _handle_raw_item(raw_stats_queue.get(), aggregator)
@@ -123,8 +198,8 @@ def run_aggregator_loop(
                         raw_done = _consume_raw_count(raw_stats_queue, aggregator)
                     except Empty:
                         try:
-                            parser_done, parser_finalized = _handle_parser_item(
-                                parser_event_queue.get(timeout=0.01), event_queue, aggregator
+                            parser_done, parser_finalized = _consume_blocking_parser_event(
+                                parser_event_queue, event_queue, aggregator, timeout=0.01
                             )
                         except Empty:
                             pass

@@ -1,5 +1,5 @@
 # BLE Log Console Quick Start Guide
-Version: v1.0.2
+Version: v1.0.3
 
 ## Introduction
 
@@ -97,22 +97,22 @@ The tool package provides applications for different operating systems.
 
 #### 4.1.1 Windows System
 
-On Windows, use `ble_log_console_windows.exe`. The recommended way to start it is to double-click the icon.
+On Windows, use `ble_log_console_windows_v1.0.3.exe`. The recommended way to start it is to double-click the icon.
 
 > Note: This tool package currently supports `Windows 10` and later.
 
 #### 4.1.2 Linux System
 
-On Linux, use `ble_log_console_ubuntu`. If the file does not have execute permission, enter the corresponding directory first and run:
+On Linux, use `ble_log_console_ubuntu_v1.0.3`. If the file does not have execute permission, enter the corresponding directory first and run:
 
 ```bash
-chmod +x ./ble_log_console_ubuntu
+chmod +x ./ble_log_console_ubuntu_v1.0.3
 ```
 
 If you plan to use SPI Bridge on Linux, run the following command before the first use:
 
 ```bash
-sudo ./ble_log_console_ubuntu
+sudo ./ble_log_console_ubuntu_v1.0.3
 ```
 
 This command installs the USB access permission rules required by SPI Bridge. After the command finishes, unplug and reconnect the SPI Bridge device once. After that, `sudo` is no longer required for normal use.
@@ -120,7 +120,7 @@ This command installs the USB access permission rules required by SPI Bridge. Af
 Then run the following command to start the program:
 
 ```bash
-./ble_log_console_ubuntu
+./ble_log_console_ubuntu_v1.0.3
 ```
 
 > This tool package currently supports `Ubuntu 22.04` and later.
@@ -139,7 +139,7 @@ Then select the port. In UART mode, you also need to select the baud rate, which
 
 After log reception is complete, press `q` or `Ctrl+C` to exit the application. Logs are automatically saved in the configured directory. Large captures may be split into multiple `part` files, and the exit message summarizes the saved files.
 
-> Note: When stopping capture, use `q` or `Ctrl+C` to exit the application normally. If the terminal window is closed directly, the process may be terminated by the system, which may cause some logs to be lost.
+> Note: When stopping capture, use `q` or `Ctrl+C` to exit the application normally. If the terminal window is closed directly, the process may be terminated by the system before the final flush and close steps finish.
 
 Note that in a Linux environment, the available port name formats for SPI mode and UART mode are different. This is determined by the transport modes themselves and does not affect usage.
 
@@ -155,17 +155,19 @@ After startup, the interface mainly consists of the log area and the status bar,
 
 The log area displays parsed BLE logs, tool prompts, and warning messages in real time.
 
-The status bar shows the current connection status, amount of received data, current speed, peak speed, frame rate, and lost-frame statistics.
+The status bar shows the current connection status, captured raw data, current speed, peak speed, frame rate, and firmware-reported lost-frame statistics.
 
 The tool supports adaptive window resizing. When the window is small, some status information may be temporarily incomplete. Enlarge the window as needed, or scroll to view the remaining information.
 
 ### 5.2 Normal Status
 
-As shown in the interface above, the `frames` statistic at the red arrow indicates the number of parsed `BLE log frame` entries. The `RX` value on the left indicates the amount of parsed log data. When `RX` reaches a certain size, the prompt at the blue arrow appears.
+As shown in the interface above, the `frames` statistic at the red arrow indicates the number of parsed `BLE log frame` entries. The `RX` value on the left indicates the amount of raw data captured and saved. When `RX` reaches a certain size, the prompt at the blue arrow appears.
 
 **Normal status:** During use, if the `frames` value at the red arrow keeps increasing, the transfer speed is **not 0**, and the **size prompt** at the blue arrow appears, the tool is running normally.
 
 > If the connection is normal but the indicators above are abnormal, check whether the `BLE Log` module is enabled properly and whether the wiring is fully correct.
+
+> Note: High realtime traffic notices mean live parsing or UI display may temporarily lag behind raw capture. They do not mean raw saving is abnormal. Raw data is written to the `.bin` file before parsing; if the raw saving path cannot keep up, the tool reports a raw writer or reader backpressure error explicitly.
 
 ### 5.3 Common Shortcuts
 
@@ -298,12 +300,12 @@ This section provides additional usage examples for the tool package. The tool a
 
 | Operation | Linux | Windows |
 | --- | --- | --- |
-| View help | `./ble_log_console_ubuntu --help` | `ble_log_console_windows.exe --help` |
-| List ports | `./ble_log_console_ubuntu ports` | `ble_log_console_windows.exe ports` |
-| Start interactive mode | `./ble_log_console_ubuntu` | `ble_log_console_windows.exe` |
-| Start UART mode | `./ble_log_console_ubuntu --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows.exe --mode uart --port COM3` |
-| Start SPI Bridge mode | `./ble_log_console_ubuntu --mode spi --port <PORT>` | `ble_log_console_windows.exe --mode spi --port <PORT>` |
-| View saved logs | `./ble_log_console_ubuntu ls` | `ble_log_console_windows.exe ls` |
+| View help | `./ble_log_console_ubuntu_v1.0.3 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
+| List ports | `./ble_log_console_ubuntu_v1.0.3 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
+| Start interactive mode | `./ble_log_console_ubuntu_v1.0.3` | `ble_log_console_windows_v1.0.3.exe` |
+| Start UART mode | `./ble_log_console_ubuntu_v1.0.3 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
+| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.3 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
+| View saved logs | `./ble_log_console_ubuntu_v1.0.3 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
 
 ## Appendix: FAQ
 
@@ -315,7 +317,7 @@ Please check:
 - Whether the device is powered on.
 - Whether the correct firmware is running on the device.
 - Whether the port is already occupied by another program.
-- On Linux, whether you have run `sudo ./ble_log_console_ubuntu` once and unplugged/reconnected the device after running it.
+- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.3` once and unplugged/reconnected the device after running it.
 
 ### The program starts, but no logs appear.
 
@@ -327,6 +329,12 @@ Please check:
 - In UART mode, whether the baud rate selected in the tool matches the firmware configuration.
 - Whether the wiring between the ESP device and the serial port tool or SPI Bridge is correct.
 - In SPI Bridge mode, whether the GPIOs corresponding to MOSI, SCLK, and CS in the ESP device firmware match the actual wiring.
+
+### High realtime traffic appears.
+
+This means the tool is receiving high-throughput data and live parsing or UI display may temporarily lag. Raw `.bin` saving has priority over parsing. If there is no raw writer or reader backpressure error, raw capture is still continuing.
+
+If firmware-reported frame loss also increases, press `d` to inspect per-source loss, press `m` to inspect buffer usage, and adjust firmware BLE Log buffers or LBM count according to the statistics.
 
 ### Source environment setup fails.
 

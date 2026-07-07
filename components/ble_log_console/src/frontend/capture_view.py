@@ -289,7 +289,22 @@ class CaptureView:
         if event.kind == 'opened' and event.status is not None:
             return (UserNotice(f'Connected to {event.status.display_name}'),)
         if event.kind == 'parse_backlog':
-            return (UserNotice(event.message or 'Parser backlog', level='warning'),)
+            return (
+                UserNotice(
+                    event.message
+                    or 'Realtime parser fell behind; raw capture continues, live stats may be incomplete.',
+                    level='warning',
+                ),
+            )
+        if event.kind == 'parse_backlog_summary' and event.parse_dropped_chunks:
+            return (
+                UserNotice(
+                    'Realtime parser skipped '
+                    f'{event.parse_dropped_chunks} chunks ({format_bytes(event.parse_dropped_bytes)}); '
+                    'raw capture saved them, live stats are incomplete.',
+                    level='warning',
+                ),
+            )
         if event.kind in {'reset_done', 'reset_unsupported'}:
             return (UserNotice(event.message),)
         if event.kind == 'reset_error':

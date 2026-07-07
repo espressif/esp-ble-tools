@@ -13,6 +13,9 @@ from src.backend.parser.ble_log_parser import BleLogParser
 from src.backend.parser.events import ParseBatch
 from src.backend.parser.events import ParseSummary
 
+PARSER_BATCH_MAX_CHUNKS = 16
+PARSER_BATCH_MAX_BYTES = 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ParserStatus:
@@ -36,9 +39,31 @@ def run_parser_loop(parse_queue: Any, event_queue: Any) -> None:
             item = parse_queue.get()
             if item is None:
                 break
-            if not item:
-                continue
-            _put_event(event_queue, parser.feed(item))
+            chunks: list[bytes] = []
+            total_bytes = 0
+            stop_after_batch = False
+
+            if item:
+                chunks.append(item)
+                total_bytes += len(item)
+
+            while len(chunks) < PARSER_BATCH_MAX_CHUNKS and total_bytes < PARSER_BATCH_MAX_BYTES:
+                try:
+                    next_item = parse_queue.get_nowait()
+                except Empty:
+                    break
+                if next_item is None:
+                    stop_after_batch = True
+                    break
+                if not next_item:
+                    continue
+                chunks.append(next_item)
+                total_bytes += len(next_item)
+
+            if chunks:
+                _put_event(event_queue, parser.feed(b''.join(chunks)))
+            if stop_after_batch:
+                break
         _put_event(event_queue, parser.finalize())
     except Exception as e:
         _put_event(event_queue, ParserStatus(kind='error', message=str(e)))

@@ -81,7 +81,7 @@ CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM
 首次使用时先准备源码环境，之后使用启动脚本。启动脚本会将所有参数转发给 `console.py`：
 
 ```bash
-# Linux / macOS
+# Linux
 ./install.sh
 ./run.sh
 
@@ -139,7 +139,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | 可选 | 传输端点。省略时打开 Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | `./logs` | 捕获文件保存目录 |
-| `--debug` | 无 | 关闭 | 显示内部同步、流量和固件状态事件 |
+| `--debug` | 无 | 关闭 | 显示额外的解析、流量和固件状态调试事件 |
 
 子命令：
 
@@ -175,7 +175,7 @@ ble_log_YYYYMMDD_HHMMSS_console.log
 日志区域滚动显示实时日志，包括：
 
 - **`[INFO]`**：连接成功、保存路径、捕获进度等提示
-- **`[WARN]`**：丢帧、高流量、长时间无数据或无法解析帧等提示
+- **`[WARN]`**：固件上报丢帧、长时间无数据、无法解析帧，或实时解析落后等提示
 - 普通文本：UART PORT 0 的 `ESP_LOG` redirect 输出
 
 非 debug 模式会隐藏大部分内部状态，只保留面向用户的提示。
@@ -190,10 +190,12 @@ RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Los
 ```
 
 - **Status**：连接状态（CONNECTED、RECEIVING、IDLE、DISCONNECTED）
-- **RX / Frames**：累计接收字节数和解析出的 BLE Log frame 数量
+- **RX / Frames**：已捕获的原始字节数和解析出的 BLE Log frame 数量
 - **Speed / Max**：当前和峰值传输速度
 - **Rate**：当前帧率
 - **Lost**：固件上报的累计丢帧统计
+
+高实时流量提示表示实时解析或界面显示可能暂时落后于原始数据捕获，不等价于 raw `.bin` 保存丢失。raw 数据会先进入保存链路；如果 raw 保存本身无法跟上，工具会明确报告 raw writer 或 reader backpressure 错误。
 
 窗口较窄时，状态栏会自动切换为简短显示。正常工作时，`frames` 会持续增加，传输速度不为 0，并且在接收量达到一定规模时出现捕获大小提示。
 
@@ -243,7 +245,7 @@ RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Los
 使用自带构建脚本可将 BLE Log Console 打包为单文件可执行程序：
 
 ```bash
-# Linux / macOS
+# Linux
 ./build.sh
 
 # Windows
@@ -252,12 +254,11 @@ RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Los
 
 构建前请先运行一次 `install.sh` 或 `install.bat`。构建脚本会复用已准备好的本地环境，构建可执行文件、将其放置在当前工作目录下，并清理中间产物。
 
-构建脚本会使用当前 `VERSION` 生成文件名，不会自动递增版本号。输出文件名会包含平台和版本号，例如：
+构建脚本会使用当前 `VERSION` 生成单文件可执行程序名，不会自动递增版本号。输出文件名会包含平台和版本号，例如：
 
 ```text
-ble_log_console_ubuntu_v1.0.1
-ble_log_console_macos_v1.0.1
-ble_log_console_windows_v1.0.1.exe
+ble_log_console_ubuntu_v1.0.3
+ble_log_console_windows_v1.0.3exe
 ```
 
 如果需要在打包时调整版本，可以先手动修改 `VERSION`，也可以直接运行 `build_exe.py`：
@@ -290,10 +291,11 @@ python build_exe.py --version 1.2.3 # 指定版本，不修改 VERSION
 
 表示工具已经收到数据，但在内部缓冲区中没有解析出有效 BLE Log 帧。请优先检查传输模式、波特率、固件配置和硬件连接是否匹配。
 
-### 丢帧严重或出现 High log traffic
+### 丢帧严重或出现 High realtime log traffic
 
 - 按 `d` 查看各 Source 的丢帧详情。
 - 按 `m` 查看缓冲区利用率。
+- 如果只有 High realtime log traffic，而没有 raw writer/backpressure 错误，说明 raw 捕获仍在继续，实时统计或显示可能有延迟。
 - UART 模式下确认波特率和串口适配器能力。
 - SPI Bridge 模式下确认 Bridge 设备、SPI 接线和固件 GPIO 配置。
 - 根据统计结果增大固件 BLE Log buffer 或 LBM 数量。

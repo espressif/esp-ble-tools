@@ -253,9 +253,9 @@ class BLELogApp(App):
     def on_traffic_spike_detected(self, msg: TrafficSpikeDetected) -> None:
         log_view = self.query_one(LogView)
         if not self._debug:
-            log_view.write_warning(
-                f'High log traffic: {format_bitrate(msg.throughput_bits_per_sec)} '
-                f'for {msg.duration_ms:.0f}ms. Logs may be dropped.'
+            log_view.write_info(
+                f'High realtime log traffic: {format_bitrate(msg.throughput_bits_per_sec)} '
+                f'for {msg.duration_ms:.0f}ms. Raw capture continues; live stats may lag.'
             )
             return
 

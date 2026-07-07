@@ -65,7 +65,7 @@ class ParseChunkResult:
 
 @dataclass(frozen=True)
 class ParseBatch:
-    """Batch of parser events produced from one raw input chunk."""
+    """Batch of parser events produced from one or more raw input chunks."""
 
     raw_bytes: int
     parsed_frames: int

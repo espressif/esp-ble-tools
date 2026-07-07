@@ -23,14 +23,14 @@ if [ ! -f "dist/artifact_name.txt" ]; then
 fi
 
 EXE_NAME="$(cat "dist/artifact_name.txt")"
-if [ -f "dist/$EXE_NAME" ]; then
-    mv "dist/$EXE_NAME" "$CALLER_DIR/$EXE_NAME"
-    echo ""
-    echo "Executable ready: $CALLER_DIR/$EXE_NAME"
-else
-    echo "ERROR: Build produced no executable." >&2
+if [ ! -f "dist/$EXE_NAME" ]; then
+    echo "ERROR: Build produced no executable artifact." >&2
     exit 1
 fi
+
+mv "dist/$EXE_NAME" "$CALLER_DIR/$EXE_NAME"
+echo ""
+echo "Executable ready: $CALLER_DIR/$EXE_NAME"
 
 rm -rf "$SCRIPT_DIR/build" "$SCRIPT_DIR/dist" "$SCRIPT_DIR"/*.spec
 cd "$CALLER_DIR"

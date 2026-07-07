@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-"""Build a single-file executable for BLE Log Console using PyInstaller.
+"""Build a PyInstaller executable for BLE Log Console.
 
 Usage:
     pip install pyinstaller
@@ -72,12 +72,6 @@ def _artifact_base_name(version: str) -> str:
     return f'{APP_NAME}_{_platform_suffix()}_v{version}'
 
 
-def _artifact_filename(base_name: str) -> str:
-    if sys.platform == 'win32':
-        return f'{base_name}.exe'
-    return base_name
-
-
 def main() -> None:
     args = _parse_args()
     if args.version is not None:
@@ -90,7 +84,7 @@ def main() -> None:
         version = _format_version(_read_version())
 
     artifact_base_name = _artifact_base_name(version)
-    artifact_filename = _artifact_filename(artifact_base_name)
+    artifact_name = f'{artifact_base_name}.exe' if sys.platform == 'win32' else artifact_base_name
 
     cmd = [
         sys.executable,
@@ -151,10 +145,10 @@ def main() -> None:
         _write_version(version)
 
     artifact_name_path = Path('dist') / ARTIFACT_NAME_FILE
-    artifact_name_path.write_text(f'{artifact_filename}\n', encoding='utf-8')
+    artifact_name_path.write_text(f'{artifact_name}\n', encoding='utf-8')
 
     print(f'\nBuild complete. Version: {version}')
-    print(f'Executable: dist/{artifact_filename}')
+    print(f'Artifact: dist/{artifact_name}')
 
 
 if __name__ == '__main__':

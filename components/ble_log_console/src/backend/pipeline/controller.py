@@ -34,6 +34,10 @@ from src.backend.models import TransportConfig
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import create_transport_reader
 
+RAW_QUEUE_SIZE = 4096
+PARSE_QUEUE_SIZE = 0
+RAW_PUT_TIMEOUT_SEC = 5.0
+
 
 @dataclass(frozen=True)
 class CapturePipelineResult:
@@ -50,6 +54,9 @@ class CapturePipelineResult:
     parser_frames: int
     parser_carried_bytes: int
     completed: bool
+    parse_dropped_chunks: int = 0
+    parse_dropped_bytes: int = 0
+    parser_lag_bytes: int = 0
 
 
 def _drain_events(event_queue: Any) -> list[Any]:
@@ -89,6 +96,8 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
     parser_raw_bytes = 0
     parser_frames = 0
     parser_carried_bytes = 0
+    parse_dropped_chunks = 0
+    parse_dropped_bytes = 0
     writer_finalized = False
     aggregator_finalized = False
 
@@ -98,6 +107,10 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
                 reader_error = event.message
             elif event.kind == 'parse_backlog':
                 parse_backlog = True
+            elif event.kind == 'parse_backlog_summary':
+                parse_backlog = True
+            parse_dropped_chunks = max(parse_dropped_chunks, event.parse_dropped_chunks)
+            parse_dropped_bytes = max(parse_dropped_bytes, event.parse_dropped_bytes)
         elif isinstance(event, RawWriterProcessEvent):
             if event.status is not None:
                 raw_paths = event.status.paths
@@ -127,6 +140,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         and writer_finalized
         and aggregator_finalized
     )
+    parser_lag_bytes = max(0, raw_bytes - parser_raw_bytes)
     return CapturePipelineResult(
         raw_paths=raw_paths,
         reader_error=reader_error,
@@ -139,6 +153,9 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         parser_frames=parser_frames,
         parser_carried_bytes=parser_carried_bytes,
         completed=completed,
+        parse_dropped_chunks=parse_dropped_chunks,
+        parse_dropped_bytes=parse_dropped_bytes,
+        parser_lag_bytes=parser_lag_bytes,
     )
 
 
@@ -147,9 +164,9 @@ def run_capture_pipeline_inprocess(
     raw_writer_config: RawWriterConfig,
     *,
     stop_requested: threading.Event | None = None,
-    raw_queue_size: int = 64,
-    parse_queue_size: int = 64,
-    raw_put_timeout: float = 0.5,
+    raw_queue_size: int = RAW_QUEUE_SIZE,
+    parse_queue_size: int = PARSE_QUEUE_SIZE,
+    raw_put_timeout: float = RAW_PUT_TIMEOUT_SEC,
     drain_rounds: int = 10,
     writer_clock: Clock | None = None,
     writer_file_factory: FileFactory | None = None,
@@ -157,6 +174,9 @@ def run_capture_pipeline_inprocess(
     """Run the capture pipeline in-process for tests and local validation."""
 
     raw_queue: Queue[bytes | None] = Queue(maxsize=raw_queue_size)
+    # Parser can lag behind raw capture. Keep it unbounded by default so live
+    # parsing catches up instead of dropping chunks; raw_queue remains bounded
+    # because raw writer backpressure is capture-critical.
     parse_queue: Queue[bytes | None] = Queue(maxsize=parse_queue_size)
     parser_event_queue: Queue[Any] = Queue()
     raw_stats_queue: Queue[int | None] = Queue()
@@ -213,14 +233,16 @@ class CapturePipeline:
         transport_config: TransportConfig,
         raw_writer_config: RawWriterConfig,
         *,
-        raw_queue_size: int = 64,
-        parse_queue_size: int = 64,
-        raw_put_timeout: float = 0.5,
+        raw_queue_size: int = RAW_QUEUE_SIZE,
+        parse_queue_size: int = PARSE_QUEUE_SIZE,
+        raw_put_timeout: float = RAW_PUT_TIMEOUT_SEC,
         drain_rounds: int = 10,
     ) -> None:
         self._transport_config = transport_config
         self._raw_writer_config = raw_writer_config
         self._raw_queue_size = raw_queue_size
+        # Parser can lag behind raw capture. Keep it unbounded by default so
+        # live parsing catches up instead of dropping chunks.
         self._parse_queue_size = parse_queue_size
         self._raw_put_timeout = raw_put_timeout
         self._drain_rounds = drain_rounds
@@ -361,6 +383,9 @@ class CapturePipeline:
                     parser_frames=result.parser_frames,
                     parser_carried_bytes=result.parser_carried_bytes,
                     completed=False,
+                    parse_dropped_chunks=result.parse_dropped_chunks,
+                    parse_dropped_bytes=result.parse_dropped_bytes,
+                    parser_lag_bytes=result.parser_lag_bytes,
                 ),
             )
         return events, result

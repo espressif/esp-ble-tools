@@ -1,5 +1,5 @@
 # BLE Log Console 快速使用指南
-版本：v1.0.2
+版本：v1.0.3
 ## 简介
 &emsp;BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
 
@@ -100,23 +100,23 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 
 #### 4.1.1 Windows 系统
 
-Windows 下使用 `ble_log_console_windows.exe`。推荐直接双击图标启动。
+Windows 下使用 `ble_log_console_windows_v1.0.3.exe`。推荐直接双击图标启动。
 
 > 注意：本工具包现支持 `Windows 10` 及以上版本。
 
 
 #### 4.1.2 Linux 系统
 
-Linux 下使用 `ble_log_console_ubuntu`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+Linux 下使用 `ble_log_console_ubuntu_v1.0.3`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
 
 ```bash
-chmod +x ./ble_log_console_ubuntu
+chmod +x ./ble_log_console_ubuntu_v1.0.3
 ```
 
 如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
 
 ```bash
-sudo ./ble_log_console_ubuntu
+sudo ./ble_log_console_ubuntu_v1.0.3
 ```
 
 该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
@@ -124,7 +124,7 @@ sudo ./ble_log_console_ubuntu
 随后执行以下命令即可启动本程序：
 
 ```bash
-./ble_log_console_ubuntu
+./ble_log_console_ubuntu_v1.0.3
 ```
 > 本工具包现支持 `Ubuntu 22.04` 及以上版本。
 
@@ -142,7 +142,7 @@ sudo ./ble_log_console_ubuntu
 
 &emsp;日志接收完毕后，按 `q` 或 `Ctrl+C` 键即可退出应用。日志会自动保存在对应目录下。较大的采集文件可能会被拆分为多个 `part` 文件，退出时会汇总显示已保存文件。
 
-> 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。如果直接关闭终端窗口，进程可能会被系统直接结束，可能会导致部分日志丢失。
+> 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。如果直接关闭终端窗口，进程可能会被系统直接结束，最后的 flush 和 close 流程可能无法完成。
 
 
 &emsp;需要注意的是，Linux 环境下，SPI 模式可用端口和 UART 模式可用端口的名称格式不同，这是由传输模式本身决定的，使用上并无区别。
@@ -161,17 +161,19 @@ sudo ./ble_log_console_ubuntu
 
 日志区域会实时显示解析出的 BLE Log、工具提示和告警信息。
 
-&emsp;状态栏会显示当前连接状态、已接收数据量、当前速度、峰值速度、帧率和丢帧统计。
+&emsp;状态栏会显示当前连接状态、已捕获原始数据量、当前速度、峰值速度、帧率和固件上报的丢帧统计。
 
 &emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能暂时显示不全，适当放大窗口或通过滚动显示其他部分信息。
 
 ### 5.2 正常状态说明
 
-&emsp;如上图界面所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已解析日志的数据量，当 `RX` 达到一定规模时，会出现蓝色箭头处的提示。
+&emsp;如上图界面所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已经捕获并保存的原始数据量，当 `RX` 达到一定规模时，会出现蓝色箭头处的提示。
 
 &emsp;**正常状态：** 在使用过程中，如果可以看到红色箭头处的 `frames` 数量**持续增加**，传输速度**不为 0**，并且出现蓝色箭头处的**大小提示**，说明工具正在正常运行。
 
 > 如果连接正常，但上述指标存在异常，请检查 `BLE Log` 模块是否正常开启，或者连线是否完全正确。
+
+> 注意：高实时流量提示表示实时解析或界面显示可能暂时落后于 raw 捕获，不表示 raw 保存异常。raw 数据会优先写入 `.bin` 文件；如果 raw 保存链路无法跟上，工具会明确报告 raw writer 或 reader backpressure 错误。
 
 
 ### 5.3 常用快捷键
@@ -325,7 +327,7 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu`，并在执行后拔插过设备。
+- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.3`，并在执行后拔插过设备。
 
 ### 程序启动了，但一直没有日志。
 
@@ -337,6 +339,10 @@ python console.py --mode spi --port <PORT>
 - UART 模式下，工具中选择的波特率是否与固件配置一致。
 - ESP 设备和串口工具或 SPI Bridge 之间的接线是否正确。
 - SPI Bridge 模式下，ESP 设备固件中的 MOSI、SCLK、CS 对应 GPIO 是否与实际接线一致。
+
+### 出现高实时流量提示。
+
+这表示工具已经收到较高流量的数据，实时解析或界面显示可能暂时落后。raw `.bin` 文件保存链路优先于解析链路；如果没有出现 raw writer 或 reader backpressure 错误，raw 捕获仍在继续。
 
 ### 源码环境安装失败。
 
