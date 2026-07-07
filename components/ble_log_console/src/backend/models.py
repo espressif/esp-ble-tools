@@ -331,9 +331,6 @@ class FrameStats:
     os_peak: PeakBurstSnapshot = field(default_factory=PeakBurstSnapshot)
     ll_peak: PeakBurstSnapshot = field(default_factory=PeakBurstSnapshot)
     per_source_rx_bytes: dict[SourceCode, int] | None = None
-    sync_state: SyncState = SyncState.SEARCHING
-    checksum_algorithm: ChecksumAlgorithm | None = None
-    checksum_scope: ChecksumScope | None = None
 
 
 # --- TypedDicts for internal decoder results ---
@@ -369,12 +366,6 @@ InternalDecoderResult = InfoResult | EnhStatResult | BufUtilResult
 
 
 # --- Textual Messages (backend -> frontend) ---
-
-
-class SyncStateChanged(Message):
-    def __init__(self, state: SyncState) -> None:
-        super().__init__()
-        self.state = state
 
 
 class StatsUpdated(Message):

@@ -27,8 +27,8 @@ from textual_fspicker import SelectDirectory
 from src.backend.models import LaunchConfig
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
-from src.backend.transport import list_transport_modes
-from src.backend.transport import list_transport_port_options
+from src.backend.support.transport import list_transport_modes
+from src.backend.support.transport import list_transport_port_options
 from src.frontend.rendering import launch_control_css
 from src.frontend.rendering import launch_screen_safe_css
 from src.frontend.rendering import launch_width_stable_css

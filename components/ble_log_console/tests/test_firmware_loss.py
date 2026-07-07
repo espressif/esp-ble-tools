@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from src.backend.stats.firmware_loss import FirmwareLossTracker
+from src.backend.support.stats.firmware_loss import FirmwareLossTracker
 
 
 class TestFirmwareLossTracker:

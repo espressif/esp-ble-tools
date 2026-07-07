@@ -6,6 +6,7 @@
 Usage:
     python console.py                        # interactive setup
     python console.py --port /dev/ttyUSB0  --baudrate 3000000   # direct connect
+    python console.py --mode spi --port cdc:/dev/ttyACM0
     python console.py --mode spi --port 1:8:0:129
     python console.py ports                  # list transport endpoints
     python console.py ls                     # list saved files
@@ -20,12 +21,12 @@ import sys
 import click
 from src.backend.models import format_bytes
 from src.backend.models import TransportMode
-from src.backend.transport.spi_usb_bridge_transport import PRODUCT_ID
-from src.backend.transport.spi_usb_bridge_transport import VENDOR_ID
-from src.backend.transport.registry import get_transport_provider
-from src.backend.transport.registry import list_transport_modes
-from src.backend.transport.registry import list_transport_port_options
-from src.backend.transport.uart_transport import validate_uart_port
+from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID
+from src.backend.support.transport.spi_usb_bridge_transport import VENDOR_ID
+from src.backend.support.transport.registry import get_transport_provider
+from src.backend.support.transport.registry import list_transport_modes
+from src.backend.support.transport.registry import list_transport_port_options
+from src.backend.support.transport.uart_transport import validate_uart_port
 
 MODE_CHOICES = ('uart', 'spi', 'spi_usb_bridge')
 UDEV_RULE_PATH = Path('/etc/udev/rules.d/99-ble-log-spi-bridge.rules')
@@ -124,9 +125,14 @@ def _install_udev_rules() -> None:
     show_default=True,
     help='Transport mode.',
 )
-@click.option('--port', '-p', default=None, help='Transport endpoint. UART: /dev/ttyUSB0, SPI: bus:addr:intf:ep.')
+@click.option(
+    '--port',
+    '-p',
+    default=None,
+    help='Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or bus:addr:intf:ep.',
+)
 @click.option('--baudrate', '-b', type=int, default=3_000_000, show_default=True, help='UART baud rate.')
-@click.option('--debug', is_flag=True, help='Show internal sync, traffic, and firmware state events in the log view.')
+@click.option('--debug', is_flag=True, help='Show internal traffic and firmware state events in the log view.')
 @click.option(
     '--log-dir', '-d', type=click.Path(), default=None, help='Log save directory. Default: current working directory.'
 )

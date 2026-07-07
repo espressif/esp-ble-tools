@@ -155,7 +155,7 @@ After startup, the interface mainly consists of the log area and the status bar,
 
 The log area displays parsed BLE logs, tool prompts, and warning messages in real time.
 
-The status bar shows the current connection status, synchronization status, amount of received data, current speed, peak speed, frame rate, and lost-frame statistics.
+The status bar shows the current connection status, amount of received data, current speed, peak speed, frame rate, and lost-frame statistics.
 
 The tool supports adaptive window resizing. When the window is small, some status information may be temporarily incomplete. Enlarge the window as needed, or scroll to view the remaining information.
 

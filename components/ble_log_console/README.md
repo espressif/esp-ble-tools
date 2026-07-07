@@ -14,10 +14,10 @@ It supports two transport modes:
 - Interactive Launch Screen for transport mode, port, baud rate, and log directory.
 - UART and SPI Bridge capture support.
 - Endpoint discovery with `python console.py ports`.
-- Real-time BLE Log frame parsing and checksum mode detection.
+- Real-time BLE Log frame parsing.
 - Raw `.bin` capture saved before parsing.
 - UART PORT 0 `ESP_LOG` redirect display and optional `_console.log` output.
-- Live status panel with connection, sync, RX, speed, frame rate, and loss statistics.
+- Live status panel with connection, RX, speed, frame rate, and loss statistics.
 - Per-source frame statistics and buffer-utilization views.
 - Versioned standalone executable packaging.
 
@@ -115,7 +115,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | optional | Transport endpoint. Omit to use Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate |
 | `--log-dir` | `-d` | `./logs` | Capture output directory |
-| `--debug` | none | off | Show internal sync, traffic, and firmware-state events |
+| `--debug` | none | off | Show internal traffic and firmware-state events |
 
 Subcommands:
 

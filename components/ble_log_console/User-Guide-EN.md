@@ -139,7 +139,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | optional | Transport endpoint. Omit it to use the Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate; must match firmware configuration |
 | `--log-dir` | `-d` | `./logs` | Directory where capture files are saved |
-| `--debug` | none | off | Show internal sync, traffic, and firmware-state events |
+| `--debug` | none | off | Show internal traffic and firmware-state events |
 
 Subcommands:
 
@@ -176,7 +176,6 @@ The log view scrolls in real time and shows:
 
 - **`[INFO]`**: connection, output path, capture progress, and other user notices
 - **`[WARN]`**: frame loss, high traffic, no data, or data that cannot be decoded as BLE Log frames
-- **`[SYNC]`**: sync state transitions, shown only with `--debug`
 - Plain text: UART PORT 0 `ESP_LOG` redirect output
 
 Non-debug mode hides most internal state and keeps the log view focused on user-facing notices.
@@ -186,13 +185,11 @@ Non-debug mode hides most internal state and keeps the log view focused on user-
 The status panel is fixed at the bottom and updates in real time:
 
 ```text
-Status: RECEIVING | Sync: SYNCED | Checksum: XOR / Header+Payload | Press h for help
+Status: RECEIVING | Press h for help
 RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Lost: 12 frames, 480 B
 ```
 
 - **Status**: CONNECTED, RECEIVING, IDLE, or DISCONNECTED
-- **Sync**: SEARCHING, CONFIRMING, SYNCED, or CONFIRMING_LOSS
-- **Checksum**: detected checksum mode
 - **RX / Frames**: total received bytes and parsed BLE Log frame count
 - **Speed / Max**: current and peak transfer speed
 - **Rate**: current frame rate

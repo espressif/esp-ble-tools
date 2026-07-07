@@ -39,10 +39,7 @@ def use_windows_safe_rendering() -> bool:
 
 def terminal_border_style() -> str:
     """Return the shared Textual border style used on every platform."""
-    override = os.environ.get('BLE_LOG_CONSOLE_ASCII')
-    if override is not None and override.lower() not in {'0', 'false', 'no', 'off'}:
-        return 'ascii'
-    return 'solid'
+    return 'ascii' if use_windows_safe_rendering() else 'solid'
 
 
 def launch_control_css() -> str:
@@ -134,6 +131,8 @@ def launch_width_stable_css() -> str:
 
 def launch_screen_safe_css() -> str:
     """Return launch-screen focus styles for selects and inputs."""
+    if not use_windows_safe_rendering():
+        return ''
     border = terminal_border_style()
     return f"""
     LaunchScreen Select.-expanded > SelectCurrent,
@@ -152,10 +151,7 @@ def launch_screen_safe_css() -> str:
 
 def table_safe_box() -> bool:
     """Return whether Rich tables should use legacy-safe box drawing."""
-    override = os.environ.get('BLE_LOG_CONSOLE_ASCII')
-    if override is not None:
-        return override.lower() not in {'0', 'false', 'no', 'off'}
-    return False
+    return use_windows_safe_rendering()
 
 
 def table_ascii_box() -> bool:

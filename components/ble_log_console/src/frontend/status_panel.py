@@ -11,7 +11,6 @@ from textual.reactive import reactive
 from textual.widget import Widget
 
 from src.backend.models import FrameStats
-from src.backend.models import SyncState
 from src.backend.models import format_bitrate
 from src.backend.models import format_bytes
 from src.frontend.rendering import terminal_border_style
@@ -41,21 +40,6 @@ def _compact_customer_state_markup(s: FrameStats, disconnected: bool) -> str:
     return '[cyan]CONN[/cyan]'
 
 
-_SYNC_COLORS = {
-    SyncState.SEARCHING: 'yellow',
-    SyncState.CONFIRMING_SYNC: 'cyan',
-    SyncState.SYNCED: 'green',
-    SyncState.CONFIRMING_LOSS: 'red',
-}
-
-
-_COMPACT_SYNC_LABELS = {
-    SyncState.SEARCHING: 'SEARCH',
-    SyncState.CONFIRMING_SYNC: 'CHECK',
-    SyncState.SYNCED: 'SYNC',
-    SyncState.CONFIRMING_LOSS: 'LOSS',
-}
-
 COMPACT_STATUS_WIDTH = 56
 MEDIUM_STATUS_WIDTH = 88
 
@@ -84,24 +68,13 @@ class StatusPanel(Widget):
                 line1 = f'Status: {_customer_state_markup(s, self.disconnected)}'
                 line2 = 'Backend stopped - transport connection closed'
             return Text.from_markup(f'{line1}\n{line2}')
-        sync_color = _SYNC_COLORS.get(s.sync_state, 'white')
-        sync_str = f'[{sync_color}]{s.sync_state.value}[/{sync_color}]'
 
-        if s.checksum_algorithm and s.checksum_scope:
-            cksum_str = f' | Checksum: {s.checksum_algorithm.value} / {s.checksum_scope.value}'
-        else:
-            cksum_str = ''
         t = s.transport
         loss = s.loss
         loss_style = 'red' if loss.total_frames > 0 else 'yellow'
 
         if width < COMPACT_STATUS_WIDTH:
-            compact_sync = _COMPACT_SYNC_LABELS.get(s.sync_state, s.sync_state.value)
-            line1 = (
-                f'{_compact_customer_state_markup(s, self.disconnected)} | '
-                f'[{sync_color}]{compact_sync}[/{sync_color}] | '
-                f'RX {format_bytes(t.rx_bytes)}'
-            )
+            line1 = f'{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}'
             line2 = (
                 f'{_format_speed(t.rx_bits_per_sec)} | '
                 f'[{loss_style}]Lost {loss.total_frames}[/{loss_style}]'
@@ -109,18 +82,17 @@ class StatusPanel(Widget):
         elif width < MEDIUM_STATUS_WIDTH:
             line1 = (
                 f'Status: {_customer_state_markup(s, self.disconnected)} | '
-                f'Sync: {sync_str} | '
                 f'[bold]h[/bold]: help'
             )
             line2 = (
                 f'RX: {format_bytes(t.rx_bytes)}  '
+                f'Frames: {t.rx_frames}  '
                 f'Speed: {_format_speed(t.rx_bits_per_sec)}  '
                 f'[{loss_style}]Lost: {loss.total_frames}[/{loss_style}]'
             )
         else:
             line1 = (
                 f'Status: {_customer_state_markup(s, self.disconnected)} | '
-                f'Sync: {sync_str}{cksum_str} | '
                 f'Press [bold]h[/bold] for help'
             )
             line2 = (

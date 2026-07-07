@@ -12,8 +12,9 @@ import serial.tools.list_ports
 
 from src.backend.models import TransportConfig
 from src.backend.models import TransportBitrate
-from src.backend.transport.base import TransportMode
-from src.backend.transport.base import TransportProvider
+from src.backend.support.transport.base import TransportMode
+from src.backend.support.transport.base import TransportProvider
+from src.backend.support.transport.base import TransportStatus
 
 
 UART_BITS_PER_BYTE = 10
@@ -45,7 +46,10 @@ class UartTransport:
     def __init__(self, port: str, baudrate: int) -> None:
         self._port = port
         self._baudrate = baudrate
-        self._serial: serial.Serial = open_serial(port, baudrate)
+        self._serial: serial.Serial | None = None
+        self._rx_bytes = 0
+        self._rx_chunks = 0
+        self._last_error: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -62,14 +66,41 @@ class UartTransport:
             wire_bits_per_sec=float(self._baudrate),
         )
 
+    def open(self) -> None:
+        if self._serial is not None and self._serial.is_open:
+            return
+        try:
+            self._serial = open_serial(self._port, self._baudrate)
+            self._last_error = None
+        except Exception as e:
+            self._last_error = str(e)
+            raise
+
     def read(self, size: int | None = None) -> bytes:
-        return self._serial.read(size or self.block_size)  # type: ignore[no-any-return]
+        if self._serial is None or not self._serial.is_open:
+            raise RuntimeError('UART transport is not open')
+        block = self._serial.read(size or self.block_size)  # type: ignore[no-any-return]
+        if block:
+            self._rx_bytes += len(block)
+            self._rx_chunks += 1
+        return block
+
+    def drain(self, max_rounds: int = 10) -> list[bytes]:
+        blocks: list[bytes] = []
+        for _ in range(max_rounds):
+            block = self.read()
+            if not block:
+                break
+            blocks.append(block)
+        return blocks
 
     def close(self) -> None:
+        if self._serial is None:
+            return
         self._serial.close()
 
     def reset_target(self) -> bool:
-        if not self._serial.is_open:
+        if self._serial is None or not self._serial.is_open:
             return False
         self._serial.dtr = False
         self._serial.rts = True
@@ -77,13 +108,21 @@ class UartTransport:
         self._serial.rts = False
         return True
 
+    def status(self) -> TransportStatus:
+        opened = self._serial is not None and self._serial.is_open
+        return TransportStatus(
+            mode=TransportMode.UART,
+            display_name=self.display_name,
+            opened=opened,
+            healthy=opened and self._last_error is None,
+            rx_bytes=self._rx_bytes,
+            rx_chunks=self._rx_chunks,
+            last_error=self._last_error,
+        )
+
 
 def list_uart_options() -> list[tuple[str, str]]:
     return [(port, port) for port in list_serial_ports()]
-
-
-def open_uart_transport(port: str, baudrate: int) -> UartTransport:
-    return UartTransport(port, baudrate)
 
 
 class UartTransportProvider:
@@ -99,8 +138,8 @@ class UartTransportProvider:
     def list_options(self) -> list[tuple[str, str]]:
         return list_uart_options()
 
-    def open(self, config: TransportConfig) -> UartTransport:
-        return open_uart_transport(config.port, config.baudrate)
+    def create_reader(self, config: TransportConfig) -> UartTransport:
+        return UartTransport(config.port, config.baudrate)
 
 
 PROVIDER: TransportProvider = UartTransportProvider()

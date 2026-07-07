@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from src.backend.stats.sn_gap import SNGapTracker
+from src.backend.support.stats.sn_gap import SNGapTracker
 
 
 class TestSNGapTracker:

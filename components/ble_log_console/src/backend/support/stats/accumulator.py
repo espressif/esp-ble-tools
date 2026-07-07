@@ -7,23 +7,21 @@ from __future__ import annotations
 
 from src.backend.models import BleLogSource
 from src.backend.models import BufUtilEntry
-from src.backend.models import ChecksumMode
 from src.backend.models import FrameByteCount
 from src.backend.models import FrameStats
 from src.backend.models import FunnelSnapshot
 from src.backend.models import SourceCode
-from src.backend.models import SyncState
 from src.backend.models import ThroughputInfo
 from src.backend.models import TransportBitrate
-from src.backend.stats.buf_util import BufUtilTracker
-from src.backend.stats.firmware_loss import FirmwareLossTracker
-from src.backend.stats.firmware_written import FirmwareWrittenTracker
-from src.backend.stats.peak_burst import WRITE_RATE_WINDOW_MS
-from src.backend.stats.peak_burst import PeakBurstTracker
-from src.backend.stats.sn_gap import SNGapTracker
-from src.backend.stats.traffic_spike import TrafficSpikeDetector
-from src.backend.stats.traffic_spike import TrafficSpikeResult
-from src.backend.stats.transport import TransportMetrics
+from src.backend.support.stats.buf_util import BufUtilTracker
+from src.backend.support.stats.firmware_loss import FirmwareLossTracker
+from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
+from src.backend.support.stats.peak_burst import WRITE_RATE_WINDOW_MS
+from src.backend.support.stats.peak_burst import PeakBurstTracker
+from src.backend.support.stats.sn_gap import SNGapTracker
+from src.backend.support.stats.traffic_spike import TrafficSpikeDetector
+from src.backend.support.stats.traffic_spike import TrafficSpikeResult
+from src.backend.support.stats.transport import TransportMetrics
 
 _ZERO = FrameByteCount(frames=0, bytes=0)
 
@@ -161,12 +159,7 @@ class StatsAccumulator:
 
     # -- Snapshots ---------------------------------------------------------------
 
-    def snapshot(
-        self,
-        elapsed_sec: float,
-        sync_state: SyncState = SyncState.SEARCHING,
-        checksum_mode: ChecksumMode | None = None,
-    ) -> FrameStats:
+    def snapshot(self, elapsed_sec: float) -> FrameStats:
         self._wall_burst.harvest()
         return FrameStats(
             transport=self._transport.harvest(elapsed_sec),
@@ -174,9 +167,6 @@ class StatsAccumulator:
             os_peak=self._os_burst.harvest(),
             ll_peak=self._ll_burst.harvest(),
             per_source_rx_bytes=(dict(self._per_source_received_bytes) if self._per_source_received_bytes else None),
-            sync_state=sync_state,
-            checksum_algorithm=checksum_mode.algorithm if checksum_mode else None,
-            checksum_scope=checksum_mode.scope if checksum_mode else None,
         )
 
     def funnel_snapshot(self, elapsed_sec: float = 0.0) -> list[FunnelSnapshot]:

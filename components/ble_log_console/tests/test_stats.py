@@ -6,13 +6,13 @@ from unittest.mock import patch
 from src.backend.models import BleLogSource
 from src.backend.models import TransportBitrate
 from src.backend.models import has_os_ts
-from src.backend.stats import TRAFFIC_ALERT_COOLDOWN_SEC
-from src.backend.stats import TRAFFIC_THRESHOLD_PCT
-from src.backend.stats import TRAFFIC_WINDOW_SEC
-from src.backend.stats import WRITE_RATE_WINDOW_MS
-from src.backend.stats import StatsAccumulator
-from src.backend.stats import TrafficSpikeResult
-from src.backend.stats.peak_burst import _ts_delta_ms
+from src.backend.support.stats import TRAFFIC_ALERT_COOLDOWN_SEC
+from src.backend.support.stats import TRAFFIC_THRESHOLD_PCT
+from src.backend.support.stats import TRAFFIC_WINDOW_SEC
+from src.backend.support.stats import WRITE_RATE_WINDOW_MS
+from src.backend.support.stats import StatsAccumulator
+from src.backend.support.stats import TrafficSpikeResult
+from src.backend.support.stats.peak_burst import _ts_delta_ms
 
 # Convenience: default frame size used in peak write tests (arbitrary but consistent)
 _FRAME_SZ = 100
@@ -775,7 +775,7 @@ class TestTrafficSpikeDetection:
 
     def _make_stats(self, baudrate: int = 3_000_000) -> StatsAccumulator:
         stats = StatsAccumulator()
-        stats.set_wire_max(baudrate)
+        _set_uart_bitrate(stats, baudrate)
         return stats
 
     def test_no_spike_below_threshold(self) -> None:
@@ -786,7 +786,7 @@ class TestTrafficSpikeDetection:
         bytes_in_window = int(safe_bps * TRAFFIC_WINDOW_SEC)
 
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             for _ in range(10):
                 stats.record_frame_traffic(bytes_in_window // 10, 1)
@@ -801,7 +801,7 @@ class TestTrafficSpikeDetection:
         bytes_in_window = int(hot_bps * TRAFFIC_WINDOW_SEC)
 
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             stats.record_frame_traffic(bytes_in_window, 1)
 
@@ -814,7 +814,7 @@ class TestTrafficSpikeDetection:
             assert result is not None
             assert result.utilization_pct > TRAFFIC_THRESHOLD_PCT * 100
             assert result.duration_ms > 0
-            assert result.throughput_kbs > 0
+            assert result.throughput_bits_per_sec > 0
 
     def _trigger_spike(
         self, stats: StatsAccumulator, mock_time: object, t: float, hot_bytes: int, src: int = 1
@@ -834,7 +834,7 @@ class TestTrafficSpikeDetection:
         hot_bytes = int(wire_max_bps * 0.9 * TRAFFIC_WINDOW_SEC)
 
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             first = self._trigger_spike(stats, mock_time, t, hot_bytes)
             assert first is not None
 
@@ -849,7 +849,7 @@ class TestTrafficSpikeDetection:
         hot_bytes = int(wire_max_bps * 0.9 * TRAFFIC_WINDOW_SEC)
 
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             first = self._trigger_spike(stats, mock_time, t, hot_bytes)
             assert first is not None
 
@@ -864,7 +864,7 @@ class TestTrafficSpikeDetection:
         hot_bytes = int(wire_max_bps * 0.9 * TRAFFIC_WINDOW_SEC)
 
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             stats.record_frame_traffic(int(hot_bytes * 0.7), 1)
             stats.record_frame_traffic(int(hot_bytes * 0.3), 2)
@@ -881,7 +881,7 @@ class TestTrafficSpikeDetection:
         """Traffic detection is disabled when wire max is not set."""
         stats = StatsAccumulator()
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             stats.record_frame_traffic(999999, 1)
             mock_time.perf_counter.return_value = t + TRAFFIC_WINDOW_SEC + 0.01

@@ -5,7 +5,7 @@ from src.backend.models import FrameByteCount
 from src.backend.models import FunnelSnapshot
 from src.backend.models import ThroughputInfo
 from src.backend.models import format_throughput
-from src.backend.stats import StatsAccumulator
+from src.backend.support.stats import StatsAccumulator
 from src.frontend.stats_screen import _build_console_table
 from src.frontend.stats_screen import _build_firmware_table
 

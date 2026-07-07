@@ -13,7 +13,7 @@ Verifies that reset("init") and reset("flush") dispatch correctly per the spec:
 |                  | per_source_received, throughput cache   |              |                                    |
 """
 
-from src.backend.stats import StatsAccumulator
+from src.backend.support.stats import StatsAccumulator
 
 
 class TestResetPropagation:

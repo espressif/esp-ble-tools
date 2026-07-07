@@ -47,9 +47,6 @@ class LogView(RichLog):
     def write_error(self, text: str) -> None:
         self._write_tagged('ERROR', 'red', text)
 
-    def write_sync(self, text: str) -> None:
-        self._write_tagged('SYNC', 'cyan', text)
-
     def write_enh_stat(self, text: str) -> None:
         self._write_tagged('ENH_STAT', 'cyan', text)
 

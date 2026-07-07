@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from src.backend.checksum import sum_checksum
-from src.backend.checksum import xor_checksum
-from src.backend.frame_parser import FrameParser
+from src.backend.support.parser_core.checksum import sum_checksum
+from src.backend.support.parser_core.checksum import xor_checksum
+from src.backend.support.parser_core.frame_parser import FrameParser
 from src.backend.models import ChecksumAlgorithm
 from src.backend.models import ChecksumScope
 from src.backend.models import SyncState
@@ -86,7 +86,7 @@ class TestFrameParserStateTransitions:
         assert parser.sync_state == SyncState.SYNCED
 
     def test_confirming_loss_to_searching_after_m_plus_1_failures(self) -> None:
-        from src.backend.frame_parser import LOSS_TOLERANCE
+        from src.backend.support.parser_core.frame_parser import LOSS_TOLERANCE
 
         parser = FrameParser()
         payload = bytes(range(0xA0, 0xA8))

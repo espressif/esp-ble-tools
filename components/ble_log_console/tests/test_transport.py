@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from src.backend.models import TransportBitrate
-from src.backend.stats.transport import TransportMetrics
+from src.backend.support.stats.transport import TransportMetrics
 
 
 class TestTransportMetrics:

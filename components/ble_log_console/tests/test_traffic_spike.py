@@ -4,10 +4,10 @@
 from unittest.mock import patch
 
 from src.backend.models import TransportBitrate
-from src.backend.stats.traffic_spike import TRAFFIC_ALERT_COOLDOWN_SEC
-from src.backend.stats.traffic_spike import TRAFFIC_WINDOW_SEC
-from src.backend.stats.traffic_spike import TrafficSpikeDetector
-from src.backend.stats.traffic_spike import TrafficSpikeResult
+from src.backend.support.stats.traffic_spike import TRAFFIC_ALERT_COOLDOWN_SEC
+from src.backend.support.stats.traffic_spike import TRAFFIC_WINDOW_SEC
+from src.backend.support.stats.traffic_spike import TrafficSpikeDetector
+from src.backend.support.stats.traffic_spike import TrafficSpikeResult
 
 
 def _make_detector(baudrate: int = 3_000_000) -> TrafficSpikeDetector:
@@ -33,7 +33,7 @@ class TestTrafficSpikeDetector:
         wire_max_bps = 3_000_000
         safe_bytes = int(wire_max_bps * 0.5 * TRAFFIC_WINDOW_SEC / 10)
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             d.record(safe_bytes, 1)
             mock_time.perf_counter.return_value = t + TRAFFIC_WINDOW_SEC + 0.001
@@ -43,7 +43,7 @@ class TestTrafficSpikeDetector:
         d = _make_detector()
         hot_bytes = int(3_000_000 * 0.9 * TRAFFIC_WINDOW_SEC / 10)
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             result = _trigger_spike(d, mock_time, t, hot_bytes)
             assert result is not None
             assert result.duration_ms > 0
@@ -52,7 +52,7 @@ class TestTrafficSpikeDetector:
         d = _make_detector()
         hot_bytes = int(3_000_000 * 0.9 * TRAFFIC_WINDOW_SEC / 10)
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             first = _trigger_spike(d, mock_time, t, hot_bytes)
             assert first is not None
             second = _trigger_spike(d, mock_time, t + 0.5, hot_bytes)
@@ -62,7 +62,7 @@ class TestTrafficSpikeDetector:
         d = _make_detector()
         hot_bytes = int(3_000_000 * 0.9 * TRAFFIC_WINDOW_SEC / 10)
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             first = _trigger_spike(d, mock_time, t, hot_bytes)
             assert first is not None
             t2 = t + TRAFFIC_ALERT_COOLDOWN_SEC + 1.0
@@ -72,7 +72,7 @@ class TestTrafficSpikeDetector:
     def test_no_wire_max_disables(self) -> None:
         d = TrafficSpikeDetector()
         t = 1000.0
-        with patch('src.backend.stats.traffic_spike.time') as mock_time:
+        with patch('src.backend.support.stats.traffic_spike.time') as mock_time:
             mock_time.perf_counter.return_value = t
             d.record(999999, 1)
             mock_time.perf_counter.return_value = t + TRAFFIC_WINDOW_SEC + 0.01

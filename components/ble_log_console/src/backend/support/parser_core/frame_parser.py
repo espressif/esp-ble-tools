@@ -9,8 +9,8 @@ See Spec Sections 7, 8.
 
 from collections.abc import Callable
 
-from src.backend.checksum import sum_checksum
-from src.backend.checksum import xor_checksum
+from src.backend.support.parser_core.checksum import sum_checksum
+from src.backend.support.parser_core.checksum import xor_checksum
 from src.backend.models import CHECKSUM_STRUCT
 from src.backend.models import FRAME_HEADER_SIZE
 from src.backend.models import FRAME_OVERHEAD
@@ -254,13 +254,10 @@ class FrameParser:
     def _might_be_incomplete_frame(self, buf: bytes, offset: int) -> bool:
         """Check if remaining data could be a partial frame waiting for more data."""
         remaining = len(buf) - offset
-        if remaining < FRAME_OVERHEAD:
+        if remaining < FRAME_HEADER_SIZE:
             return True
-        if remaining >= FRAME_HEADER_SIZE:
-            payload_len, _ = HEADER_STRUCT.unpack_from(buf, offset)
-            if payload_len <= MAX_FRAME_SIZE and remaining < FRAME_OVERHEAD + payload_len:
-                return True
-        return False
+        payload_len, _ = HEADER_STRUCT.unpack_from(buf, offset)
+        return 0 < payload_len <= MAX_FRAME_SIZE and remaining < FRAME_OVERHEAD + payload_len
 
     def _transition_to(self, new_state: SyncState) -> None:
         if new_state == SyncState.SYNCED:

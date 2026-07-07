@@ -3,7 +3,7 @@
 
 import struct
 
-from src.backend.internal_decoder import decode_internal_frame
+from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 from src.backend.models import InternalSource
 
 

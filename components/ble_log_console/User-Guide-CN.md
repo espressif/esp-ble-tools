@@ -176,7 +176,6 @@ ble_log_YYYYMMDD_HHMMSS_console.log
 
 - **`[INFO]`**：连接成功、保存路径、捕获进度等提示
 - **`[WARN]`**：丢帧、高流量、长时间无数据或无法解析帧等提示
-- **`[SYNC]`**：同步状态变化（仅 `--debug` 下显示）
 - 普通文本：UART PORT 0 的 `ESP_LOG` redirect 输出
 
 非 debug 模式会隐藏大部分内部状态，只保留面向用户的提示。
@@ -186,13 +185,11 @@ ble_log_YYYYMMDD_HHMMSS_console.log
 状态栏固定在底部，实时更新：
 
 ```text
-Status: RECEIVING | Sync: SYNCED | Checksum: XOR / Header+Payload | Press h for help
+Status: RECEIVING | Press h for help
 RX: 1.2 MB  Frames: 12345  Speed: 2.34 Mbps  Max: 2.80 Mbps  Rate: 3421 fps  Lost: 12 frames, 480 B
 ```
 
 - **Status**：连接状态（CONNECTED、RECEIVING、IDLE、DISCONNECTED）
-- **Sync**：同步状态（SEARCHING、CONFIRMING、SYNCED、CONFIRMING_LOSS）
-- **Checksum**：自动检测到的校验模式
 - **RX / Frames**：累计接收字节数和解析出的 BLE Log frame 数量
 - **Speed / Max**：当前和峰值传输速度
 - **Rate**：当前帧率
