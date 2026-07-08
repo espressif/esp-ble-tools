@@ -105,13 +105,13 @@ python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
 
-`spi` is an alias for `spi_usb_bridge`.
+`spi` selects the SPI Bridge transport.
 
 ## CLI Reference
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--mode` | `-m` | `uart` | Transport mode: `uart`, `spi`, or `spi_usb_bridge` |
+| `--mode` | `-m` | `uart` | Transport mode: `uart` or `spi` |
 | `--port` | `-p` | optional | Transport endpoint. Omit to use Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate |
 | `--log-dir` | `-d` | `./logs` | Capture output directory |

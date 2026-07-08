@@ -13,7 +13,7 @@ from src.backend.aggregator.event_aggregator import AggregatorSnapshot
 from src.backend.pipeline.controller import run_capture_pipeline_inprocess
 from src.backend.pipeline.controller import CapturePipeline
 from src.backend.pipeline.controller import _result_from_events
-from src.backend.pipeline.reader import ReaderProcessEvent
+from src.backend.reader.worker import ReaderProcessEvent
 from src.backend.writer.raw_writer import RawWriterConfig
 from src.backend.writer.raw_writer import RawWriterProcessEvent
 from src.backend.writer.raw_writer import RawWriterStatus

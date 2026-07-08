@@ -7,9 +7,9 @@ from queue import Empty
 from queue import Queue
 from threading import Event
 
-from src.backend.pipeline.reader import ReaderProcessEvent
-from src.backend.pipeline.reader import ReaderCommand
-from src.backend.pipeline.reader import run_reader_loop
+from src.backend.reader.worker import ReaderProcessEvent
+from src.backend.reader.worker import ReaderCommand
+from src.backend.reader.worker import run_reader_loop
 from src.backend.models import TransportBitrate
 from src.backend.models import TransportMode
 from src.backend.support.transport import TransportStatus

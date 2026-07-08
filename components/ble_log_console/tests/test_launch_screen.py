@@ -255,6 +255,10 @@ class TestTransportModeHelpers:
         screen = LaunchScreen()
         assert screen._mode_from_select_value('spi_usb_bridge') is TransportMode.SPI_USB_BRIDGE
 
+    def test_mode_from_select_value_accepts_cli_value(self) -> None:
+        screen = LaunchScreen()
+        assert screen._mode_from_select_value('spi') is TransportMode.SPI_USB_BRIDGE
+
 
 # ---------------------------------------------------------------------------
 # action_quit

@@ -3,12 +3,12 @@
 
 """Frontend helpers and widgets."""
 
-from src.frontend.capture_view import CaptureView
-from src.frontend.capture_view import CaptureViewState
-from src.frontend.capture_view import console_log_part_path
+from src.frontend.capture_events import CaptureEventPresenter
+from src.frontend.capture_events import CaptureEventState
+from src.frontend.capture_events import console_log_part_path
 
 __all__ = [
-    'CaptureView',
-    'CaptureViewState',
+    'CaptureEventPresenter',
+    'CaptureEventState',
     'console_log_part_path',
 ]

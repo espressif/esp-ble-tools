@@ -22,7 +22,7 @@ from src.backend.support.transport.base import TransportStatus
 
 VENDOR_ID = 0x303A
 PRODUCT_ID = 0x4001
-DEVICE_DESCRIPTION = 'USB-SPI-BRIDGE'
+DEVICE_DESCRIPTION = 'SPI-BRIDGE'
 
 SPI_BITS_PER_BYTE = 8
 SPI_USB_RX_BUFFER_SIZE = 20 * 1024

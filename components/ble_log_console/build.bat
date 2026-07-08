@@ -36,7 +36,21 @@ if not exist "dist\%EXE_NAME%" (
     exit /b 1
 )
 
+if exist "%CALLER_DIR%\%EXE_NAME%" (
+    del /Q "%CALLER_DIR%\%EXE_NAME%" 2> nul
+    if exist "%CALLER_DIR%\%EXE_NAME%" (
+        echo ERROR: Cannot replace existing executable: %CALLER_DIR%\%EXE_NAME%
+        echo Close any running BLE Log Console window and make sure the file is not locked, then rebuild.
+        exit /b 1
+    )
+)
+
 move /Y "dist\%EXE_NAME%" "%CALLER_DIR%\%EXE_NAME%" > nul
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to move executable to %CALLER_DIR%\%EXE_NAME%
+    echo Check directory permissions and whether antivirus software is holding the file.
+    exit /b %errorlevel%
+)
 echo.
 echo Executable ready: %CALLER_DIR%\%EXE_NAME%
 

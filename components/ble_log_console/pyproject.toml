@@ -31,6 +31,7 @@ packages = [
     "src.backend.aggregator",
     "src.backend.parser",
     "src.backend.pipeline",
+    "src.backend.reader",
     "src.backend.support",
     "src.backend.support.parser_core",
     "src.backend.support.stats",

@@ -129,13 +129,13 @@ SPI Bridge example:
 python console.py --mode spi --port <PORT>
 ```
 
-`spi` is an alias for `spi_usb_bridge`. On Linux, SPI Bridge endpoint names usually look different from UART serial-port names. Use the endpoint printed by `ports --mode spi`.
+`spi` selects the SPI Bridge transport. On Linux, SPI Bridge endpoint names usually look different from UART serial-port names. Use the endpoint printed by `ports --mode spi`.
 
 ### CLI Options
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--mode` | `-m` | `uart` | Transport mode: `uart`, `spi`, or `spi_usb_bridge` |
+| `--mode` | `-m` | `uart` | Transport mode: `uart` or `spi` |
 | `--port` | `-p` | optional | Transport endpoint. Omit it to use the Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART baud rate; must match firmware configuration |
 | `--log-dir` | `-d` | `./logs` | Directory where capture files are saved |

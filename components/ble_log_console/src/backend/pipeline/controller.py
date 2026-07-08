@@ -26,10 +26,10 @@ from src.backend.writer.raw_writer import run_raw_writer_process
 from src.backend.parser.worker import ParserStatus
 from src.backend.parser.worker import run_parser_loop
 from src.backend.parser.worker import run_parser_process
-from src.backend.pipeline.reader import ReaderCommand
-from src.backend.pipeline.reader import ReaderProcessEvent
-from src.backend.pipeline.reader import run_reader_loop
-from src.backend.pipeline.reader import run_reader_process
+from src.backend.reader.worker import ReaderCommand
+from src.backend.reader.worker import ReaderProcessEvent
+from src.backend.reader.worker import run_reader_loop
+from src.backend.reader.worker import run_reader_process
 from src.backend.models import TransportConfig
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import create_transport_reader

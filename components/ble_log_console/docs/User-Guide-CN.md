@@ -129,13 +129,13 @@ SPI Bridge 示例：
 python console.py --mode spi --port <PORT>
 ```
 
-`spi` 是 `spi_usb_bridge` 的简写，两者等价。Linux 下 SPI Bridge 端口格式通常不同于 UART 串口，这是传输模式本身决定的，不影响使用。请以 `ports --mode spi` 输出为准。
+`spi` 表示 SPI Bridge 传输。Linux 下 SPI Bridge 端口格式通常不同于 UART 串口，这是传输模式本身决定的，不影响使用。请以 `ports --mode spi` 输出为准。
 
 ### CLI 选项
 
 | 参数 | 缩写 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi` 或 `spi_usb_bridge` |
+| `--mode` | `-m` | `uart` | 传输模式：`uart` 或 `spi` |
 | `--port` | `-p` | 可选 | 传输端点。省略时打开 Launch Screen |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | `./logs` | 捕获文件保存目录 |

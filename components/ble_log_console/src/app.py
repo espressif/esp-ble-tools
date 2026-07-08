@@ -15,8 +15,6 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.message import Message
 
-from src.backend.pipeline import CapturePipeline
-from src.backend.writer import RawWriterConfig
 from src.backend.models import BackendStopped
 from src.backend.models import BufUtilEntry
 from src.backend.models import FrameLossDetected
@@ -33,7 +31,7 @@ from src.backend.models import TransportMode
 from src.backend.models import UserNotice
 from src.backend.models import format_bitrate
 from src.backend.models import resolve_source_name
-from src.frontend.capture_view import CaptureView
+from src.frontend.capture_session import CaptureSession
 from src.frontend.launch_screen import LaunchScreen
 from src.frontend.log_view import LogView
 from src.frontend.shortcut_screen import ShortcutScreen
@@ -42,7 +40,6 @@ from src.frontend.stats_screen import StatsScreen
 from src.frontend.status_panel import StatusPanel
 
 PIPELINE_POLL_INTERVAL_SEC = 0.05
-PIPELINE_JOIN_TIMEOUT_SEC = 2.0
 
 
 class BLELogApp(App):
@@ -89,9 +86,7 @@ class BLELogApp(App):
         self._output_path: Path | None = None
         self._capture_start_time = 0.0
         self._exit_after_backend_stop = False
-        self._pipeline: CapturePipeline | None = None
-        self._capture_view: CaptureView | None = None
-        self._pipeline_finished = False
+        self._capture_session: CaptureSession | None = None
         self._saved_capture_path: Path | None = None
         self._saved_capture_paths: list[Path] = []
         self._saved_console_log_path: Path | None = None
@@ -152,7 +147,7 @@ class BLELogApp(App):
         self._saved_console_log_path = None
         self._saved_console_log_paths = []
         self._exit_after_backend_stop = False
-        self._pipeline_finished = False
+        self._capture_session = None
 
     def _start_capture(self) -> None:
         if self._transport_config is None or self._output_path is None:
@@ -160,38 +155,23 @@ class BLELogApp(App):
             return
 
         self._capture_start_time = time.perf_counter()
-        self._capture_view = CaptureView(self._output_path, debug=self._debug)
-        self._pipeline = CapturePipeline(self._transport_config, RawWriterConfig(self._output_path))
-
-        try:
-            self._pipeline.start()
-        except Exception as e:
-            self._publish_view_messages((UserNotice(f'Failed to start capture: {e}', level='warning'),))
-            self.post_message(BackendStopped(str(e)))
-            self._pipeline_finished = True
+        self._capture_session = CaptureSession(
+            self._transport_config,
+            self._output_path,
+            debug=self._debug,
+        )
+        self._publish_view_messages(self._capture_session.start())
+        if self._capture_session.finished:
             return
 
         self.set_interval(PIPELINE_POLL_INTERVAL_SEC, self._poll_pipeline)
 
     def _poll_pipeline(self) -> None:
-        pipeline = self._pipeline
-        capture_view = self._capture_view
-        if pipeline is None or capture_view is None or self._pipeline_finished:
+        capture_session = self._capture_session
+        if capture_session is None or capture_session.finished:
             return
 
-        self._publish_view_messages(capture_view.handle_events(pipeline.drain_events()))
-        if pipeline.is_alive():
-            return
-
-        self._finish_pipeline(pipeline, capture_view)
-
-    def _finish_pipeline(self, pipeline: CapturePipeline, capture_view: CaptureView) -> None:
-        self._pipeline_finished = True
-        events, result = pipeline.wait_with_events(PIPELINE_JOIN_TIMEOUT_SEC)
-        self._publish_view_messages(capture_view.handle_events(events))
-        self._publish_view_messages(capture_view.handle_result(result))
-        self._pipeline = None
-        self._capture_view = None
+        self._publish_view_messages(capture_session.poll())
 
     def _publish_view_messages(self, messages: tuple[Message, ...]) -> None:
         self._sync_capture_state()
@@ -199,13 +179,12 @@ class BLELogApp(App):
             self.post_message(message)
 
     def _sync_capture_state(self) -> None:
-        if self._capture_view is None:
+        if self._capture_session is None:
             return
-        state = self._capture_view.state
-        self._saved_capture_path = state.saved_capture_path
-        self._saved_capture_paths = list(state.saved_capture_paths)
-        self._saved_console_log_path = state.saved_console_log_path
-        self._saved_console_log_paths = list(state.saved_console_log_paths)
+        self._saved_capture_path = self._capture_session.saved_capture_path
+        self._saved_capture_paths = self._capture_session.saved_capture_paths
+        self._saved_console_log_path = self._capture_session.saved_console_log_path
+        self._saved_console_log_paths = self._capture_session.saved_console_log_paths
 
     # --- Message handlers ---
 
@@ -288,18 +267,17 @@ class BLELogApp(App):
         self.push_screen(ShortcutScreen())
 
     def action_reset_chip(self) -> None:
-        pipeline = self._pipeline
-        if pipeline is None or self._pipeline_finished:
+        capture_session = self._capture_session
+        if capture_session is None or not capture_session.reset_target():
             self.query_one(LogView).write_warning('Reset is not available because capture is not running')
             return
-        pipeline.reset_target()
 
     def action_quit(self) -> None:
-        pipeline = self._pipeline
-        if pipeline is None or self._pipeline_finished:
+        capture_session = self._capture_session
+        if capture_session is None or capture_session.finished:
             self.exit()
             return
 
         self._exit_after_backend_stop = True
-        pipeline.stop()
+        capture_session.stop()
         self.post_message(UserNotice('Finishing capture: saving remaining transport data before exit.'))

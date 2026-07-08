@@ -13,7 +13,7 @@ from src.backend.aggregator.event_aggregator import InternalFrameUpdate
 from src.backend.pipeline.controller import CapturePipelineResult
 from src.backend.writer.raw_writer import RawWriterProcessEvent
 from src.backend.writer.raw_writer import RawWriterStatus
-from src.backend.pipeline.reader import ReaderProcessEvent
+from src.backend.reader.worker import ReaderProcessEvent
 from src.backend.parser.worker import ParserStatus
 from src.backend.models import BackendStopped
 from src.backend.models import FrameStats
@@ -25,12 +25,12 @@ from src.backend.models import StatsUpdated
 from src.backend.models import TransportMode
 from src.backend.models import UserNotice
 from src.backend.support.transport import TransportStatus
-from src.frontend.capture_view import CaptureView
-from src.frontend.capture_view import console_log_part_path
+from src.frontend.capture_events import CaptureEventPresenter
+from src.frontend.capture_events import console_log_part_path
 
 
 def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
-    adapter = CaptureView(tmp_path / 'ble_log.bin')
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin')
     snapshot = AggregatorSnapshot(
         stats=FrameStats(),
         funnel_snapshots=(),
@@ -41,7 +41,7 @@ def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
         parser_carried_bytes=0,
     )
 
-    messages = adapter.handle_event(snapshot)
+    messages = presenter.handle_event(snapshot)
 
     assert len(messages) == 1
     assert isinstance(messages[0], StatsUpdated)
@@ -50,39 +50,39 @@ def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
 
 def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
-    adapter = CaptureView(output_path)
+    presenter = CaptureEventPresenter(output_path)
 
-    first = adapter.handle_event(AggregatorUpdate(redir_texts=('hello ',)))
-    second = adapter.handle_event(AggregatorUpdate(redir_texts=('world\npartial',)))
+    first = presenter.handle_event(AggregatorUpdate(redir_texts=('hello ',)))
+    second = presenter.handle_event(AggregatorUpdate(redir_texts=('world\npartial',)))
 
     assert first == ()
     assert len(second) == 1
     assert isinstance(second[0], LogLine)
     assert second[0].text == 'hello world'
     assert console_log_part_path(output_path, 1).read_text() == 'hello world\npartial'
-    assert adapter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
+    assert presenter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
 
 
 def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
-    adapter = CaptureView(output_path, console_part_max_bytes=3)
+    presenter = CaptureEventPresenter(output_path, console_part_max_bytes=3)
 
-    adapter.handle_event(AggregatorUpdate(redir_texts=('abc',)))
-    adapter.handle_event(AggregatorUpdate(redir_texts=('de',)))
-    adapter.close()
+    presenter.handle_event(AggregatorUpdate(redir_texts=('abc',)))
+    presenter.handle_event(AggregatorUpdate(redir_texts=('de',)))
+    presenter.close()
 
     assert console_log_part_path(output_path, 1).read_text() == 'abc'
     assert console_log_part_path(output_path, 2).read_text() == 'de'
-    assert adapter.state.saved_console_log_paths == (
+    assert presenter.state.saved_console_log_paths == (
         console_log_part_path(output_path, 1),
         console_log_part_path(output_path, 2),
     )
 
 
 def test_aggregator_update_maps_to_existing_ui_messages(tmp_path: Path) -> None:
-    adapter = CaptureView(tmp_path / 'ble_log.bin')
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin')
 
-    messages = adapter.handle_event(
+    messages = presenter.handle_event(
         AggregatorUpdate(
             internal_frames=(
                 InternalFrameUpdate(
@@ -111,9 +111,9 @@ def test_aggregator_update_maps_to_existing_ui_messages(tmp_path: Path) -> None:
 def test_raw_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     part2 = tmp_path / 'ble_log_part002.bin'
-    adapter = CaptureView(output_path)
+    presenter = CaptureEventPresenter(output_path)
 
-    opened = adapter.handle_event(
+    opened = presenter.handle_event(
         RawWriterProcessEvent(
             kind='opened',
             status=RawWriterStatus(
@@ -126,7 +126,7 @@ def test_raw_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> 
             ),
         )
     )
-    rotated = adapter.handle_event(
+    rotated = presenter.handle_event(
         RawWriterProcessEvent(
             kind='rotated',
             status=RawWriterStatus(
@@ -144,11 +144,11 @@ def test_raw_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> 
     assert str(output_path) in opened[0].text
     assert isinstance(rotated[0], UserNotice)
     assert str(part2) in rotated[0].text
-    assert adapter.state.saved_capture_paths == (output_path, part2)
+    assert presenter.state.saved_capture_paths == (output_path, part2)
 
 
 def test_process_errors_become_warning_notices(tmp_path: Path) -> None:
-    adapter = CaptureView(tmp_path / 'ble_log.bin')
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin')
 
     events = [
         ReaderProcessEvent(kind='error', message='reader failed'),
@@ -157,7 +157,7 @@ def test_process_errors_become_warning_notices(tmp_path: Path) -> None:
         RawWriterProcessEvent(kind='error', message='disk full'),
     ]
 
-    messages = [adapter.handle_event(event)[0] for event in events]
+    messages = [presenter.handle_event(event)[0] for event in events]
 
     assert [message.level for message in messages] == ['warning'] * 4
     assert [message.text for message in messages] == [
@@ -169,8 +169,8 @@ def test_process_errors_become_warning_notices(tmp_path: Path) -> None:
 
 
 def test_reader_opened_becomes_connected_notice(tmp_path: Path) -> None:
-    adapter = CaptureView(tmp_path / 'ble_log.bin')
-    messages = adapter.handle_event(
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin')
+    messages = presenter.handle_event(
         ReaderProcessEvent(
             kind='opened',
             status=TransportStatus(
@@ -188,10 +188,10 @@ def test_reader_opened_becomes_connected_notice(tmp_path: Path) -> None:
 
 def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
-    adapter = CaptureView(output_path)
-    adapter.handle_event(AggregatorUpdate(redir_texts=('hello\n',)))
+    presenter = CaptureEventPresenter(output_path)
+    presenter.handle_event(AggregatorUpdate(redir_texts=('hello\n',)))
 
-    messages = adapter.handle_result(
+    messages = presenter.handle_result(
         CapturePipelineResult(
             raw_paths=(output_path,),
             reader_error=None,
@@ -210,14 +210,14 @@ def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) 
     assert console_log_part_path(output_path, 1).read_text() == 'hello\n'
     assert isinstance(messages[0], BackendStopped)
     assert messages[0].reason == 'Capture completed'
-    assert adapter.state.disconnected
+    assert presenter.state.disconnected
 
 
 def test_failed_result_emits_notice_and_backend_stopped(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
-    adapter = CaptureView(output_path)
+    presenter = CaptureEventPresenter(output_path)
 
-    messages = adapter.handle_result(
+    messages = presenter.handle_result(
         CapturePipelineResult(
             raw_paths=(),
             reader_error='reader failed',

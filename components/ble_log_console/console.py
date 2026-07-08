@@ -13,6 +13,7 @@ Usage:
 """
 
 from datetime import datetime
+import multiprocessing
 import os
 from pathlib import Path
 import subprocess
@@ -28,7 +29,7 @@ from src.backend.support.transport.registry import list_transport_modes
 from src.backend.support.transport.registry import list_transport_port_options
 from src.backend.support.transport.uart_transport import validate_uart_port
 
-MODE_CHOICES = ('uart', 'spi', 'spi_usb_bridge')
+MODE_CHOICES = ('uart', 'spi')
 UDEV_RULE_PATH = Path('/etc/udev/rules.d/99-ble-log-spi-bridge.rules')
 UDEV_RULE = (
     f'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{VENDOR_ID:04x}", '
@@ -51,7 +52,7 @@ def _mode_cli_name(mode: TransportMode) -> str:
 
 def _endpoint_display_label(mode: TransportMode, label: str, value: str) -> str:
     if mode is TransportMode.SPI_USB_BRIDGE:
-        return f'USB-SPI-BRIDGE  {value}'
+        return f'SPI-BRIDGE  {value}'
     return label
 
 
@@ -256,4 +257,5 @@ def list_files(log_dir: str | None) -> None:
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     cli()

@@ -37,8 +37,14 @@ from src.frontend.rendering import terminal_border_style
 BAUD_RATES: list[int] = [115200, 230400, 460800, 921600, 1500000, 2000000, 3000000]
 DEFAULT_BAUD_RATE: int = 3000000
 DEFAULT_TRANSPORT_MODE = TransportMode.UART
-SPI_PORT_LABEL_PREFIX = 'USB-SPI-BRIDGE'
+SPI_PORT_LABEL_PREFIX = 'SPI-BRIDGE'
 MAX_PORT_LABEL_LEN = 36
+
+
+def _mode_select_value(mode: TransportMode) -> str:
+    if mode is TransportMode.SPI_USB_BRIDGE:
+        return 'spi'
+    return mode.value
 
 
 class LaunchScreen(Screen[LaunchConfig | None]):
@@ -139,7 +145,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         self._default_log_dir = default_log_dir or Path.cwd()/ "logs"
 
     def compose(self) -> ComposeResult:
-        mode_options = [(label, mode.value) for label, mode in list_transport_modes()]
+        mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
         raw_port_options = list_transport_port_options(self._mode)
         port_options = self._display_port_options(raw_port_options)
         baud_options = [(str(b), b) for b in BAUD_RATES]
@@ -148,7 +154,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             yield Label('BLE Log Console Setup', id='launch-title')
 
             yield Label('Transport Mode', classes='field-label')
-            yield Select(mode_options, value=self._mode.value, id='mode-select')
+            yield Select(mode_options, value=_mode_select_value(self._mode), id='mode-select')
 
             yield Label('Port', classes='field-label')
             with Horizontal(classes='field-row'):
@@ -229,7 +235,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             return None
         value_text = str(value)
         for label, mode in list_transport_modes():
-            if value_text in (mode.value, label):
+            if value_text in (_mode_select_value(mode), mode.value, label):
                 return mode
         try:
             return TransportMode(value_text)

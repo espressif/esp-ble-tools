@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-"""UI-side adapter for capture pipeline events."""
+"""Presentation layer for capture pipeline events."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from src.backend.aggregator.event_aggregator import AggregatorUpdate
 from src.backend.pipeline.controller import CapturePipelineResult
 from src.backend.writer.raw_writer import CAPTURE_PART_MAX_BYTES
 from src.backend.writer.raw_writer import RawWriterProcessEvent
-from src.backend.pipeline.reader import ReaderProcessEvent
+from src.backend.reader.worker import ReaderProcessEvent
 from src.backend.parser.worker import ParserStatus
 from src.backend.models import BackendStopped
 from src.backend.models import FrameLossDetected
@@ -52,7 +52,7 @@ Clock = Callable[[], float]
 
 
 @dataclass(frozen=True)
-class CaptureViewState:
+class CaptureEventState:
     """UI-owned capture state derived from pipeline events."""
 
     saved_capture_path: Path | None
@@ -92,7 +92,7 @@ def _next_capture_notice_threshold(current: int) -> int:
     return current + CAPTURE_NOTICE_STEP
 
 
-class CaptureView:
+class CaptureEventPresenter:
     """Translate capture pipeline events into existing Textual messages."""
 
     def __init__(
@@ -127,8 +127,8 @@ class CaptureView:
         self._next_capture_notice = CAPTURE_NOTICE_THRESHOLDS[0]
 
     @property
-    def state(self) -> CaptureViewState:
-        return CaptureViewState(
+    def state(self) -> CaptureEventState:
+        return CaptureEventState(
             saved_capture_path=self._saved_capture_paths[-1] if self._saved_capture_paths else None,
             saved_capture_paths=tuple(self._saved_capture_paths),
             saved_console_log_path=self._saved_console_log_paths[-1] if self._saved_console_log_paths else None,
