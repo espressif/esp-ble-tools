@@ -1,0 +1,229 @@
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+
+"""Thin composition of stats sub-modules into a single accumulator."""
+
+from __future__ import annotations
+
+from src.backend.models import BleLogSource
+from src.backend.models import BufUtilEntry
+from src.backend.models import FrameByteCount
+from src.backend.models import FrameStats
+from src.backend.models import FunnelSnapshot
+from src.backend.models import SourceCode
+from src.backend.models import ThroughputInfo
+from src.backend.models import TransportBitrate
+from src.backend.support.stats.buf_util import BufUtilTracker
+from src.backend.support.stats.firmware_loss import FirmwareLossTracker
+from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
+from src.backend.support.stats.sn_gap import SNGapTracker
+from src.backend.support.stats.transport import TransportMetrics
+
+_ZERO = FrameByteCount(frames=0, bytes=0)
+
+_SN_PRODUCED_MIN_VERSION = 4
+
+
+class StatsAccumulator:
+    def __init__(self) -> None:
+        self._bitrate = TransportBitrate()
+        self._transport = TransportMetrics()
+        self._fw_loss = FirmwareLossTracker()
+        self._fw_written = FirmwareWrittenTracker()
+        self._sn_gap = SNGapTracker()
+        self._buf_util = BufUtilTracker()
+        self._per_source_received_frames: dict[SourceCode, int] = {}
+        self._per_source_received_bytes: dict[SourceCode, int] = {}
+        self._enh_stat_prev: dict[SourceCode, tuple[int, int, int, int]] = {}
+        self._total_elapsed: float = 0.0
+        self._prev_written: dict[SourceCode, tuple[int, int]] = {}
+        self._sn_gap_enabled = False  # disabled until firmware version >= 4 confirmed
+
+    def set_firmware_version(self, version: int) -> None:
+        self._sn_gap_enabled = version >= _SN_PRODUCED_MIN_VERSION
+
+    def record_bytes(self, count: int) -> None:
+        self._transport.record_bytes(count)
+
+    def record_frame(self, frame_size: int = 0, src_code: int = 0, frame_sn: int = -1) -> int:
+        """Record a received frame. Returns confirmed SN gap count (0 if SN tracking disabled)."""
+        self._transport.record_frame()
+        gap = 0
+        if frame_sn >= 0 and src_code > 0:
+            if self._sn_gap_enabled:
+                gap = self._sn_gap.record(src_code, frame_sn)
+            self._per_source_received_frames[src_code] = self._per_source_received_frames.get(src_code, 0) + 1
+            self._per_source_received_bytes[src_code] = self._per_source_received_bytes.get(src_code, 0) + frame_size
+        return gap
+
+    @property
+    def sn_gap_enabled(self) -> bool:
+        return self._sn_gap_enabled
+
+    def record_frame_sn(self, src_code: SourceCode, frame_sn: int) -> int:
+        """Record sequence number for an already-counted regular frame."""
+
+        if not self._sn_gap_enabled or frame_sn < 0 or src_code <= 0:
+            return 0
+        return self._sn_gap.record(src_code, frame_sn)
+
+    def record_regular_frame_summary(
+        self,
+        frame_count: int,
+        per_source_frames: dict[SourceCode, int],
+        per_source_bytes: dict[SourceCode, int],
+    ) -> None:
+        """Record a visible batch of regular parser frame counters."""
+
+        if frame_count <= 0:
+            return
+
+        self._transport.record_frames(frame_count)
+        for src_code, count in per_source_frames.items():
+            self._per_source_received_frames[src_code] = self._per_source_received_frames.get(src_code, 0) + count
+        for src_code, byte_count in per_source_bytes.items():
+            self._per_source_received_bytes[src_code] = self._per_source_received_bytes.get(src_code, 0) + byte_count
+
+    @property
+    def frame_count(self) -> int:
+        return self._transport.frame_count
+
+    # -- Transport bitrate -------------------------------------------------------
+
+    def set_transport_bitrate(self, bitrate: TransportBitrate) -> None:
+        self._bitrate = bitrate
+        self._transport.set_bitrate(bitrate)
+
+    # -- Buffer utilization ------------------------------------------------------
+
+    def record_buf_util(self, lbm_id: int, trans_cnt: int, inflight_peak: int) -> None:
+        self._buf_util.record(lbm_id, trans_cnt, inflight_peak)
+
+    def buf_util_snapshot(self) -> list[BufUtilEntry]:
+        return self._buf_util.snapshot()  # type: ignore[no-any-return]
+
+    # -- Firmware ENH_STAT -------------------------------------------------------
+
+    def record_enh_stat(
+        self,
+        src_code: SourceCode,
+        written_frames: int,
+        lost_frames: int,
+        written_bytes: int,
+        lost_bytes: int,
+    ) -> tuple[int, int]:
+        """Record firmware ENH_STAT report. Returns (loss_delta_frames, loss_delta_bytes).
+
+        Torn-read guard: discards reports where byte deltas exceed 2s of wire
+        capacity (non-atomic enh_stat_t reads under concurrent ISR/task updates).
+        """
+        prev = self._enh_stat_prev.get(src_code)
+        max_payload_bytes_per_sec = self._bitrate.max_payload_bytes_per_sec
+        if prev is not None and max_payload_bytes_per_sec is not None:
+            max_bytes_delta = int(max_payload_bytes_per_sec * 2)
+            d_written_bytes = written_bytes - prev[2]
+            d_lost_bytes = lost_bytes - prev[3]
+            if d_written_bytes > max_bytes_delta or d_lost_bytes > max_bytes_delta:
+                # Update prev to avoid cascading discards on next report
+                self._enh_stat_prev[src_code] = (written_frames, lost_frames, written_bytes, lost_bytes)
+                return (0, 0)
+
+        self._enh_stat_prev[src_code] = (written_frames, lost_frames, written_bytes, lost_bytes)
+        self._fw_written.record(src_code, written_frames, written_bytes)
+        return self._fw_loss.record(src_code, lost_frames, lost_bytes)  # type: ignore[no-any-return]
+
+    # -- Reset -------------------------------------------------------------------
+
+    def reset(self, reason: str) -> None:
+        """Reset components by group.
+
+        reason: "init" (INIT_DONE) or "flush" (FLUSH)
+        """
+        # SN-coupled: always full reset
+        self._sn_gap.reset()
+
+        if reason == 'init':
+            # ENH_STAT-coupled: full reset
+            self._fw_loss.reset()
+            self._fw_written.reset()
+            self._enh_stat_prev.clear()
+            self._prev_written.clear()
+            self._buf_util.reset()
+        elif reason == 'flush':
+            # ENH_STAT-coupled: reset baselines only
+            self._fw_loss.reset_baselines()
+            self._fw_written.reset_baselines()
+            self._enh_stat_prev.clear()
+            # Console-local: preserve (no action)
+
+    # -- Snapshots ---------------------------------------------------------------
+
+    def snapshot(self, elapsed_sec: float) -> FrameStats:
+        return FrameStats(
+            transport=self._transport.harvest(elapsed_sec),
+            loss=self._fw_loss.totals(),
+            per_source_rx_bytes=(dict(self._per_source_received_bytes) if self._per_source_received_bytes else None),
+        )
+
+    def funnel_snapshot(self, elapsed_sec: float = 0.0) -> list[FunnelSnapshot]:
+        """Build per-source funnel snapshots from all component data."""
+        written_totals = self._fw_written.totals()
+        loss_totals = self._fw_loss.per_source_totals()
+
+        sources: set[int] = set()
+        sources.update(written_totals)
+        sources.update(loss_totals)
+        sources.update(self._per_source_received_frames)
+
+        # Exclude INTERNAL (src_code=0): its transport_loss is inherently
+        # unknowable — if INTERNAL frames are lost, the ENH_STAT data inside
+        # them never arrives, making the written-vs-received comparison circular.
+        sources.discard(BleLogSource.INTERNAL)
+
+        self._total_elapsed += elapsed_sec
+
+        result: list[FunnelSnapshot] = []
+        for src in sorted(sources):
+            w_frames, w_bytes = written_totals.get(src, (0, 0))
+            l_frames, l_bytes = loss_totals.get(src, (0, 0))
+            r_frames = self._per_source_received_frames.get(src, 0)
+            r_bytes = self._per_source_received_bytes.get(src, 0)
+
+            produced = FrameByteCount(frames=w_frames + l_frames, bytes=w_bytes + l_bytes)
+            written = FrameByteCount(frames=w_frames, bytes=w_bytes)
+            received = FrameByteCount(frames=r_frames, bytes=r_bytes)
+            buffer_loss = FrameByteCount(frames=l_frames, bytes=l_bytes)
+            pw_frames, pw_bytes = self._prev_written.get(src, (0, 0))
+            transport_loss = FrameByteCount(
+                frames=max(0, pw_frames - r_frames),
+                bytes=max(0, pw_bytes - r_bytes),
+            )
+
+            if self._total_elapsed > 0:
+                tp_fps = r_frames / self._total_elapsed
+                throughput_bits_per_sec = self._bitrate.payload_bytes_to_wire_bits(r_bytes) / self._total_elapsed
+            else:
+                tp_fps = 0.0
+                throughput_bits_per_sec = 0.0
+
+            result.append(
+                FunnelSnapshot(
+                    source=src,
+                    produced=produced,
+                    written=written,
+                    received=received,
+                    buffer_loss=buffer_loss,
+                    transport_loss=transport_loss,
+                    throughput=ThroughputInfo(
+                        throughput_fps=tp_fps,
+                        throughput_bits_per_sec=throughput_bits_per_sec,
+                        peak_write_frames=0,
+                        peak_write_bits_per_sec=0.0,
+                        peak_window_ms=0,
+                    ),
+                )
+            )
+
+        self._prev_written = dict(written_totals)
+
+        return result

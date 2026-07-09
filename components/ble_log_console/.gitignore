@@ -1,0 +1,14 @@
+.venv/
+.venv-build/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.spec
+logs/
+uv.lock
+ble_log_console_*
+src/backend/support/parser_core/checksum_fast.c
+src/backend/support/parser_core/checksum_fast*.so
+src/backend/support/parser_core/checksum_fast*.pyd

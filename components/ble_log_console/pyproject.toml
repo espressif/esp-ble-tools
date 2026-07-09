@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ble-log-console"
+version = "1.0.2"
+description = "Textual-based BLE Log capture and analysis console"
+requires-python = ">=3.10"
+dependencies = [
+    "click",
+    "pyserial",
+    "pyusb",
+    "rich",
+    "textual",
+    "textual-fspicker",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller", "cython"]
+test = ["pytest"]
+
+[project.scripts]
+ble-log-console = "console:cli"
+
+[tool.setuptools]
+py-modules = ["console", "build_exe"]
+packages = [
+    "src",
+    "src.backend",
+    "src.backend.analysis",
+    "src.backend.io",
+    "src.backend.pipeline",
+    "src.backend.support",
+    "src.backend.support.parser_core",
+    "src.backend.support.stats",
+    "src.backend.support.transport",
+    "src.frontend",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
