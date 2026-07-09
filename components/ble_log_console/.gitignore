@@ -8,7 +8,8 @@ dist/
 *.spec
 logs/
 uv.lock
-ble_log_console_*
+/ble_log_console_ubuntu*
+/ble_log_console_windows*
 src/backend/support/parser_core/checksum_fast.c
 src/backend/support/parser_core/checksum_fast*.so
 src/backend/support/parser_core/checksum_fast*.pyd
