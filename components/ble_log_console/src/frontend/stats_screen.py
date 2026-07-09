@@ -118,14 +118,10 @@ def _build_console_table(snapshots: list[FunnelSnapshot]) -> Table:
     table.add_column('Received\nBytes', justify='right', min_width=10, max_width=12)
     table.add_column('Average\nFrames/s', justify='right', style='magenta', min_width=10, max_width=12)
     table.add_column('Average\nBits/s', justify='right', style='magenta', min_width=10, max_width=12)
-    table.add_column('Peak\nFrames/10ms', justify='right', style='magenta', min_width=12, max_width=14)
-    table.add_column('Peak\nBits/s', justify='right', style='magenta', min_width=12, max_width=14)
 
     for snap in snapshots:
         tp_fps = snap.throughput.throughput_fps
         throughput_bits_per_sec = snap.throughput.throughput_bits_per_sec
-        pf = snap.throughput.peak_write_frames
-        peak_bits_per_sec = snap.throughput.peak_write_bits_per_sec
 
         table.add_row(
             resolve_source_name(snap.source),
@@ -133,8 +129,6 @@ def _build_console_table(snapshots: list[FunnelSnapshot]) -> Table:
             format_bytes(snap.received.bytes) if snap.received.bytes > 0 else '-',
             f'{tp_fps:.0f}' if tp_fps > 0 else '-',
             format_bitrate(throughput_bits_per_sec) if throughput_bits_per_sec > 0 else '-',
-            f'{pf}' if pf > 0 else '-',
-            format_bitrate(peak_bits_per_sec) if peak_bits_per_sec > 0 else '-',
         )
 
     return table

@@ -9,8 +9,8 @@ Verifies that reset("init") and reset("flush") dispatch correctly per the spec:
 |------------------|-----------------------------------------|--------------|------------------------------------|
 | SN-coupled       | SNGapTracker                            | full reset   | full reset                         |
 | ENH_STAT-coupled | FirmwareLossTracker, FirmwareWritten    | full reset   | reset baselines, keep latest snapshot |
-| Console-local    | TransportMetrics, PeakBurstTracker,     | preserve     | preserve                           |
-|                  | per_source_received, throughput cache   |              |                                    |
+| Console-local    | TransportMetrics, per_source_received,  | preserve     | preserve                           |
+|                  | throughput cache                        |              |                                    |
 """
 
 from src.backend.support.stats import StatsAccumulator
@@ -25,8 +25,6 @@ class TestResetPropagation:
         stats.record_bytes(1000)
         stats.record_frame(100, 1, 10)  # frame_size=100, src=1, sn=10
         stats.record_frame(100, 1, 11)
-        # Peak burst (console-local)
-        stats.record_frame_ts(1000, 100, 1)
         # ENH_STAT (firmware-coupled)
         stats.record_enh_stat(
             src_code=1, written_frames=100, lost_frames=5, written_bytes=5000, lost_bytes=250

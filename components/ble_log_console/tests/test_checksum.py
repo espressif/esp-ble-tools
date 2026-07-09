@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from src.backend.support.parser_core.checksum import sum_checksum
+from src.backend.support.parser_core.checksum import sum_checksum_range
 from src.backend.support.parser_core.checksum import xor_checksum
+from src.backend.support.parser_core.checksum import xor_checksum_range
 
 
 class TestSumChecksum:
@@ -20,6 +22,13 @@ class TestSumChecksum:
         # 256 bytes of 0xFF = 256 * 255 = 65280
         data = b'\xff' * 256
         assert sum_checksum(data) == 65280
+
+    def test_range_matches_full_checksum(self) -> None:
+        data = b'\x01\x02\x03\x04\x05'
+        padded = b'xx' + data + b'yy'
+
+        assert sum_checksum_range(data, 0, len(data)) == sum_checksum(data)
+        assert sum_checksum_range(padded, 2, len(data)) == sum_checksum(data)
 
 
 class TestXorChecksum:
@@ -94,3 +103,26 @@ class TestXorChecksum:
         ]
         for data in test_vectors:
             assert xor_checksum(data) == reference_xor(data), f'Mismatch for data length {len(data)}'
+
+    def test_range_matches_full_checksum(self) -> None:
+        test_vectors = [
+            b'',
+            b'\x01',
+            b'\x01\x02\x03',
+            b'\x01\x02\x03\x04',
+            b'\x01\x02\x03\x04\x05',
+            b'\xff' * 16,
+            b'\x0a\x00\x00\x01\x00\x00' + b'\x00' * 10,
+        ]
+        for data in test_vectors:
+            padded = b'prefix' + data + b'suffix'
+            assert xor_checksum_range(data, 0, len(data)) == xor_checksum(data)
+            assert xor_checksum_range(padded, len(b'prefix'), len(data)) == xor_checksum(data)
+
+    def test_range_rejects_invalid_bounds(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError):
+            xor_checksum_range(b'abc', -1, 1)
+        with pytest.raises(ValueError):
+            xor_checksum_range(b'abc', 0, 4)

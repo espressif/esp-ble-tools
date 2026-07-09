@@ -5,17 +5,16 @@
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
 from typing import cast
 
-from src.backend.parser.events import BleLogEvent
-from src.backend.parser.events import EnhStatEvent
-from src.backend.parser.events import FrameEvent
-from src.backend.parser.events import InternalEvent
-from src.backend.parser.events import ParseBatch
-from src.backend.parser.events import ParseSummary
-from src.backend.parser.events import RedirEvent
+from src.backend.analysis.parser_events import BleLogEvent
+from src.backend.analysis.parser_events import EnhStatEvent
+from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import InternalEvent
+from src.backend.analysis.parser_events import ParseBatch
+from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.models import BufUtilEntry
 from src.backend.models import BufUtilResult
 from src.backend.models import FRAME_OVERHEAD
@@ -24,16 +23,10 @@ from src.backend.models import FunnelSnapshot
 from src.backend.models import InfoResult
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
-from src.backend.models import LL_TS_OFFSET
-from src.backend.models import LL_TS_SIZE
 from src.backend.models import LossType
-from src.backend.models import ParsedFrame
 from src.backend.models import TransportBitrate
-from src.backend.models import has_os_ts
-from src.backend.models import is_ll_source
 from src.backend.models import resolve_source_name
 from src.backend.support.stats import StatsAccumulator
-from src.backend.support.stats import TrafficSpikeResult
 
 
 @dataclass(frozen=True)
@@ -63,7 +56,6 @@ class AggregatorUpdate:
     redir_texts: tuple[str, ...] = ()
     internal_frames: tuple[InternalFrameUpdate, ...] = ()
     frame_losses: tuple[FrameLossUpdate, ...] = ()
-    traffic_spikes: tuple[TrafficSpikeResult, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,33 +137,64 @@ class CaptureAggregator:
         """Consume parsed BLE log events and return UI/log-friendly updates."""
 
         frame_count_before = self._stats.frame_count
+        regular_frame_count = 0
+        per_source_frames: dict[int, int] = {}
+        per_source_bytes: dict[int, int] = {}
         redir_texts: list[str] = []
         internal_frames: list[InternalFrameUpdate] = []
         frame_losses: list[FrameLossUpdate] = []
+        stats = self._stats
+        sn_gap_enabled = stats.sn_gap_enabled
+
+        def flush_regular_frames() -> None:
+            nonlocal regular_frame_count
+            if regular_frame_count:
+                stats.record_regular_frame_summary(regular_frame_count, per_source_frames, per_source_bytes)
+                regular_frame_count = 0
+                per_source_frames.clear()
+                per_source_bytes.clear()
 
         for event in events:
-            if isinstance(event, RedirEvent):
-                self._record_regular_frame(event.frame, event.frame_size, wall_ms=event.wall_ms)
+            event_type = type(event)
+            if event_type is RedirEvent:
+                frame_size = event.frame_size
+                regular_frame_count += 1
+                src_code = event.source_code
+                frame_sn = event.frame_sn
+                if frame_sn >= 0 and src_code > 0:
+                    per_source_frames[src_code] = per_source_frames.get(src_code, 0) + 1
+                    per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
+                    if sn_gap_enabled:
+                        stats.record_frame_sn(src_code, frame_sn)
                 redir_texts.append(event.text)
-            elif isinstance(event, FrameEvent):
-                self._record_regular_frame(event.frame, event.frame_size)
-            elif isinstance(event, EnhStatEvent):
+            elif event_type is FrameEvent:
+                frame_size = event.frame_size
+                regular_frame_count += 1
+                src_code = event.source_code
+                frame_sn = event.frame_sn
+                if frame_sn >= 0 and src_code > 0:
+                    per_source_frames[src_code] = per_source_frames.get(src_code, 0) + 1
+                    per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
+                    if sn_gap_enabled:
+                        stats.record_frame_sn(src_code, frame_sn)
+            elif event_type is EnhStatEvent:
+                flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
                 internal_frames.append(InternalFrameUpdate(int_src=InternalSource.ENH_STAT, decoded=event.stat))
                 self._record_enh_stat(event, frame_losses)
-            elif isinstance(event, InternalEvent):
+            elif event_type is InternalEvent:
+                flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
                 internal_frames.append(InternalFrameUpdate(int_src=event.int_src, decoded=event.decoded))
                 self._record_internal_effect(event)
+                sn_gap_enabled = stats.sn_gap_enabled
 
-        traffic_spike = self._stats.check_traffic()
-        traffic_spikes = () if traffic_spike is None else (traffic_spike,)
+        flush_regular_frames()
         return AggregatorUpdate(
             frames_seen=self._stats.frame_count - frame_count_before,
             redir_texts=tuple(redir_texts),
             internal_frames=tuple(internal_frames),
             frame_losses=tuple(frame_losses),
-            traffic_spikes=traffic_spikes,
         )
 
     def snapshot(self, elapsed_sec: float) -> AggregatorSnapshot:
@@ -186,18 +209,6 @@ class CaptureAggregator:
             parser_frames=self._parser_frames,
             parser_carried_bytes=self._parser_carried_bytes,
         )
-
-    def _record_regular_frame(self, frame: ParsedFrame, frame_size: int, *, wall_ms: int | None = None) -> None:
-        self._stats.record_frame(frame_size, frame.source_code, frame.frame_sn)
-        self._stats.record_frame_traffic(frame_size, frame.source_code)
-
-        if has_os_ts(frame.source_code):
-            self._stats.record_frame_ts(frame.os_ts_ms, frame_size, frame.source_code)
-        elif is_ll_source(frame.source_code) and len(frame.payload) >= LL_TS_OFFSET + LL_TS_SIZE:
-            (lc_ts_us,) = struct.unpack_from('<I', frame.payload, LL_TS_OFFSET)
-            self._stats.record_ll_frame_ts(lc_ts_us, frame_size, frame.source_code)
-        elif wall_ms is not None:
-            self._stats.record_frame_wall_ts(wall_ms, frame_size, frame.source_code)
 
     def _record_internal_frame(self, frame_size: int) -> None:
         # INTERNAL frames count for transport FPS, but not per-source SN tracking.

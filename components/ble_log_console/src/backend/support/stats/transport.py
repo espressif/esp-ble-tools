@@ -27,6 +27,9 @@ class TransportMetrics:
     def record_frame(self) -> None:
         self._frame_count += 1
 
+    def record_frames(self, count: int) -> None:
+        self._frame_count += count
+
     @property
     def frame_count(self) -> int:
         return self._frame_count

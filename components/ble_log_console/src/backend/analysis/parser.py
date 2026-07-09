@@ -6,21 +6,27 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import cast
 
-from src.backend.parser.events import BleLogEvent
-from src.backend.parser.events import EnhStatEvent
-from src.backend.parser.events import FrameEvent
-from src.backend.parser.events import InternalEvent
-from src.backend.parser.events import ParseBatch
-from src.backend.parser.events import ParseChunkResult
-from src.backend.parser.events import ParseSummary
-from src.backend.parser.events import RedirEvent
+from src.backend.analysis.parser_events import BleLogEvent
+from src.backend.analysis.parser_events import EnhStatEvent
+from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import InternalEvent
+from src.backend.analysis.parser_events import ParseBatch
+from src.backend.analysis.parser_events import ParseChunkResult
+from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.support.parser_core.frame_parser import FrameParser
 from src.backend.support.parser_core.internal_decoder import decode_internal_frame
+from src.backend.support.parser_core.checksum import sum_checksum_range
+from src.backend.support.parser_core.checksum import xor_checksum_range
 from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import MAX_FRAME_SIZE
 from src.backend.models import BleLogSource
+from src.backend.models import ChecksumAlgorithm
+from src.backend.models import ChecksumMode
+from src.backend.models import ChecksumScope
 from src.backend.models import EnhStatResult
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
@@ -28,9 +34,20 @@ from src.backend.models import ParsedFrame
 
 _MIN_FRAME_SIZE = FRAME_OVERHEAD + 1
 _MAX_CARRY_BYTES = FRAME_OVERHEAD + MAX_FRAME_SIZE - 1
+DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
 
 
-def parse_ble_log_chunk(data: bytes) -> ParseChunkResult:
+ChecksumRange = Callable[[bytes, int, int], int]
+
+
+def _resolve_checksum_mode(mode: ChecksumMode | None) -> tuple[ChecksumMode, ChecksumRange]:
+    resolved = mode or DEFAULT_CHECKSUM_MODE
+    if resolved.algorithm == ChecksumAlgorithm.XOR:
+        return resolved, xor_checksum_range
+    return resolved, sum_checksum_range
+
+
+def parse_ble_log_chunk(data: bytes, checksum_mode: ChecksumMode | None = None) -> ParseChunkResult:
     """Parse *data* and return events plus the safe-to-discard byte count."""
 
     events: list[BleLogEvent] = []
@@ -38,15 +55,16 @@ def parse_ble_log_chunk(data: bytes) -> ParseChunkResult:
     pointer = 0
     last_complete_frame_end = 0
     data_len = len(data)
-    probe_parser = FrameParser()
+    parser = FrameParser()
+    mode, checksum_fn = _resolve_checksum_mode(checksum_mode)
 
     while pointer <= data_len - _MIN_FRAME_SIZE:
-        result = probe_parser._try_parse_with_probe(data, pointer)
+        result = parser._try_parse_at(data, pointer, checksum_fn, mode.scope)  # noqa: SLF001
         if result is None:
             pointer += 1
             continue
 
-        frame, next_offset, _mode = result
+        frame, next_offset = result
         parsed_frames += 1
         _append_frame_event(frame, events)
         pointer = next_offset
@@ -66,7 +84,8 @@ def parse_ble_log_chunk(data: bytes) -> ParseChunkResult:
 class BleLogParser:
     """Stateful local adapter around the function-style parser contract."""
 
-    def __init__(self) -> None:
+    def __init__(self, checksum_mode: ChecksumMode | None = None) -> None:
+        self._checksum_mode = checksum_mode or DEFAULT_CHECKSUM_MODE
         self._carry = b''
         self._raw_bytes = 0
         self._parsed_frames = 0
@@ -76,7 +95,7 @@ class BleLogParser:
 
         self._raw_bytes += len(chunk)
         data = self._carry + chunk
-        result = parse_ble_log_chunk(data)
+        result = parse_ble_log_chunk(data, checksum_mode=self._checksum_mode)
         self._carry = data[result.consumed :]
         self._parsed_frames += result.parsed_frames
         return ParseBatch(
@@ -111,7 +130,6 @@ def _append_frame_event(frame: ParsedFrame, events: list[BleLogEvent]) -> None:
         if int_src == InternalSource.ENH_STAT:
             events.append(
                 EnhStatEvent(
-                    frame=frame,
                     frame_size=frame_size,
                     stat=cast(EnhStatResult, decoded),
                 )
@@ -119,7 +137,6 @@ def _append_frame_event(frame: ParsedFrame, events: list[BleLogEvent]) -> None:
             return
         events.append(
             InternalEvent(
-                frame=frame,
                 frame_size=frame_size,
                 int_src=int_src,
                 decoded=decoded,
@@ -130,12 +147,13 @@ def _append_frame_event(frame: ParsedFrame, events: list[BleLogEvent]) -> None:
     if frame.source_code == BleLogSource.REDIR:
         events.append(
             RedirEvent(
-                frame=frame,
                 frame_size=frame_size,
+                source_code=frame.source_code,
+                frame_sn=frame.frame_sn,
                 text=frame.payload.decode('ascii', errors='replace'),
                 wall_ms=int(time.perf_counter() * 1000) & 0xFFFFFFFF,
             )
         )
         return
 
-    events.append(FrameEvent(frame=frame, frame_size=frame_size))
+    events.append(FrameEvent(frame_size=frame_size, source_code=frame.source_code, frame_sn=frame.frame_sn))

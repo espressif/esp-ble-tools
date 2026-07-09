@@ -5,16 +5,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.backend.aggregator.worker import AggregatorProcessEvent
-from src.backend.aggregator.event_aggregator import AggregatorSnapshot
-from src.backend.aggregator.event_aggregator import AggregatorUpdate
-from src.backend.aggregator.event_aggregator import FrameLossUpdate
-from src.backend.aggregator.event_aggregator import InternalFrameUpdate
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.analysis.aggregator import AggregatorUpdate
+from src.backend.analysis.aggregator import FrameLossUpdate
+from src.backend.analysis.aggregator import InternalFrameUpdate
 from src.backend.pipeline.controller import CapturePipelineResult
-from src.backend.writer.raw_writer import RawWriterProcessEvent
-from src.backend.writer.raw_writer import RawWriterStatus
-from src.backend.reader.worker import ReaderProcessEvent
-from src.backend.parser.worker import ParserStatus
+from src.backend.io.writer import WriterEvent
+from src.backend.io.writer import WriterStatus
+from src.backend.io.reader import ReaderProcessEvent
+from src.backend.analysis.worker import ParserStatus
 from src.backend.models import BackendStopped
 from src.backend.models import FrameStats
 from src.backend.models import InternalFrameDecoded
@@ -59,8 +59,20 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     assert len(second) == 1
     assert isinstance(second[0], LogLine)
     assert second[0].text == 'hello world'
+    presenter.close()
     assert console_log_part_path(output_path, 1).read_text() == 'hello world\npartial'
     assert presenter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
+
+
+def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
+    output_path = tmp_path / 'ble_log.bin'
+    presenter = CaptureEventPresenter(output_path)
+
+    messages = presenter.handle_event(AggregatorUpdate(redir_texts=('one\ntwo\nthree\n',)))
+
+    assert len(messages) == 1
+    assert isinstance(messages[0], LogLine)
+    assert messages[0].text == 'one\ntwo\nthree'
 
 
 def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
@@ -108,15 +120,15 @@ def test_aggregator_update_maps_to_existing_ui_messages(tmp_path: Path) -> None:
     assert messages[1].lost_frames == 2
 
 
-def test_raw_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> None:
+def test_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     part2 = tmp_path / 'ble_log_part002.bin'
     presenter = CaptureEventPresenter(output_path)
 
     opened = presenter.handle_event(
-        RawWriterProcessEvent(
+        WriterEvent(
             kind='opened',
-            status=RawWriterStatus(
+            status=WriterStatus(
                 base_path=output_path,
                 paths=(output_path,),
                 bytes_written=3,
@@ -127,9 +139,9 @@ def test_raw_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> 
         )
     )
     rotated = presenter.handle_event(
-        RawWriterProcessEvent(
+        WriterEvent(
             kind='rotated',
-            status=RawWriterStatus(
+            status=WriterStatus(
                 base_path=output_path,
                 paths=(output_path, part2),
                 bytes_written=10,
@@ -154,7 +166,7 @@ def test_process_errors_become_warning_notices(tmp_path: Path) -> None:
         ReaderProcessEvent(kind='error', message='reader failed'),
         ParserStatus(kind='error', message='parser failed'),
         AggregatorProcessEvent(kind='error', message='aggregator failed'),
-        RawWriterProcessEvent(kind='error', message='disk full'),
+        WriterEvent(kind='error', message='disk full'),
     ]
 
     messages = [presenter.handle_event(event)[0] for event in events]
@@ -164,7 +176,7 @@ def test_process_errors_become_warning_notices(tmp_path: Path) -> None:
         'Reader error: reader failed',
         'Parser error: parser failed',
         'Aggregator error: aggregator failed',
-        'Raw writer error: disk full',
+        'Writer error: disk full',
     ]
 
 

@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-build = ["pyinstaller"]
+build = ["pyinstaller", "cython"]
 test = ["pytest"]
 
 [project.scripts]
@@ -28,15 +28,13 @@ py-modules = ["console", "build_exe"]
 packages = [
     "src",
     "src.backend",
-    "src.backend.aggregator",
-    "src.backend.parser",
+    "src.backend.analysis",
+    "src.backend.io",
     "src.backend.pipeline",
-    "src.backend.reader",
     "src.backend.support",
     "src.backend.support.parser_core",
     "src.backend.support.stats",
     "src.backend.support.transport",
-    "src.backend.writer",
     "src.frontend",
 ]
 

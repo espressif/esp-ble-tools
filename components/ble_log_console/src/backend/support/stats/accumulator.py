@@ -16,11 +16,7 @@ from src.backend.models import TransportBitrate
 from src.backend.support.stats.buf_util import BufUtilTracker
 from src.backend.support.stats.firmware_loss import FirmwareLossTracker
 from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
-from src.backend.support.stats.peak_burst import WRITE_RATE_WINDOW_MS
-from src.backend.support.stats.peak_burst import PeakBurstTracker
 from src.backend.support.stats.sn_gap import SNGapTracker
-from src.backend.support.stats.traffic_spike import TrafficSpikeDetector
-from src.backend.support.stats.traffic_spike import TrafficSpikeResult
 from src.backend.support.stats.transport import TransportMetrics
 
 _ZERO = FrameByteCount(frames=0, bytes=0)
@@ -32,13 +28,9 @@ class StatsAccumulator:
     def __init__(self) -> None:
         self._bitrate = TransportBitrate()
         self._transport = TransportMetrics()
-        self._os_burst = PeakBurstTracker()
-        self._ll_burst = PeakBurstTracker()
-        self._wall_burst = PeakBurstTracker()
         self._fw_loss = FirmwareLossTracker()
         self._fw_written = FirmwareWrittenTracker()
         self._sn_gap = SNGapTracker()
-        self._traffic = TrafficSpikeDetector()
         self._buf_util = BufUtilTracker()
         self._per_source_received_frames: dict[SourceCode, int] = {}
         self._per_source_received_bytes: dict[SourceCode, int] = {}
@@ -65,35 +57,42 @@ class StatsAccumulator:
         return gap
 
     @property
+    def sn_gap_enabled(self) -> bool:
+        return self._sn_gap_enabled
+
+    def record_frame_sn(self, src_code: SourceCode, frame_sn: int) -> int:
+        """Record sequence number for an already-counted regular frame."""
+
+        if not self._sn_gap_enabled or frame_sn < 0 or src_code <= 0:
+            return 0
+        return self._sn_gap.record(src_code, frame_sn)
+
+    def record_regular_frame_summary(
+        self,
+        frame_count: int,
+        per_source_frames: dict[SourceCode, int],
+        per_source_bytes: dict[SourceCode, int],
+    ) -> None:
+        """Record a visible batch of regular parser frame counters."""
+
+        if frame_count <= 0:
+            return
+
+        self._transport.record_frames(frame_count)
+        for src_code, count in per_source_frames.items():
+            self._per_source_received_frames[src_code] = self._per_source_received_frames.get(src_code, 0) + count
+        for src_code, byte_count in per_source_bytes.items():
+            self._per_source_received_bytes[src_code] = self._per_source_received_bytes.get(src_code, 0) + byte_count
+
+    @property
     def frame_count(self) -> int:
         return self._transport.frame_count
-
-    # -- Timestamp-based burst tracking ------------------------------------------
-
-    def record_frame_ts(self, os_ts_ms: int, frame_size: int, src_code: SourceCode) -> None:
-        self._os_burst.record(os_ts_ms, frame_size, src_code)
-
-    def record_ll_frame_ts(self, lc_ts_us: int, frame_size: int, src_code: SourceCode) -> None:
-        self._ll_burst.record(lc_ts_us // 1000, frame_size, src_code)
-
-    def record_frame_wall_ts(self, wall_ms: int, frame_size: int, src_code: SourceCode) -> None:
-        """Record frame with wall-clock timestamp for sources without chip-side timestamps."""
-        self._wall_burst.record(wall_ms, frame_size, src_code)
 
     # -- Transport bitrate -------------------------------------------------------
 
     def set_transport_bitrate(self, bitrate: TransportBitrate) -> None:
         self._bitrate = bitrate
         self._transport.set_bitrate(bitrate)
-        self._traffic.set_bitrate(bitrate)
-
-    # -- Traffic spike -----------------------------------------------------------
-
-    def record_frame_traffic(self, frame_size: int, src_code: SourceCode) -> None:
-        self._traffic.record(frame_size, src_code)
-
-    def check_traffic(self) -> TrafficSpikeResult | None:
-        return self._traffic.check()
 
     # -- Buffer utilization ------------------------------------------------------
 
@@ -160,12 +159,9 @@ class StatsAccumulator:
     # -- Snapshots ---------------------------------------------------------------
 
     def snapshot(self, elapsed_sec: float) -> FrameStats:
-        self._wall_burst.harvest()
         return FrameStats(
             transport=self._transport.harvest(elapsed_sec),
             loss=self._fw_loss.totals(),
-            os_peak=self._os_burst.harvest(),
-            ll_peak=self._ll_burst.harvest(),
             per_source_rx_bytes=(dict(self._per_source_received_bytes) if self._per_source_received_bytes else None),
         )
 
@@ -173,9 +169,6 @@ class StatsAccumulator:
         """Build per-source funnel snapshots from all component data."""
         written_totals = self._fw_written.totals()
         loss_totals = self._fw_loss.per_source_totals()
-        os_max_peaks = self._os_burst.max_peaks()
-        ll_max_peaks = self._ll_burst.max_peaks()
-        wall_max_peaks = self._wall_burst.max_peaks()
 
         sources: set[int] = set()
         sources.update(written_totals)
@@ -213,16 +206,6 @@ class StatsAccumulator:
                 tp_fps = 0.0
                 throughput_bits_per_sec = 0.0
 
-            peak = os_max_peaks.get(src) or ll_max_peaks.get(src) or wall_max_peaks.get(src)
-            if peak:
-                peak_frames = peak.peak_frames
-                peak_bits_per_sec = (
-                    self._bitrate.payload_bytes_to_wire_bits(peak.peak_bytes) * 1000 / WRITE_RATE_WINDOW_MS
-                )
-            else:
-                peak_frames = 0
-                peak_bits_per_sec = 0.0
-
             result.append(
                 FunnelSnapshot(
                     source=src,
@@ -234,9 +217,9 @@ class StatsAccumulator:
                     throughput=ThroughputInfo(
                         throughput_fps=tp_fps,
                         throughput_bits_per_sec=throughput_bits_per_sec,
-                        peak_write_frames=peak_frames,
-                        peak_write_bits_per_sec=peak_bits_per_sec,
-                        peak_window_ms=WRITE_RATE_WINDOW_MS,
+                        peak_write_frames=0,
+                        peak_write_bits_per_sec=0.0,
+                        peak_window_ms=0,
                     ),
                 )
             )

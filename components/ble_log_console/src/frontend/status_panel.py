@@ -67,7 +67,7 @@ class StatusPanel(Widget):
             else:
                 line1 = f'Status: {_customer_state_markup(s, self.disconnected)}'
                 line2 = 'Backend stopped - transport connection closed'
-            return Text.from_markup(f'{line1}\n{line2}')
+            return Text.from_markup('\n'.join((line1, line2)))
 
         t = s.transport
         loss = s.loss
@@ -104,4 +104,4 @@ class StatusPanel(Widget):
                 f'[{loss_style}]Lost: {loss.total_frames} frames, {format_bytes(loss.total_bytes)}[/{loss_style}]'
             )
 
-        return Text.from_markup(f'{line1}\n{line2}')
+        return Text.from_markup('\n'.join((line1, line2)))

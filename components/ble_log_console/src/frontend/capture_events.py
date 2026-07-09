@@ -15,24 +15,25 @@ from typing import Any
 
 from textual.message import Message
 
-from src.backend.aggregator.worker import AggregatorProcessEvent
-from src.backend.aggregator.event_aggregator import AggregatorSnapshot
-from src.backend.aggregator.event_aggregator import AggregatorUpdate
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.pipeline.controller import CapturePipelineResult
-from src.backend.writer.raw_writer import CAPTURE_PART_MAX_BYTES
-from src.backend.writer.raw_writer import RawWriterProcessEvent
-from src.backend.reader.worker import ReaderProcessEvent
-from src.backend.parser.worker import ParserStatus
+from src.backend.io.writer import CAPTURE_PART_MAX_BYTES
+from src.backend.io.writer import WriterEvent
+from src.backend.io.reader import ReaderProcessEvent
+from src.backend.analysis.worker import ParserStatus
 from src.backend.models import BackendStopped
 from src.backend.models import FrameLossDetected
 from src.backend.models import InternalFrameDecoded
 from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
-from src.backend.models import TrafficSpikeDetected
 from src.backend.models import UserNotice
 from src.backend.models import format_bytes
 
 REDIR_LINE_BUFFER_LIMIT = 16 * 1024
+REDIR_UI_BATCH_LINE_LIMIT = 128
+CONSOLE_LOG_FLUSH_INTERVAL_SEC = 1.0
 NO_DATA_WARNING_SEC = 10.0
 NO_DATA_WARNING_COOLDOWN_SEC = 60.0
 NO_FRAME_WARNING_SEC = 10.0
@@ -118,6 +119,7 @@ class CaptureEventPresenter:
         self._redir_line_buf = ''
         self._disconnected = False
         now = self._clock()
+        self._last_console_flush_at = now
         self._last_data_at = now
         self._last_frame_at = now
         self._last_idle_warning_at = 0.0
@@ -143,8 +145,8 @@ class CaptureEventPresenter:
             return self._handle_snapshot(event)
         if isinstance(event, AggregatorUpdate):
             return self._handle_aggregator_update(event)
-        if isinstance(event, RawWriterProcessEvent):
-            return self._handle_raw_writer_event(event)
+        if isinstance(event, WriterEvent):
+            return self._handle_writer_event(event)
         if isinstance(event, ReaderProcessEvent):
             return self._handle_reader_event(event)
         if isinstance(event, ParserStatus):
@@ -259,21 +261,11 @@ class CaptureEventPresenter:
                     sn_range=loss.sn_range,
                 )
             )
-        for spike in event.traffic_spikes:
-            messages.append(
-                TrafficSpikeDetected(
-                    throughput_bits_per_sec=spike.throughput_bits_per_sec,
-                    wire_max_bits_per_sec=spike.wire_max_bits_per_sec,
-                    utilization_pct=spike.utilization_pct,
-                    duration_ms=spike.duration_ms,
-                    per_source=spike.per_source,
-                )
-            )
         for text in event.redir_texts:
             messages.extend(self._write_redir_text(text))
         return tuple(messages)
 
-    def _handle_raw_writer_event(self, event: RawWriterProcessEvent) -> tuple[Message, ...]:
+    def _handle_writer_event(self, event: WriterEvent) -> tuple[Message, ...]:
         if event.status is not None:
             self._saved_capture_paths = list(event.status.paths)
 
@@ -282,7 +274,7 @@ class CaptureEventPresenter:
         if event.kind == 'rotated' and event.status is not None and event.status.paths:
             return (UserNotice(f'Capture file rotated to {event.status.paths[-1]}'),)
         if event.kind == 'error':
-            return (UserNotice(f'Raw writer error: {event.message}', level='warning'),)
+            return (UserNotice(f'Writer error: {event.message}', level='warning'),)
         return ()
 
     def _handle_reader_event(self, event: ReaderProcessEvent) -> tuple[Message, ...]:
@@ -331,23 +323,40 @@ class CaptureEventPresenter:
             messages.append(UserNotice(f'Console log rotated to {self._saved_console_log_paths[-1]}'))
         if self._console_log_file is not None:
             self._console_log_file.write(text)
-            self._console_log_file.flush()
+            self._flush_console_log_if_due()
         self._console_part_bytes += len(text.encode(errors='replace'))
 
         self._redir_line_buf += text
-        while '\n' in self._redir_line_buf:
-            line, self._redir_line_buf = self._redir_line_buf.split('\n', 1)
-            if line:
-                messages.append(LogLine(line))
+        if '\n' in self._redir_line_buf:
+            lines = self._redir_line_buf.split('\n')
+            self._redir_line_buf = lines.pop()
+            self._append_redir_log_lines(messages, lines)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
             messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
         return messages
 
+    def _append_redir_log_lines(self, messages: list[Message], lines: list[str]) -> None:
+        non_empty_lines = [line for line in lines if line]
+        for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
+            batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
+            if batch:
+                messages.append(LogLine('\n'.join(batch)))
+
+    def _flush_console_log_if_due(self) -> None:
+        if self._console_log_file is None:
+            return
+        now = self._clock()
+        if now - self._last_console_flush_at < CONSOLE_LOG_FLUSH_INTERVAL_SEC:
+            return
+        self._console_log_file.flush()
+        self._last_console_flush_at = now
+
     def _ensure_console_log_open(self) -> None:
         if self._console_log_file is None:
             self._console_log_path = console_log_part_path(self._output_path, self._console_part_index)
             self._console_log_file = self._text_file_factory(self._console_log_path)
+            self._last_console_flush_at = self._clock()
             self._saved_console_log_paths.append(self._console_log_path)
             return
 
@@ -359,4 +368,5 @@ class CaptureEventPresenter:
         self._console_part_bytes = 0
         self._console_log_path = console_log_part_path(self._output_path, self._console_part_index)
         self._console_log_file = self._text_file_factory(self._console_log_path)
+        self._last_console_flush_at = self._clock()
         self._saved_console_log_paths.append(self._console_log_path)

@@ -8,10 +8,10 @@ from queue import Empty
 from queue import Queue
 from typing import IO
 
-from src.backend.writer.raw_writer import RawWriter
-from src.backend.writer.raw_writer import RawWriterConfig
-from src.backend.writer.raw_writer import RawWriterProcessEvent
-from src.backend.writer.raw_writer import run_raw_writer_loop
+from src.backend.io.writer import AsyncBatchWriter
+from src.backend.io.writer import Writer
+from src.backend.io.writer import WriterConfig
+from src.backend.io.writer import WriterEvent
 
 
 class FakeClock:
@@ -47,27 +47,27 @@ class FakeBinaryFile:
         self.closed = True
 
 
-def _events(event_queue: Queue[RawWriterProcessEvent]) -> list[RawWriterProcessEvent]:
-    result: list[RawWriterProcessEvent] = []
+def _events(ui_queue: Queue[WriterEvent]) -> list[WriterEvent]:
+    result: list[WriterEvent] = []
     while True:
         try:
-            result.append(event_queue.get_nowait())
+            result.append(ui_queue.get_nowait())
         except Empty:
             return result
 
 
 def test_writes_all_chunks_to_single_file(tmp_path: Path) -> None:
-    raw_queue: Queue[bytes | None] = Queue()
-    event_queue: Queue[RawWriterProcessEvent] = Queue()
-    raw_queue.put(b'one')
-    raw_queue.put(b'two')
-    raw_queue.put(None)
-
+    ui_queue: Queue[WriterEvent] = Queue()
     output_path = tmp_path / 'ble_log.bin'
-    run_raw_writer_loop(RawWriterConfig(output_path), raw_queue, event_queue)
+    writer = AsyncBatchWriter(WriterConfig(output_path), ui_queue, batch_timeout_sec=0)
+
+    writer.start()
+    writer.write(b'one', timeout=1)
+    writer.write(b'two', timeout=1)
+    writer.finalize()
 
     assert output_path.read_bytes() == b'onetwo'
-    events = _events(event_queue)
+    events = _events(ui_queue)
     assert [event.kind for event in events] == ['opened', 'finalized']
     assert events[0].message == str(output_path)
     assert events[0].status is not None
@@ -80,15 +80,15 @@ def test_writes_all_chunks_to_single_file(tmp_path: Path) -> None:
 
 
 def test_empty_input_does_not_create_file(tmp_path: Path) -> None:
-    raw_queue: Queue[bytes | None] = Queue()
-    event_queue: Queue[RawWriterProcessEvent] = Queue()
-    raw_queue.put(None)
-
+    ui_queue: Queue[WriterEvent] = Queue()
     output_path = tmp_path / 'ble_log.bin'
-    run_raw_writer_loop(RawWriterConfig(output_path), raw_queue, event_queue)
+    writer = AsyncBatchWriter(WriterConfig(output_path), ui_queue, batch_timeout_sec=0)
+
+    writer.start()
+    writer.finalize()
 
     assert not output_path.exists()
-    events = _events(event_queue)
+    events = _events(ui_queue)
     assert [event.kind for event in events] == ['finalized']
     assert events[-1].status is not None
     assert events[-1].status.paths == ()
@@ -101,7 +101,7 @@ def test_each_chunk_calls_write_and_flushes_every_second(tmp_path: Path) -> None
     def factory(path: Path) -> IO[bytes]:
         return fake_file  # type: ignore[return-value]
 
-    writer = RawWriter(RawWriterConfig(tmp_path / 'ble_log.bin', flush_interval_sec=1.0), clock=clock, file_factory=factory)
+    writer = Writer(WriterConfig(tmp_path / 'ble_log.bin', flush_interval_sec=1.0), clock=clock, file_factory=factory)
 
     writer.write(b'a')
     clock.now = 0.5
@@ -120,19 +120,19 @@ def test_each_chunk_calls_write_and_flushes_every_second(tmp_path: Path) -> None
 
 
 def test_rotates_capture_parts_with_legacy_names(tmp_path: Path) -> None:
-    raw_queue: Queue[bytes | None] = Queue()
-    event_queue: Queue[RawWriterProcessEvent] = Queue()
-    raw_queue.put(b'abc')
-    raw_queue.put(b'de')
-    raw_queue.put(None)
-
+    ui_queue: Queue[WriterEvent] = Queue()
     output_path = tmp_path / 'ble_log.bin'
-    run_raw_writer_loop(RawWriterConfig(output_path, part_max_bytes=3), raw_queue, event_queue)
+    writer = AsyncBatchWriter(WriterConfig(output_path, part_max_bytes=3), ui_queue, batch_timeout_sec=0)
+
+    writer.start()
+    writer.write(b'abc', timeout=1)
+    writer.write(b'de', timeout=1)
+    writer.finalize()
 
     part2 = tmp_path / 'ble_log_part002.bin'
     assert output_path.read_bytes() == b'abc'
     assert part2.read_bytes() == b'de'
-    events = _events(event_queue)
+    events = _events(ui_queue)
     assert [event.kind for event in events] == ['opened', 'rotated', 'finalized']
     assert events[1].message == str(part2)
     assert events[-1].status is not None
@@ -145,14 +145,19 @@ def test_write_error_reports_error_and_closes_file(tmp_path: Path) -> None:
     def factory(path: Path) -> IO[bytes]:
         return fake_file  # type: ignore[return-value]
 
-    raw_queue: Queue[bytes | None] = Queue()
-    event_queue: Queue[RawWriterProcessEvent] = Queue()
-    raw_queue.put(b'boom')
-    raw_queue.put(None)
+    ui_queue: Queue[WriterEvent] = Queue()
+    writer = AsyncBatchWriter(
+        WriterConfig(tmp_path / 'ble_log.bin'),
+        ui_queue,
+        batch_timeout_sec=0,
+        file_factory=factory,
+    )
 
-    run_raw_writer_loop(RawWriterConfig(tmp_path / 'ble_log.bin'), raw_queue, event_queue, file_factory=factory)
+    writer.start()
+    writer.write(b'boom', timeout=1)
+    writer.finalize()
 
-    events = _events(event_queue)
+    events = _events(ui_queue)
     assert events[0].kind == 'error'
     assert events[0].message == 'disk full'
     assert fake_file.closed

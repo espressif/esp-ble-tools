@@ -5,48 +5,44 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import NamedTuple
 from typing import TypeAlias
 
 from src.backend.models import EnhStatResult
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
-from src.backend.models import ParsedFrame
+from src.backend.models import SourceCode
 
 
-@dataclass(frozen=True)
-class FrameEvent:
-    """A parsed non-INTERNAL BLE log frame."""
+class FrameEvent(NamedTuple):
+    """Metadata for a parsed non-INTERNAL BLE log frame."""
 
-    frame: ParsedFrame
     frame_size: int
+    source_code: SourceCode
+    frame_sn: int
 
 
-@dataclass(frozen=True)
-class InternalEvent:
-    """A parsed and decoded INTERNAL frame."""
+class InternalEvent(NamedTuple):
+    """Decoded INTERNAL frame metadata."""
 
-    frame: ParsedFrame
     frame_size: int
     int_src: InternalSource
     decoded: InternalDecoderResult
 
 
-@dataclass(frozen=True)
-class EnhStatEvent:
+class EnhStatEvent(NamedTuple):
     """Firmware ENH_STAT counters decoded from an INTERNAL frame."""
 
-    frame: ParsedFrame
     frame_size: int
     stat: EnhStatResult
 
 
-@dataclass(frozen=True)
-class RedirEvent:
-    """A parsed REDIR frame payload decoded for console/log sinks."""
+class RedirEvent(NamedTuple):
+    """Metadata and text for a parsed REDIR frame."""
 
-    frame: ParsedFrame
     frame_size: int
+    source_code: SourceCode
+    frame_sn: int
     text: str
     wall_ms: int
 
@@ -54,8 +50,7 @@ class RedirEvent:
 BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | RedirEvent
 
 
-@dataclass(frozen=True)
-class ParseChunkResult:
+class ParseChunkResult(NamedTuple):
     """Function-style parser result for one input buffer."""
 
     events: tuple[BleLogEvent, ...]
@@ -63,8 +58,7 @@ class ParseChunkResult:
     consumed: int
 
 
-@dataclass(frozen=True)
-class ParseBatch:
+class ParseBatch(NamedTuple):
     """Batch of parser events produced from one or more raw input chunks."""
 
     raw_bytes: int
@@ -74,8 +68,7 @@ class ParseBatch:
     events: tuple[BleLogEvent, ...]
 
 
-@dataclass(frozen=True)
-class ParseSummary:
+class ParseSummary(NamedTuple):
     """Final parser summary emitted when parse_queue receives None."""
 
     raw_bytes: int

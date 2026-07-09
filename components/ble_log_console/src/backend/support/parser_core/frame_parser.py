@@ -9,8 +9,8 @@ See Spec Sections 7, 8.
 
 from collections.abc import Callable
 
-from src.backend.support.parser_core.checksum import sum_checksum
-from src.backend.support.parser_core.checksum import xor_checksum
+from src.backend.support.parser_core.checksum import sum_checksum_range
+from src.backend.support.parser_core.checksum import xor_checksum_range
 from src.backend.models import CHECKSUM_STRUCT
 from src.backend.models import FRAME_HEADER_SIZE
 from src.backend.models import FRAME_OVERHEAD
@@ -23,13 +23,14 @@ from src.backend.models import ChecksumScope
 from src.backend.models import ParsedFrame
 from src.backend.models import SyncState
 
-ChecksumProbe = tuple[ChecksumAlgorithm, ChecksumScope, Callable[[bytes], int]]
+ChecksumRange = Callable[[bytes, int, int], int]
+ChecksumProbe = tuple[ChecksumAlgorithm, ChecksumScope, ChecksumRange]
 
 _CHECKSUM_PROBES: list[ChecksumProbe] = [
-    (ChecksumAlgorithm.XOR, ChecksumScope.FULL, xor_checksum),
-    (ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY, xor_checksum),
-    (ChecksumAlgorithm.SUM, ChecksumScope.FULL, sum_checksum),
-    (ChecksumAlgorithm.SUM, ChecksumScope.HEADER_ONLY, sum_checksum),
+    (ChecksumAlgorithm.XOR, ChecksumScope.FULL, xor_checksum_range),
+    (ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY, xor_checksum_range),
+    (ChecksumAlgorithm.SUM, ChecksumScope.FULL, sum_checksum_range),
+    (ChecksumAlgorithm.SUM, ChecksumScope.HEADER_ONLY, sum_checksum_range),
 ]
 
 SYNC_CONFIRM_THRESHOLD = 3  # N consecutive valid frames to confirm sync
@@ -137,7 +138,7 @@ class FrameParser:
         self,
         buf: bytes,
         offset: int,
-        checksum_fn: Callable[[bytes], int],
+        checksum_fn: ChecksumRange,
         scope: ChecksumScope,
     ) -> tuple[ParsedFrame, int] | None:
         """Try to parse a frame at the given offset with specific checksum params."""
@@ -152,23 +153,23 @@ class FrameParser:
         if offset + FRAME_OVERHEAD + payload_len > len(buf):
             return None
 
-        header = buf[offset : offset + FRAME_HEADER_SIZE]
-        payload = buf[offset + FRAME_HEADER_SIZE : offset + FRAME_HEADER_SIZE + payload_len]
+        payload_start = offset + FRAME_HEADER_SIZE
+        payload_end = payload_start + payload_len
         checksum_offset = offset + FRAME_HEADER_SIZE + payload_len
         stored_checksum = CHECKSUM_STRUCT.unpack_from(buf, checksum_offset)[0]
 
-        # Compute checksum
         if scope == ChecksumScope.FULL:
-            checksum_data = header + payload
+            checksum_len = FRAME_HEADER_SIZE + payload_len
         else:
-            checksum_data = header
+            checksum_len = FRAME_HEADER_SIZE
 
-        computed = checksum_fn(checksum_data)
+        computed = checksum_fn(buf, offset, checksum_len)
         if computed != stored_checksum:
             return None
 
         source_code = frame_meta & 0xFF
         frame_sn = frame_meta >> 8
+        payload = buf[payload_start:payload_end]
 
         # Extract os_ts from first 4 bytes of payload
         os_ts_ms = 0
@@ -198,7 +199,7 @@ class FrameParser:
         """Try to parse with the locked checksum mode."""
         if self._checksum_mode is None:
             return None
-        fn = xor_checksum if self._checksum_mode.algorithm == ChecksumAlgorithm.XOR else sum_checksum
+        fn = xor_checksum_range if self._checksum_mode.algorithm == ChecksumAlgorithm.XOR else sum_checksum_range
         return self._try_parse_at(buf, offset, fn, self._checksum_mode.scope)
 
     def _on_frame_found(self, mode: ChecksumMode, frame: ParsedFrame) -> bool:

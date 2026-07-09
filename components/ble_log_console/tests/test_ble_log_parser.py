@@ -5,20 +5,28 @@ from __future__ import annotations
 
 import struct
 
-from src.backend.parser.ble_log_parser import BleLogParser
-from src.backend.parser.ble_log_parser import parse_ble_log_chunk
-from src.backend.parser.events import EnhStatEvent
-from src.backend.parser.events import FrameEvent
-from src.backend.parser.events import InternalEvent
-from src.backend.parser.events import RedirEvent
+from src.backend.analysis.parser import BleLogParser
+from src.backend.analysis.parser import parse_ble_log_chunk
+from src.backend.analysis.parser_events import EnhStatEvent
+from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import InternalEvent
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.support.parser_core.checksum import sum_checksum
+from src.backend.support.parser_core.checksum import xor_checksum
 from src.backend.models import BleLogSource
+from src.backend.models import ChecksumAlgorithm
+from src.backend.models import ChecksumMode
+from src.backend.models import ChecksumScope
 from src.backend.models import InternalSource
 
 from tests.helpers import build_frame
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
+    return build_frame(payload, src, sn, xor_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
+
+
+def _make_sum_frame(payload: bytes, src: int, sn: int) -> bytes:
     return build_frame(payload, src, sn, sum_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
 
 
@@ -41,7 +49,8 @@ def test_feed_emits_batch_with_frame_events() -> None:
     assert batch.carried_bytes == 0
     frame_events = [event for event in batch.events if isinstance(event, FrameEvent)]
     assert len(frame_events) == 3
-    assert all(event.frame.source_code == BleLogSource.HOST for event in frame_events)
+    assert all(event.source_code == BleLogSource.HOST for event in frame_events)
+    assert [event.frame_sn for event in frame_events] == [0, 1, 2]
 
 
 def test_split_frame_is_buffered_without_emitting_events() -> None:
@@ -68,6 +77,17 @@ def test_parse_chunk_reports_consumed_before_tail() -> None:
 
     assert result.parsed_frames == 3
     assert result.consumed == len(frames)
+
+
+def test_parser_accepts_explicit_sum_full_checksum_mode() -> None:
+    parser = BleLogParser(checksum_mode=ChecksumMode(ChecksumAlgorithm.SUM, ChecksumScope.FULL))
+    payload = b'\x00\x00\x00\x00data'
+    frames = b''.join(_make_sum_frame(payload, src=BleLogSource.HOST, sn=sn) for sn in range(3))
+
+    batch = parser.feed(frames)
+
+    assert batch.parsed_frames == 3
+    assert len([event for event in batch.events if isinstance(event, FrameEvent)]) == 3
 
 
 def test_feed_decodes_internal_frame_once() -> None:
@@ -119,6 +139,8 @@ def test_feed_emits_redir_payload_event() -> None:
 
     redir_events = [event for event in batch.events if isinstance(event, RedirEvent)]
     assert len(redir_events) == 3
+    assert redir_events[0].source_code == BleLogSource.REDIR
+    assert redir_events[0].frame_sn == 0
     assert redir_events[0].text == 'console line\n'
     assert redir_events[0].wall_ms >= 0
 

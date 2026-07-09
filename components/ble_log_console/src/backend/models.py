@@ -236,24 +236,6 @@ class LossType(str, Enum):
     TRANSPORT = 'transport'  # UART/link loss
 
 
-@dataclass(slots=True)
-class SourcePeakWrite:
-    """Peak write burst for a single source within a 1ms window."""
-
-    peak_frames: int = 0  # max frame count in any 1ms window
-    peak_bytes: int = 0  # total bytes in that same window
-
-
-@dataclass(slots=True)
-class SourceStats:
-    """Console-side accumulated per-source statistics."""
-
-    written_frames: int = 0
-    written_bytes: int = 0
-    lost_frames: int = 0
-    lost_bytes: int = 0
-
-
 @dataclass(frozen=True)
 class BufUtilEntry:
     """Single LBM buffer utilization snapshot."""
@@ -271,14 +253,6 @@ class LossSnapshot:
 
     total_frames: int = 0
     total_bytes: int = 0
-
-
-@dataclass(slots=True)
-class PeakBurstSnapshot:
-    """Peak write burst metrics for a single clock domain (os_ts or lc_ts)."""
-
-    per_source: dict[SourceCode, SourcePeakWrite] | None = None
-    max_per_source: dict[SourceCode, SourcePeakWrite] | None = None
 
 
 @dataclass(frozen=True)
@@ -319,8 +293,6 @@ class FrameStats:
 
     transport: TransportSnapshot = field(default_factory=TransportSnapshot)
     loss: LossSnapshot = field(default_factory=LossSnapshot)
-    os_peak: PeakBurstSnapshot = field(default_factory=PeakBurstSnapshot)
-    ll_peak: PeakBurstSnapshot = field(default_factory=PeakBurstSnapshot)
     per_source_rx_bytes: dict[SourceCode, int] | None = None
 
 
@@ -416,20 +388,3 @@ class BackendStopped(Message):
     def __init__(self, reason: str = '') -> None:
         super().__init__()
         self.reason = reason
-
-
-class TrafficSpikeDetected(Message):
-    def __init__(
-        self,
-        throughput_bits_per_sec: float,
-        wire_max_bits_per_sec: float,
-        utilization_pct: float,
-        duration_ms: float,
-        per_source: dict[int, float],
-    ) -> None:
-        super().__init__()
-        self.throughput_bits_per_sec = throughput_bits_per_sec
-        self.wire_max_bits_per_sec = wire_max_bits_per_sec
-        self.utilization_pct = utilization_pct
-        self.duration_ms = duration_ms
-        self.per_source = per_source

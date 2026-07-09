@@ -5,14 +5,14 @@ from __future__ import annotations
 
 import struct
 
-from src.backend.aggregator.event_aggregator import CaptureAggregator
-from src.backend.aggregator.event_aggregator import frame_size_from_payload
-from src.backend.parser.events import EnhStatEvent
-from src.backend.parser.events import FrameEvent
-from src.backend.parser.events import InternalEvent
-from src.backend.parser.events import ParseBatch
-from src.backend.parser.events import ParseSummary
-from src.backend.parser.events import RedirEvent
+from src.backend.analysis.aggregator import CaptureAggregator
+from src.backend.analysis.aggregator import frame_size_from_payload
+from src.backend.analysis.parser_events import EnhStatEvent
+from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import InternalEvent
+from src.backend.analysis.parser_events import ParseBatch
+from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.models import BleLogSource
 from src.backend.models import BufUtilResult
 from src.backend.models import EnhStatResult
@@ -42,33 +42,34 @@ def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
     assert snapshot.parser_carried_bytes == 4
 
 
-def test_regular_frame_updates_received_stats_and_os_peak() -> None:
+def test_regular_frame_updates_received_stats() -> None:
     aggregator = CaptureAggregator()
     payload = struct.pack('<I', 1234) + b'payload'
     frame = _frame(BleLogSource.HOST, frame_sn=7, payload=payload, os_ts_ms=1234)
     frame_size = frame_size_from_payload(payload)
 
-    update = aggregator.consume_events((FrameEvent(frame=frame, frame_size=frame_size),))
+    update = aggregator.consume_events(
+        (FrameEvent(frame_size=frame_size, source_code=frame.source_code, frame_sn=frame.frame_sn),)
+    )
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1
     assert snapshot.stats.transport.rx_frames == 1
     assert snapshot.stats.per_source_rx_bytes == {BleLogSource.HOST: frame_size}
-    assert snapshot.stats.os_peak.per_source is not None
-    assert snapshot.stats.os_peak.per_source[BleLogSource.HOST].peak_frames == 1
 
 
-def test_ll_frame_uses_ll_timestamp_peak_tracker() -> None:
+def test_ll_frame_updates_received_stats() -> None:
     aggregator = CaptureAggregator()
     payload = b'\x00\x00' + struct.pack('<I', 555000) + b'll'
     frame = _frame(BleLogSource.LL_TASK, frame_sn=1, payload=payload)
     frame_size = frame_size_from_payload(payload)
 
-    aggregator.consume_events((FrameEvent(frame=frame, frame_size=frame_size),))
+    aggregator.consume_events(
+        (FrameEvent(frame_size=frame_size, source_code=frame.source_code, frame_sn=frame.frame_sn),)
+    )
     snapshot = aggregator.snapshot(1.0)
 
-    assert snapshot.stats.ll_peak.per_source is not None
-    assert snapshot.stats.ll_peak.per_source[BleLogSource.LL_TASK].peak_frames == 1
+    assert snapshot.stats.per_source_rx_bytes == {BleLogSource.LL_TASK: frame_size}
 
 
 def test_redir_event_updates_stats_and_returns_text() -> None:
@@ -79,8 +80,9 @@ def test_redir_event_updates_stats_and_returns_text() -> None:
     update = aggregator.consume_events(
         (
             RedirEvent(
-                frame=frame,
                 frame_size=frame_size_from_payload(payload),
+                source_code=frame.source_code,
+                frame_sn=frame.frame_sn,
                 text='console line\n',
                 wall_ms=100,
             ),
@@ -102,7 +104,6 @@ def test_internal_info_event_sets_version_and_is_forwarded() -> None:
     update = aggregator.consume_events(
         (
             InternalEvent(
-                frame=frame,
                 frame_size=frame_size_from_payload(payload),
                 int_src=InternalSource.INFO,
                 decoded=decoded,
@@ -134,7 +135,6 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
     aggregator.consume_events(
         (
             InternalEvent(
-                frame=frame,
                 frame_size=frame_size_from_payload(payload),
                 int_src=InternalSource.BUF_UTIL,
                 decoded=decoded,
@@ -172,8 +172,8 @@ def test_enh_stat_event_updates_loss_and_emits_loss_update() -> None:
         os_ts_ms=13,
     )
 
-    aggregator.consume_events((EnhStatEvent(frame=frame, frame_size=frame_size_from_payload(payload), stat=first),))
-    update = aggregator.consume_events((EnhStatEvent(frame=frame, frame_size=frame_size_from_payload(payload), stat=second),))
+    aggregator.consume_events((EnhStatEvent(frame_size=frame_size_from_payload(payload), stat=first),))
+    update = aggregator.consume_events((EnhStatEvent(frame_size=frame_size_from_payload(payload), stat=second),))
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1

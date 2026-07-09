@@ -25,12 +25,9 @@ from src.backend.models import InternalSource
 from src.backend.models import LaunchConfig
 from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
-from src.backend.models import TrafficSpikeDetected
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.models import UserNotice
-from src.backend.models import format_bitrate
-from src.backend.models import resolve_source_name
 from src.frontend.capture_session import CaptureSession
 from src.frontend.launch_screen import LaunchScreen
 from src.frontend.log_view import LogView
@@ -228,25 +225,6 @@ class BLELogApp(App):
         panel.disconnected = True
         if self._exit_after_backend_stop:
             self.exit()
-
-    def on_traffic_spike_detected(self, msg: TrafficSpikeDetected) -> None:
-        log_view = self.query_one(LogView)
-        if not self._debug:
-            log_view.write_info(
-                f'High realtime log traffic: {format_bitrate(msg.throughput_bits_per_sec)} '
-                f'for {msg.duration_ms:.0f}ms. Raw capture continues; live stats may lag.'
-            )
-            return
-
-        top_sources = sorted(msg.per_source.items(), key=lambda x: x[1], reverse=True)
-        src_parts = ', '.join(f'{resolve_source_name(s)} {p:.0f}%' for s, p in top_sources if p >= 1.0)
-        if msg.utilization_pct >= 100.0:
-            util_str = 'saturated'
-        else:
-            util_str = f'{msg.utilization_pct:.0f}% wire'
-        log_view.write_traffic(
-            f'{format_bitrate(msg.throughput_bits_per_sec)} ({util_str}) over {msg.duration_ms:.0f}ms | {src_parts}'
-        )
 
     # --- Actions ---
 

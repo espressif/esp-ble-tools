@@ -13,7 +13,7 @@ from src.backend.models import BackendStopped
 from src.backend.models import TransportConfig
 from src.backend.models import UserNotice
 from src.backend.pipeline import CapturePipeline
-from src.backend.writer import RawWriterConfig
+from src.backend.io import WriterConfig
 from src.frontend.capture_events import CaptureEventPresenter
 
 PIPELINE_JOIN_TIMEOUT_SEC = 2.0
@@ -33,7 +33,10 @@ class CaptureSession:
         self._output_path = output_path
         self._join_timeout_sec = join_timeout_sec
         self._event_presenter = CaptureEventPresenter(output_path, debug=debug)
-        self._pipeline = CapturePipeline(transport_config, RawWriterConfig(output_path))
+        self._pipeline = CapturePipeline(
+            transport_config,
+            WriterConfig(output_path),
+        )
         self._finished = False
 
     @property
