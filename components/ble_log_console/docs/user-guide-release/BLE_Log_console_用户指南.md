@@ -6,7 +6,7 @@
 
 ## 1. 准备工作
 
-启动前只需要确认三件事：固件已经启用 BLE Log，硬件接线正确，电脑端工具可以运行。
+启动前只需确认以下三件事：固件已启用 BLE Log，硬件接线正确，电脑端工具可正常运行。
 
 快速跳转到要使用的传输模式：
 
@@ -30,7 +30,7 @@
   - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT=0`
   - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE=3000000`
   - `CONFIG_BLE_LOG_PRPH_UART_DMA_TX_IO_NUM=0`
-- 确认 UART TX 已经连接到电脑端串口 RX。
+- 确认 UART TX 已连接到电脑端串口 RX。
 - 编译并烧录固件。
 
 > 注意：
@@ -61,15 +61,15 @@ ESP 设备  ->  BLE Log SPI USB Bridge  ->  电脑
 
 Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目前由我们的产品 `ESP32P4` 实现支持。你可以通过以下两种方式获取 Bridge 设备：
 
-* 自行烧录：如果你恰好有一块 `ESP32P4` 开发板，可以在 [Bridge 固件下载](https://espressif.github.io/esp-launchpad/?flashConfigURL=https://dl.espressif.com/ble/ble_log/spi_bridge_bin/launchpad.toml&crossDomain=true) 页面上通过 USB 串口连接后自行烧录，即可作为 Bridge 设备使用。
+* 自行烧录：如果你有一块 `ESP32P4` 开发板，可通过 USB 串口连接开发板，并在 [Bridge 固件下载](https://espressif.github.io/esp-launchpad/?flashConfigURL=https://dl.espressif.com/ble/ble_log/spi_bridge_bin/launchpad.toml&crossDomain=true) 页面自行烧录固件，即可作为 Bridge 设备使用。
 
-* 官方申请/采购：如果你没有可作为 Bridge 使用的 `ESP32P4` 设备，但确实有使用 SPI Bridge 模式的需求，可以通过官方渠道购买，或向技术支持申请试用。
+* 官方申请/采购：如果你没有可作为 Bridge 使用的 `ESP32P4` 设备，但确实需要使用 SPI Bridge 模式，可通过官方渠道购买，或向技术支持申请试用。
 
 > 注意：Bridge 设备是额外的转接设备，不能与产生 BLE Log 的设备为同一台设备。
 
 ### 3.1 固件配置
 
-- 在你的设备的现有工程中开启 `CONFIG_BLE_LOG_ENABLED`，并同时开启以下相关配置：
+- 在产生 BLE Log 的目标设备工程中开启 `CONFIG_BLE_LOG_ENABLED`，并同时开启以下相关配置：
   - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`
 - 按照实际电路配置以下 GPIO 端口号：
   - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM`
@@ -96,7 +96,8 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 ## 4. 首次运行与启动
 
 ### 4.1 获取工具
-工具包中提供了不同系统下的应用程序。
+
+工具包提供了适用于不同操作系统的应用程序。
 
 #### 4.1.1 Windows 系统
 
@@ -126,7 +127,8 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 ```bash
 ./ble_log_console_ubuntu_v1.0.3
 ```
-> 本工具包现支持 `Ubuntu 22.04` 及以上版本。
+
+> 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
 
 ### 4.2 应用指南
 
@@ -136,16 +138,16 @@ sudo ./ble_log_console_ubuntu_v1.0.3
   <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 70%; max-width: 900px;">
 </p>
 
-&emsp;首先选择传输模式：如果使用串口接收日志，选择 UART；如果使用 SPI Bridge 设备接收日志，选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
+&emsp;首先选择传输模式：若通过串口接收日志，选择 UART；若通过 SPI Bridge 设备接收日志，选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
 
-&emsp;随后选择端口。UART 模式下还需要选择波特率，该波特率需要与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录，没有该目录时会自动创建。最后点击连接即可开始接收日志。
+&emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 
-&emsp;日志接收完毕后，按 `q` 或 `Ctrl+C` 键即可退出应用。日志会自动保存在对应目录下。较大的采集文件可能会被拆分为多个 `part` 文件，退出时会汇总显示已保存文件。
+&emsp;停止采集后，按 `q` 或 `Ctrl+C` 即可退出应用。日志会自动保存在指定目录下。较大的采集文件可能会被拆分为多个 `part` 文件，退出时会汇总显示已保存的文件。
 
-> 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。如果直接关闭终端窗口，进程可能会被系统直接结束，最后的 flush 和 close 流程可能无法完成。
+> 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。若直接关闭终端窗口，进程可能被系统强制终止，最后的数据写入流程可能无法完成。
 
 
-&emsp;需要注意的是，Linux 环境下，SPI 模式可用端口和 UART 模式可用端口的名称格式不同，这是由传输模式本身决定的，使用上并无区别。
+&emsp;需要注意的是，在 Linux 环境下，SPI 模式与 UART 模式的可用端口名称格式不同，这是由两种传输模式的端口命名规则所致，不影响正常使用。
 
 
 
@@ -163,17 +165,17 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 
 &emsp;状态栏会显示当前连接状态、已捕获原始数据量、当前速度、峰值速度、帧率和固件上报的丢帧统计。
 
-&emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能暂时显示不全，适当放大窗口或通过滚动显示其他部分信息。
+&emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能显示不全，可放大窗口或通过滚动查看其余信息。
 
 ### 5.2 正常状态说明
 
-&emsp;如上图界面所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已经捕获并保存的原始数据量，当 `RX` 达到一定规模时，会出现蓝色箭头处的提示。
+&emsp;如上图所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已捕获并保存的原始数据量；当 `RX` 达到一定数据量时，会出现蓝色箭头处的提示。
 
-&emsp;**正常状态：** 在使用过程中，如果可以看到红色箭头处的 `frames` 数量**持续增加**，传输速度**不为 0**，并且出现蓝色箭头处的**大小提示**，说明工具正在正常运行。
+&emsp;**正常状态：** 使用过程中，若红色箭头处的 `frames` 数量**持续增加**，传输速度**不为 0**，且出现蓝色箭头处的**大小提示**，说明工具正在正常运行。
 
 > 如果连接正常，但上述指标存在异常，请检查 `BLE Log` 模块是否正常开启，或者连线是否完全正确。
 
-> 注意：高实时流量提示表示实时解析或界面显示可能暂时落后于 raw 捕获，不表示 raw 保存异常。raw 数据会优先写入 `.bin` 文件；如果 raw 保存链路无法跟上，工具会明确报告 raw writer 或 reader backpressure 错误。
+> 注意：出现高实时流量提示，表示实时解析或界面显示可能暂时落后于原始数据采集，并不代表原始数据保存异常。原始数据会先写入 `.bin` 文件再进行解析；若原始数据写入路径跟不上，工具会明确报告 raw writer 或 reader backpressure 错误。
 
 
 ### 5.3 常用快捷键
@@ -193,11 +195,12 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 
 
 ## 6. 源码启动
-本工具同样提供了源码框架供您使用，有需求的用户可以自行按照本章节指导使用。
+
+本工具也提供源码，有本地调试、临时修改或功能验证需求的用户，可参考本章说明从源码运行。
 
 ### 6.1 源码获取
 
-&emsp;源码位于 BLE Log Console 源码目录下。请先进入该目录使用。
+&emsp;源码位于 BLE Log Console 源码目录下。使用前请先进入该目录。
 
 ```bash
 cd <ble_log_console 源码目录>
@@ -223,7 +226,7 @@ cd <ble_log_console 源码目录>
 
 ### 6.2 源码使用
 
-&emsp;源码启动方式与打包程序的使用方式基本一致。首次使用时先运行安装脚本准备本地环境，之后使用启动脚本启动 `console.py`。
+&emsp;源码启动方式与打包程序基本一致。本工具基于 Python，并使用 `uv` 管理依赖。首次使用时请先运行安装脚本准备本地环境，之后通过启动脚本运行 `console.py`。
 
 #### 6.2.1 Windows 系统
 
@@ -239,7 +242,7 @@ cd <ble_log_console 源码目录>
 .\run.bat
 ```
 
-&emsp;不带参数运行时会打开交互界面。您可以在界面中选择传输模式、端口、波特率和日志保存目录。
+&emsp;不带参数运行时会打开交互界面，可在界面中选择传输模式、端口、波特率和日志保存目录。
 
 &emsp;也可以直接通过命令行参数启动指定模式：
 
@@ -279,7 +282,7 @@ chmod +x ./install.sh ./run.sh
 
 #### 6.2.3 直接运行 console.py
 
-&emsp;如果已经手动准备好所需 Python 环境，可以直接运行 `console.py`：
+&emsp;若已手动准备好所需的 Python 环境，可以直接运行 `console.py`：
 
 ```bash
 cd <ble_log_console 源码目录>
@@ -306,28 +309,39 @@ python console.py --mode spi --port <PORT>
 
 ## 附录：常用命令
 
-&emsp;本部分补充工具包用法。本工具也支持命令行模式启动，常用命令如下：
+&emsp;本节补充说明工具包的命令行用法。常用命令如下：
 
 | 操作 | Linux | Windows |
 | --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu --help` | `ble_log_console_windows.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu ports` | `ble_log_console_windows.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu` | `ble_log_console_windows.exe` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu --mode spi --port <PORT>` | `ble_log_console_windows.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu ls` | `ble_log_console_windows.exe ls` |
+| 查看帮助 | `./ble_log_console_ubuntu_v1.0.3 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
+| 列出端口 | `./ble_log_console_ubuntu_v1.0.3 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
+| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.3` | `ble_log_console_windows_v1.0.3.exe` |
+| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.3 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
+| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.3 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
+| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.3 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
 
 ## 附录：常见问题
+
+快速查找：
+
+* [端口列表里看不到设备](#faq-no-port)
+* [程序启动但没有日志](#faq-no-logs)
+* [源码环境安装失败](#faq-source-setup)
+* [ESP32P4 Bridge 固件版本如何确认](#faq-esp32p4-version)
+
+<a id="faq-no-port"></a>
 
 ### 我插上设备后，端口列表里还是看不到。
 
 请检查：
 
-- 设备是否正确连线，SPI 是否共地。
+- 设备是否正确连线，SPI 模式下 GND 是否已正确共地。
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
 - Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.3`，并在执行后拔插过设备。
+
+<a id="faq-no-logs"></a>
 
 ### 程序启动了，但一直没有日志。
 
@@ -340,9 +354,9 @@ python console.py --mode spi --port <PORT>
 - ESP 设备和串口工具或 SPI Bridge 之间的接线是否正确。
 - SPI Bridge 模式下，ESP 设备固件中的 MOSI、SCLK、CS 对应 GPIO 是否与实际接线一致。
 
-### 出现高实时流量提示。
 
-这表示工具已经收到较高流量的数据，实时解析或界面显示可能暂时落后。raw `.bin` 文件保存链路优先于解析链路；如果没有出现 raw writer 或 reader backpressure 错误，raw 捕获仍在继续。
+
+<a id="faq-source-setup"></a>
 
 ### 源码环境安装失败。
 
@@ -354,14 +368,16 @@ python console.py --mode spi --port <PORT>
 
 如果脚本无法完成环境准备，请手动安装上述必要项，然后在源码目录下执行 `uv sync --all-extras`，再运行启动脚本。
 
+<a id="faq-esp32p4-version"></a>
+
 ### ESP32P4 烧录的固件如何确定版本？
 
-当前 ESP32P4 Bridge 固件版本为 `1.0`。固件启动时会在串口日志中打印版本信息。确认版本时，请将 ESP32P4 通过 USB 串口连接到电脑，然后打开串口 monitor 查看启动日志。
+当前 ESP32P4 Bridge 固件版本为 `1.0`。固件启动时会在串口日志中打印版本信息。确认版本时，请将 ESP32P4 通过 USB 串口连接到电脑，然后打开串口监视器查看启动日志。
 
 ```bash
 idf.py -p <PORT> monitor
 ```
 
-如果启动日志已经刷过，可以按下开发板复位键，版本信息会在 ESP32P4 重新启动后再次打印。
+如果已错过启动日志，可按下开发板复位键，版本信息会在 ESP32P4 重新启动后再次打印。
 
-> 注意：查看版本时，ESP32P4 的串口不能同时被 `ble_log_console UART`  模式或其他串口工具占用。
+> 注意：查看版本时，ESP32P4 的串口不能同时被 `ble_log_console` 的 UART 模式或其他串口工具占用。
