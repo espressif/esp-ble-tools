@@ -1,0 +1,18 @@
+menu "BLE Log Bridge"
+
+config BRIDGE_SPI_TRANSACTION_SIZE
+    int "SPI slave transaction size"
+    range 1 4092
+    default 2048
+
+config BRIDGE_SPI_QUEUE_DEPTH
+    int "SPI slave DMA queue depth"
+    range 1 128
+    default 128
+
+config BRIDGE_STOP_DRAIN_TIMEOUT_MS
+    int "STOP CDC drain timeout (ms)"
+    range 0 10000
+    default 2000
+
+endmenu
