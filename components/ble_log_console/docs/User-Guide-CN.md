@@ -2,13 +2,10 @@
 版本：v1.0.3
 
 ## 简介
-&emsp;BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
+BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
 
-## 0. 获取工具
-
-请优先从 GitHub 下载最新稳定版 BLE Log Console 工具包：
-
-[BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+ **首次使用前，请先下载最新稳定版 BLE Log Console 工具包：**
+>[BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
 ## 1. 准备工作
 

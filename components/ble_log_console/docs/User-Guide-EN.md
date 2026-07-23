@@ -4,12 +4,8 @@ Version: v1.0.3
 ## Introduction
 
 BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports UART and SPI Bridge transport modes.
-
-## 0. Get the Tool
-
-Download the latest stable tool package from GitHub Release:
-
-[BLE Log Console tools](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+**Before first use, download the latest stable BLE Log Console tool package:**
+>[BLE Log Console tools](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
 ## 1. Preparation
 
