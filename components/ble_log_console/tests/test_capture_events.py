@@ -64,6 +64,17 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     assert presenter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
 
 
+def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
+    output_path = tmp_path / 'ble_log.bin'
+    presenter = CaptureEventPresenter(output_path)
+
+    presenter.handle_event(AggregatorUpdate(redir_texts=('\x1b[0;',)))
+    presenter.handle_event(AggregatorUpdate(redir_texts=('32mgreen\x1b[0m\r\nnext\rline\t\x01',)))
+    presenter.close()
+
+    assert console_log_part_path(output_path, 1).read_bytes() == b'green\nnext\nline    '
+
+
 def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
@@ -79,12 +90,12 @@ def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path, console_part_max_bytes=3)
 
-    presenter.handle_event(AggregatorUpdate(redir_texts=('abc',)))
-    presenter.handle_event(AggregatorUpdate(redir_texts=('de',)))
+    presenter.handle_event(AggregatorUpdate(redir_texts=('abc\n',)))
+    presenter.handle_event(AggregatorUpdate(redir_texts=('de\n',)))
     presenter.close()
 
-    assert console_log_part_path(output_path, 1).read_text() == 'abc'
-    assert console_log_part_path(output_path, 2).read_text() == 'de'
+    assert console_log_part_path(output_path, 1).read_text() == 'abc\n'
+    assert console_log_part_path(output_path, 2).read_text() == 'de\n'
     assert presenter.state.saved_console_log_paths == (
         console_log_part_path(output_path, 1),
         console_log_part_path(output_path, 2),
