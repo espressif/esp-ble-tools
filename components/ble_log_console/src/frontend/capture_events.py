@@ -131,6 +131,7 @@ class CaptureEventPresenter:
         self._console_line_buf = ''
         self._console_line_prefixed = False
         self._console_line_received_at_ms = 0
+        self._console_timestamp_pending = False
         self._redir_line_buf = ''
         self._disconnected = False
         now = self._clock()
@@ -337,6 +338,7 @@ class CaptureEventPresenter:
 
     def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
         messages: list[Message] = []
+        self._console_timestamp_pending = not self._console_line_prefixed
         old_console_path_count = len(self._saved_console_log_paths)
         self._ensure_console_log_open()
         if len(self._saved_console_log_paths) > old_console_path_count and old_console_path_count > 0:
@@ -374,10 +376,11 @@ class CaptureEventPresenter:
 
     def _write_console_line(self, text: str, received_at_ms: int, *, complete: bool) -> None:
         normalized = _normalize_console_log_text(text)
-        if normalized and not self._console_line_prefixed:
+        if normalized and self._console_timestamp_pending and not self._console_line_prefixed:
             timestamp = _format_receive_timestamp(received_at_ms)
             self._append_console_log_text(f'[{timestamp}] ')
             self._console_line_prefixed = True
+            self._console_timestamp_pending = False
         self._append_console_log_text(normalized)
         if complete:
             self._append_console_log_text('\n')

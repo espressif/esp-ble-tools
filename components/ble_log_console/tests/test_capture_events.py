@@ -77,7 +77,7 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     assert second[0].text == 'hello world'
     presenter.close()
     stamp = _timestamp(2000)
-    assert console_log_part_path(output_path, 1).read_text() == f'[{stamp}] hello world\n[{stamp}] partial'
+    assert console_log_part_path(output_path, 1).read_text() == f'[{stamp}] hello world\npartial'
     assert presenter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
 
 
@@ -91,7 +91,7 @@ def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
 
     stamp = _timestamp(2000).encode()
     assert console_log_part_path(output_path, 1).read_bytes() == (
-        b'[' + stamp + b'] green\n[' + stamp + b'] next\n[' + stamp + b'] line    '
+        b'[' + stamp + b'] green\nnext\nline    '
     )
 
 
