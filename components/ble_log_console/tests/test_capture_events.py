@@ -78,7 +78,7 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     assert first == ()
     assert len(second) == 1
     assert isinstance(second[0], LogLine)
-    assert second[0].text == f'{_short_timestamp(2000)}  hello world'
+    assert second[0].text == f'[{_short_timestamp(2000)}]  hello world'
     presenter.close()
     stamp = _timestamp(2000)
     assert console_log_part_path(output_path, 1).read_text() == f'[{stamp}] hello world\npartial'
@@ -107,7 +107,7 @@ def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
 
     assert len(messages) == 1
     assert isinstance(messages[0], LogLine)
-    assert messages[0].text == f'{_short_timestamp(2000)}  one\ntwo\nthree'
+    assert messages[0].text == f'[{_short_timestamp(2000)}]  one\ntwo\nthree'
 
 
 def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:

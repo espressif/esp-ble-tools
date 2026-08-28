@@ -1,5 +1,5 @@
 # BLE Log Console Quick Start Guide
-Version: v1.0.3
+Version: v1.0.4
 
 ## Introduction
 
@@ -107,16 +107,16 @@ On Windows, use `ble_log_console_windows_v1.0.3.exe`. The recommended way to sta
 
 #### 4.1.2 Linux System
 
-On Linux, use `ble_log_console_ubuntu_v1.0.3`. If the file does not have execute permission, enter the corresponding directory first and run:
+On Linux, use `ble_log_console_ubuntu_v1.0.4`. If the file does not have execute permission, enter the corresponding directory first and run:
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.3
+chmod +x ./ble_log_console_ubuntu_v1.0.4
 ```
 
 If you plan to use SPI Bridge on Linux, run the following command before the first use:
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.3
+sudo ./ble_log_console_ubuntu_v1.0.4
 ```
 
 This command installs the USB access permission rules required by SPI Bridge. After the command finishes, unplug and reconnect the SPI Bridge device once. After that, `sudo` is no longer required for normal use.
@@ -124,7 +124,7 @@ This command installs the USB access permission rules required by SPI Bridge. Af
 Then run the following command to start the program:
 
 ```bash
-./ble_log_console_ubuntu_v1.0.3
+./ble_log_console_ubuntu_v1.0.4
 ```
 
 > Note: This tool package currently supports `Ubuntu 22.04` and later.
@@ -142,6 +142,8 @@ First, select the transport mode. Select UART if you receive logs through a seri
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
 When you stop capturing, press `q` or `Ctrl+C` to exit the application. Logs are automatically saved in the configured directory. Large captures may be split into multiple `part` files, and the exit message summarizes the saved files.
+
+When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to this tool together with the BLE Log data. The tool displays them in real time and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory. No additional action is required. See [Log File Save Rules](#53-log-file-save-rules) for details.
 
 > Note: When stopping capture, use `q` or `Ctrl+C` to exit the application normally. If the terminal window is closed directly, the process may be terminated by the system before the final data flush completes.
 
@@ -181,7 +183,7 @@ Capture files are saved to the log directory selected at startup. If the save pa
 ble_log_YYYYMMDD_HHMMSS.bin
 ```
 
-If UART PORT 0 outputs `REDIR` text logs, an additional file is saved:
+If serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are also saved as:
 
 ```text
 ble_log_YYYYMMDD_HHMMSS_console.log
@@ -320,12 +322,12 @@ This section provides additional command-line usage for the tool package. Common
 
 | Operation | Linux | Windows |
 | --- | --- | --- |
-| View help | `./ble_log_console_ubuntu_v1.0.3 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
-| List ports | `./ble_log_console_ubuntu_v1.0.3 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
-| Start interactive mode | `./ble_log_console_ubuntu_v1.0.3` | `ble_log_console_windows_v1.0.3.exe` |
-| Start UART mode | `./ble_log_console_ubuntu_v1.0.3 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
-| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.3 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
-| View saved logs | `./ble_log_console_ubuntu_v1.0.3 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
+| View help | `./ble_log_console_ubuntu_v1.0.4 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
+| List ports | `./ble_log_console_ubuntu_v1.0.4 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
+| Start interactive mode | `./ble_log_console_ubuntu_v1.0.4` | `ble_log_console_windows_v1.0.3.exe` |
+| Start UART mode | `./ble_log_console_ubuntu_v1.0.4 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
+| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.4 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
+| View saved logs | `./ble_log_console_ubuntu_v1.0.4 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
 
 ### Command-Line Options
 
@@ -352,6 +354,7 @@ Quick links:
 
 * [Device not shown in the port list](#faq-no-port)
 * [Program starts but no logs appear](#faq-no-logs)
+* [Why serial-monitor logs appear in the tool and where they are saved](#faq-console-log)
 * [Source environment setup fails](#faq-source-setup)
 * [How to confirm ESP32P4 Bridge firmware version](#faq-esp32p4-version)
 
@@ -365,7 +368,7 @@ Please check:
 - Whether the device is powered on.
 - Whether the correct firmware is running on the device.
 - Whether the port is already occupied by another program.
-- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.3` once and unplugged/reconnected the device after running it.
+- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.4` once and unplugged/reconnected the device after running it.
 
 <a id="faq-no-logs"></a>
 
@@ -379,6 +382,16 @@ Please check:
 - In UART mode, whether the baud rate selected in the tool matches the firmware configuration.
 - Whether the wiring between the ESP device and the serial port tool or SPI Bridge is correct.
 - In SPI Bridge mode, whether the GPIOs corresponding to MOSI, SCLK, and CS in the ESP device firmware match the actual wiring.
+
+<a id="faq-console-log"></a>
+
+### Why do serial-monitor logs appear in the tool, and where are they saved?
+
+When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to BLE Log Console together with the BLE Log data. The tool displays them in the log area and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory.
+
+Starting with v1.0.4, the first line of each such console-log group shows the PC's local receive time, for example `[15:14:54.367]`. The corresponding `_console.log` file uses the full date and time-zone format. Following lines without a repeated timestamp still belong to the same log group. The tool adds this timestamp when the PC receives the data; it is not firmware runtime.
+
+The `_console.log` file removes ANSI/ESC display control characters and normalizes line endings; the original `.bin` data is unchanged.
 
 <a id="faq-source-setup"></a>
 

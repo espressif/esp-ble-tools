@@ -400,7 +400,7 @@ class CaptureEventPresenter:
     def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
         non_empty_lines = [line for line in lines if line]
         if non_empty_lines:
-            non_empty_lines[0] = f'{_format_receive_time(received_at_ms)}  {non_empty_lines[0]}'
+            non_empty_lines[0] = f'[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}'
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:
