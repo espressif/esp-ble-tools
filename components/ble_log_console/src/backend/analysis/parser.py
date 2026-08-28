@@ -61,14 +61,20 @@ def _decoder_for_mode(checksum_mode: ChecksumMode | None) -> FrameDecoder:
     return FrameDecoder(format=frame_format, max_frame_size=MAX_DECODER_FRAME_SIZE)
 
 
-def parse_ble_log_chunk(data: bytes, checksum_mode: ChecksumMode | None = None) -> ParseChunkResult:
+def parse_ble_log_chunk(
+    data: bytes,
+    checksum_mode: ChecksumMode | None = None,
+    *,
+    received_at_ms: int | None = None,
+) -> ParseChunkResult:
     """Parse *data* and return events plus the safe-to-discard byte count."""
 
+    received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
     decoder = _decoder_for_mode(checksum_mode)
     frames = decoder.feed(data)
     events: list[BleLogEvent] = []
     for frame in frames:
-        _append_frame_event(frame, events)
+        _append_frame_event(frame, events, received_at_ms)
 
     buffered_bytes = decoder.stats.buffered_bytes
     return ParseChunkResult(
@@ -86,9 +92,10 @@ class BleLogParser:
         self._raw_bytes = 0
         self._parsed_frames = 0
 
-    def feed(self, chunk: bytes) -> ParseBatch:
+    def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
+        received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
         self._raw_bytes += len(chunk)
         buffered_before = self._decoder.stats.buffered_bytes
         frames = self._decoder.feed(chunk)
@@ -96,7 +103,7 @@ class BleLogParser:
         events: list[BleLogEvent] = []
         for frame in frames:
             self._parsed_frames += 1
-            _append_frame_event(frame, events)
+            _append_frame_event(frame, events, received_at_ms)
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
@@ -115,7 +122,7 @@ class BleLogParser:
         )
 
 
-def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent]) -> None:
+def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:
     frame_size = len(frame.payload) + FRAME_OVERHEAD
     source_code = frame.source_code
     frame_sn = frame.sequence_number
@@ -152,7 +159,7 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent]) -> None:
                 source_code=source_code,
                 frame_sn=frame_sn,
                 text=frame.payload.decode('ascii', errors='replace'),
-                wall_ms=int(time.perf_counter() * 1000) & 0xFFFFFFFF,
+                received_at_ms=received_at_ms,
             )
         )
         return

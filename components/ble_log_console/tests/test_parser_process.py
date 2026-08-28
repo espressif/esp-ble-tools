@@ -10,6 +10,8 @@ from threading import Thread
 from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import ReceivedChunk
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.worker import ParserStatus
 from src.backend.analysis.worker import run_analysis_loop
@@ -42,9 +44,9 @@ def _events(output_queue: Queue[object]) -> list[object]:
 
 
 def test_parser_loop_emits_batches_and_final_summary() -> None:
-    parse_queue: Queue[bytes | None] = Queue()
+    parse_queue: Queue[ReceivedChunk | None] = Queue()
     output_queue: Queue[object] = Queue()
-    parse_queue.put(_sync_frames())
+    parse_queue.put(ReceivedChunk(_sync_frames(), 100))
     parse_queue.put(None)
 
     run_parser_loop(parse_queue, output_queue)
@@ -60,11 +62,11 @@ def test_parser_loop_emits_batches_and_final_summary() -> None:
 
 
 def test_parser_loop_batches_available_chunks_before_feed() -> None:
-    parse_queue: Queue[bytes | None] = Queue()
+    parse_queue: Queue[ReceivedChunk | None] = Queue()
     output_queue: Queue[object] = Queue()
     frames = _sync_frames()
-    parse_queue.put(frames[:10])
-    parse_queue.put(frames[10:])
+    parse_queue.put(ReceivedChunk(frames[:10], 100))
+    parse_queue.put(ReceivedChunk(frames[10:], 200))
     parse_queue.put(None)
 
     run_parser_loop(parse_queue, output_queue)
@@ -81,9 +83,9 @@ def test_parser_loop_batches_available_chunks_before_feed() -> None:
 
 
 def test_parser_loop_ignores_empty_chunks() -> None:
-    parse_queue: Queue[bytes | None] = Queue()
+    parse_queue: Queue[ReceivedChunk | None] = Queue()
     output_queue: Queue[object] = Queue()
-    parse_queue.put(b'')
+    parse_queue.put(ReceivedChunk(b'', 100))
     parse_queue.put(None)
 
     run_parser_loop(parse_queue, output_queue)
@@ -133,3 +135,24 @@ def test_analysis_loop_exits_after_unsupported_checksum_mode() -> None:
     events = _events(output_queue)
     assert any(isinstance(event, ParserStatus) and event.kind == 'error' for event in events)
     assert any(isinstance(event, AggregatorProcessEvent) and event.kind == 'stopped' for event in events)
+
+
+def test_parser_loop_uses_timestamp_of_buffer_that_completes_redir_frame() -> None:
+    parse_queue: Queue[ReceivedChunk | None] = Queue()
+    output_queue: Queue[object] = Queue()
+    frame = _make_frame(b'console line\n', src=BleLogSource.REDIR, sn=0)
+    split = len(frame) // 2
+    parse_queue.put(ReceivedChunk(frame[:split], 100))
+    parse_queue.put(ReceivedChunk(frame[split:], 200))
+    parse_queue.put(None)
+
+    run_parser_loop(parse_queue, output_queue)
+
+    redir_events = [
+        event
+        for batch in _events(output_queue)
+        if isinstance(batch, ParseBatch)
+        for event in batch.events
+        if isinstance(event, RedirEvent)
+    ]
+    assert redir_events[0].received_at_ms == 200

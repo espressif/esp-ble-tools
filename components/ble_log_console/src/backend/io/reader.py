@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from queue import Empty
 from queue import Full
 from typing import Any
+from typing import Callable
 from typing import Protocol
 
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import TransportStatus
 from src.backend.io.writer import Clock
@@ -20,6 +22,11 @@ from src.backend.io.writer import WriterStatus
 
 QUEUE_PUT_TIMEOUT_SEC = 5.0
 RAW_STATS_INTERVAL_SEC = 0.25
+WallClockMs = Callable[[], int]
+
+
+def _wall_clock_ms() -> int:
+    return time.time_ns() // 1_000_000
 
 
 @dataclass(frozen=True)
@@ -67,7 +74,7 @@ def _put_event(ui_queue: Any, event: ReaderProcessEvent | WriterEvent) -> None:
         ui_queue.put(event)
 
 
-def _put_parse(parse_queue: Any, item: bytes | None) -> bool:
+def _put_parse(parse_queue: Any, item: ReceivedChunk | None) -> bool:
     try:
         parse_queue.put(item, block=False)
     except Full:
@@ -214,6 +221,7 @@ def run_reader_loop(
     drain_rounds: int = 10,
     raw_stats_interval_sec: float = RAW_STATS_INTERVAL_SEC,
     clock: Clock = time.monotonic,
+    wall_clock_ms: WallClockMs = _wall_clock_ms,
 ) -> None:
     """Read transport blocks, enqueue raw bytes for saving, then feed parser.
 
@@ -252,7 +260,7 @@ def run_reader_loop(
         parse_dropped_bytes += len(block)
         report_parse_backlog(message)
 
-    def handle_block(block: bytes) -> bool:
+    def handle_block(block: bytes, received_at_ms: int) -> bool:
         nonlocal writer_failed
         try:
             _write_block(writer, block, ui_queue, timeout=queue_put_timeout)
@@ -262,7 +270,7 @@ def run_reader_loop(
             return False
 
         raw_stats.record(len(block))
-        if not _put_parse(parse_queue, block):
+        if not _put_parse(parse_queue, ReceivedChunk(block, received_at_ms)):
             record_parse_drop(
                 block,
                 (
@@ -282,12 +290,13 @@ def run_reader_loop(
             block = reader.read()
             if not block:
                 continue
-            if not handle_block(block):
+            received_at_ms = wall_clock_ms()
+            if not handle_block(block, received_at_ms):
                 break
 
         if opened and stop_requested.is_set() and not writer_failed:
             for block in reader.drain(drain_rounds):
-                if not handle_block(block):
+                if not handle_block(block, wall_clock_ms()):
                     break
     except Exception as e:
         _put_event(ui_queue, ReaderProcessEvent(kind='error', message=str(e)))

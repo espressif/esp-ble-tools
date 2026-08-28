@@ -12,6 +12,7 @@ from src.backend.io.reader import ReaderCommand
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.reader import run_reader_loop
 from src.backend.io.writer import WriterStatus
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.models import TransportBitrate
 from src.backend.models import TransportMode
 from src.backend.support.transport import TransportStatus
@@ -134,17 +135,26 @@ class TestReaderProcessLoop:
         stop_event = Event()
         reader = FakeReader([b'one', b'two'], stop_event)
         writer = FakeWriter()
-        parse_queue: Queue[bytes | None] = Queue()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
         raw_stats_queue: Queue[int | None] = Queue()
 
-        run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event, raw_stats_queue=raw_stats_queue)
+        received_times = iter((100, 200))
+        run_reader_loop(
+            reader,
+            writer,
+            parse_queue,
+            ui_queue,
+            stop_event,
+            raw_stats_queue=raw_stats_queue,
+            wall_clock_ms=lambda: next(received_times),
+        )
 
         assert writer.blocks == [b'one', b'two']
         assert raw_stats_queue.get_nowait() == len(b'onetwo')
         assert raw_stats_queue.get_nowait() is None
-        assert parse_queue.get_nowait() == b'one'
-        assert parse_queue.get_nowait() == b'two'
+        assert parse_queue.get_nowait() == ReceivedChunk(b'one', 100)
+        assert parse_queue.get_nowait() == ReceivedChunk(b'two', 200)
         assert parse_queue.get_nowait() is None
         assert [event.kind for event in _events(ui_queue)] == ['opened', 'opened', 'finalized', 'stopped']
         assert reader.read_calls == 3
@@ -154,13 +164,13 @@ class TestReaderProcessLoop:
         stop_event.set()
         reader = FakeReader([], stop_event, drain_blocks=[b'last'])
         writer = FakeWriter()
-        parse_queue: Queue[bytes | None] = Queue()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
 
-        run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event)
+        run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event, wall_clock_ms=lambda: 300)
 
         assert writer.blocks == [b'last']
-        assert parse_queue.get_nowait() == b'last'
+        assert parse_queue.get_nowait() == ReceivedChunk(b'last', 300)
         assert parse_queue.get_nowait() is None
         assert reader.drain_calls == 1
 
@@ -168,7 +178,7 @@ class TestReaderProcessLoop:
         stop_event = Event()
         reader = FakeReader([b'one', b'two'], stop_event)
         writer = FakeWriter(fail_on_write=True)
-        parse_queue: Queue[bytes | None] = Queue()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
 
         run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event)
@@ -181,8 +191,8 @@ class TestReaderProcessLoop:
         stop_event = Event()
         reader = FakeReader([b'one'], stop_event)
         writer = FakeWriter()
-        parse_queue: Queue[bytes | None] = Queue(maxsize=1)
-        parse_queue.put(b'existing')
+        parse_queue: Queue[ReceivedChunk | None] = Queue(maxsize=1)
+        parse_queue.put(ReceivedChunk(b'existing', 0))
         ui_queue: Queue[object] = Queue()
 
         run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event)
@@ -200,7 +210,7 @@ class TestReaderProcessLoop:
         stop_event = Event()
         reader = FakeReader([], stop_event, reset_result=True)
         writer = FakeWriter()
-        parse_queue: Queue[bytes | None] = Queue()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
         command_queue: Queue[ReaderCommand] = Queue()
         command_queue.put(ReaderCommand(kind='reset_target'))
@@ -215,7 +225,7 @@ class TestReaderProcessLoop:
         stop_event = Event()
         reader = FakeReader([], stop_event, reset_result=False)
         writer = FakeWriter()
-        parse_queue: Queue[bytes | None] = Queue()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
         command_queue: Queue[ReaderCommand] = Queue()
         command_queue.put(ReaderCommand(kind='reset_target'))

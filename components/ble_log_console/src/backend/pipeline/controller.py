@@ -24,6 +24,7 @@ from src.backend.io.writer import FileFactory
 from src.backend.io.writer import WriterConfig
 from src.backend.io.writer import WriterEvent
 from src.backend.analysis.worker import ParserStatus
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
 from src.backend.io.reader import ReaderCommand
 from src.backend.io.reader import ReaderProcessEvent
@@ -173,7 +174,7 @@ def run_capture_pipeline_inprocess(
 ) -> CapturePipelineResult:
     """Run the capture pipeline in-process for tests and local validation."""
 
-    parse_queue: Queue[bytes | None] = Queue(maxsize=parse_queue_size)
+    parse_queue: Queue[ReceivedChunk | None] = Queue(maxsize=parse_queue_size)
     raw_stats_queue: Queue[int | None] = Queue()
     ui_queue: Queue[Any] = Queue(maxsize=ui_queue_size)
     stop_requested = stop_requested or threading.Event()

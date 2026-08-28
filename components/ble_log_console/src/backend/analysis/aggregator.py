@@ -53,7 +53,7 @@ class AggregatorUpdate:
     """Incremental output produced after consuming parser events."""
 
     frames_seen: int = 0
-    redir_texts: tuple[str, ...] = ()
+    redir_events: tuple[RedirEvent, ...] = ()
     internal_frames: tuple[InternalFrameUpdate, ...] = ()
     frame_losses: tuple[FrameLossUpdate, ...] = ()
 
@@ -140,7 +140,7 @@ class CaptureAggregator:
         regular_frame_count = 0
         per_source_frames: dict[int, int] = {}
         per_source_bytes: dict[int, int] = {}
-        redir_texts: list[str] = []
+        redir_events: list[RedirEvent] = []
         internal_frames: list[InternalFrameUpdate] = []
         frame_losses: list[FrameLossUpdate] = []
         stats = self._stats
@@ -166,7 +166,7 @@ class CaptureAggregator:
                     per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
                     if sn_gap_enabled:
                         stats.record_frame_sn(src_code, frame_sn)
-                redir_texts.append(event.text)
+                redir_events.append(event)
             elif event_type is FrameEvent:
                 frame_size = event.frame_size
                 regular_frame_count += 1
@@ -192,7 +192,7 @@ class CaptureAggregator:
         flush_regular_frames()
         return AggregatorUpdate(
             frames_seen=self._stats.frame_count - frame_count_before,
-            redir_texts=tuple(redir_texts),
+            redir_events=tuple(redir_events),
             internal_frames=tuple(internal_frames),
             frame_losses=tuple(frame_losses),
         )

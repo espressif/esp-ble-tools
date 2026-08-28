@@ -19,6 +19,7 @@ from src.backend.analysis.aggregator import CaptureAggregator
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.models import ChecksumMode
 from src.backend.models import TransportBitrate
 
@@ -77,13 +78,13 @@ def run_parser_loop(
             item = parse_queue.get()
             if item is None:
                 break
-            chunks: list[bytes] = []
+            chunks: list[ReceivedChunk] = []
             total_bytes = 0
             stop_after_batch = False
 
-            if item:
+            if item.data:
                 chunks.append(item)
-                total_bytes += len(item)
+                total_bytes += len(item.data)
 
             while len(chunks) < PARSER_BATCH_MAX_CHUNKS and total_bytes < PARSER_BATCH_MAX_BYTES:
                 try:
@@ -93,13 +94,26 @@ def run_parser_loop(
                 if next_item is None:
                     stop_after_batch = True
                     break
-                if not next_item:
+                if not next_item.data:
                     continue
                 chunks.append(next_item)
-                total_bytes += len(next_item)
+                total_bytes += len(next_item.data)
 
             if chunks:
-                _put_parser_event(output_queue, parser.feed(b''.join(chunks)))
+                batches = [
+                    parser.feed(chunk.data, received_at_ms=chunk.received_at_ms)
+                    for chunk in chunks
+                ]
+                _put_parser_event(
+                    output_queue,
+                    ParseBatch(
+                        raw_bytes=sum(batch.raw_bytes for batch in batches),
+                        parsed_frames=sum(batch.parsed_frames for batch in batches),
+                        consumed=sum(batch.consumed for batch in batches),
+                        carried_bytes=batches[-1].carried_bytes,
+                        events=tuple(event for batch in batches for event in batch.events),
+                    ),
+                )
             if stop_after_batch:
                 break
         _put_parser_event(output_queue, parser.finalize())
@@ -123,7 +137,7 @@ def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
         return None
     return AggregatorUpdate(
         frames_seen=sum(update.frames_seen for update in updates),
-        redir_texts=tuple(text for update in updates for text in update.redir_texts),
+        redir_events=tuple(event for update in updates for event in update.redir_events),
         internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
         frame_losses=tuple(loss for update in updates for loss in update.frame_losses),
     )
