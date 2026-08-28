@@ -105,6 +105,10 @@ def _format_receive_timestamp(received_at_ms: int) -> str:
     return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=' ', timespec='milliseconds')
 
 
+def _format_receive_time(received_at_ms: int) -> str:
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime('%H:%M:%S.%f')[:-3]
+
+
 class CaptureEventPresenter:
     """Translate capture pipeline events into existing Textual messages."""
 
@@ -368,7 +372,7 @@ class CaptureEventPresenter:
         if '\n' in self._redir_line_buf:
             lines = self._redir_line_buf.split('\n')
             self._redir_line_buf = lines.pop()
-            self._append_redir_log_lines(messages, lines)
+            self._append_redir_log_lines(messages, lines, received_at_ms)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
             messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
@@ -393,8 +397,10 @@ class CaptureEventPresenter:
         self._console_part_bytes += len(text.encode(errors='replace'))
         self._flush_console_log_if_due()
 
-    def _append_redir_log_lines(self, messages: list[Message], lines: list[str]) -> None:
+    def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
         non_empty_lines = [line for line in lines if line]
+        if non_empty_lines:
+            non_empty_lines[0] = f'{_format_receive_time(received_at_ms)}  {non_empty_lines[0]}'
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:
