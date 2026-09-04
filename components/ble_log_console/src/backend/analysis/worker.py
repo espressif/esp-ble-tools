@@ -71,8 +71,8 @@ def run_parser_loop(
 ) -> None:
     """Parse raw chunks from parse_queue until a None sentinel is received."""
 
-    parser = BleLogParser(checksum_mode=checksum_mode)
     try:
+        parser = BleLogParser(checksum_mode=checksum_mode)
         while True:
             item = parse_queue.get()
             if item is None:

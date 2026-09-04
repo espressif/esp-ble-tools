@@ -386,7 +386,7 @@ Please check:
 
 Source startup depends on the local Python environment, package index access, and system PATH settings. The install scripts try to prepare these automatically, but different PC environments may need manual setup. The required items are:
 
-- Python 3.10 or later.
+- Python 3.11 or later.
 - `uv`, available from `PATH`.
 - Access to the Python package dependencies declared in `pyproject.toml`.
 

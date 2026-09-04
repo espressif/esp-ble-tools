@@ -90,7 +90,9 @@ class BleLogParser:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         self._raw_bytes += len(chunk)
+        buffered_before = self._decoder.stats.buffered_bytes
         frames = self._decoder.feed(chunk)
+        buffered_after = self._decoder.stats.buffered_bytes
         events: list[BleLogEvent] = []
         for frame in frames:
             self._parsed_frames += 1
@@ -98,8 +100,8 @@ class BleLogParser:
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
-            consumed=len(chunk),
-            carried_bytes=self._decoder.stats.buffered_bytes,
+            consumed=buffered_before + len(chunk) - buffered_after,
+            carried_bytes=buffered_after,
             events=tuple(events),
         )
 

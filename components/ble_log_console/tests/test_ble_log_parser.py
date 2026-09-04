@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import struct
+from typing import cast
 
 import pytest
 
@@ -13,23 +14,24 @@ from src.backend.analysis.parser_events import EnhStatEvent
 from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import RedirEvent
-from src.backend.support.parser_core.checksum import sum_checksum
-from src.backend.support.parser_core.checksum import xor_checksum
 from src.backend.models import BleLogSource
 from src.backend.models import ChecksumAlgorithm
 from src.backend.models import ChecksumMode
 from src.backend.models import ChecksumScope
+from src.backend.models import InfoResult
 from src.backend.models import InternalSource
 
 from tests.helpers import build_frame
+from tests.helpers import sum_checksum
+from tests.helpers import xor_checksum
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
-    return build_frame(payload, src, sn, xor_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
+    return build_frame(payload, src, sn, xor_checksum)
 
 
 def _make_sum_frame(payload: bytes, src: int, sn: int) -> bytes:
-    return build_frame(payload, src, sn, sum_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
+    return build_frame(payload, src, sn, sum_checksum)
 
 
 def _sync_frames(src: int = 1) -> bytes:
@@ -66,8 +68,36 @@ def test_split_frame_is_buffered_without_emitting_events() -> None:
 
     assert first.parsed_frames == 0
     assert first.events == ()
+    assert first.consumed == 0
     assert first.carried_bytes == split
     assert second.parsed_frames == 3
+    assert second.consumed == len(chunk)
+    assert second.carried_bytes == 0
+
+
+@pytest.mark.parametrize('algorithm', (ChecksumAlgorithm.XOR, ChecksumAlgorithm.SUM))
+def test_feed_enforces_payload_size_limit_and_resyncs(algorithm: ChecksumAlgorithm) -> None:
+    make_frame = _make_frame if algorithm == ChecksumAlgorithm.XOR else _make_sum_frame
+    frame = make_frame(b'\xfe' * 2048, src=BleLogSource.HOST, sn=0)
+    oversized = make_frame(b'\xfe' * 2049, src=BleLogSource.HOST, sn=1)
+    recovery = make_frame(b'next', src=BleLogSource.HOST, sn=2)
+    stream = frame + oversized + recovery
+    parser = BleLogParser(checksum_mode=ChecksumMode(algorithm, ChecksumScope.FULL))
+    split = len(frame) - 1
+
+    first = parser.feed(stream[:split])
+    second = parser.feed(stream[split:])
+
+    assert first.parsed_frames == 0
+    assert first.events == ()
+    assert first.consumed == 0
+    assert first.carried_bytes == split
+    assert second.parsed_frames == 2
+    assert second.events == (
+        FrameEvent(frame_size=2058, source_code=BleLogSource.HOST, frame_sn=0),
+        FrameEvent(frame_size=14, source_code=BleLogSource.HOST, frame_sn=2),
+    )
+    assert second.consumed == len(stream)
     assert second.carried_bytes == 0
 
 
@@ -102,7 +132,7 @@ def test_feed_decodes_internal_frame_once() -> None:
     internal_events = [event for event in batch.events if isinstance(event, InternalEvent)]
     assert len(internal_events) == 3
     assert internal_events[0].int_src == InternalSource.INFO
-    assert internal_events[0].decoded['version'] == 3
+    assert cast(InfoResult, internal_events[0].decoded)['version'] == 3
 
 
 def test_feed_emits_enh_stat_event() -> None:
@@ -156,7 +186,8 @@ def test_feed_ignores_unstructured_ascii_text() -> None:
     assert batch.events == ()
     # esp-blfd drops non-frame bytes immediately; only a sub-header tail
     # (fewer than 6 bytes) stays buffered as a possible partial frame.
-    assert 0 < batch.carried_bytes < len(b'Hello world\n')
+    assert 0 < batch.carried_bytes < batch.raw_bytes
+    assert batch.consumed == batch.raw_bytes - batch.carried_bytes
 
 
 def test_feed_resyncs_around_garbage_between_frames() -> None:

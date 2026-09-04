@@ -17,7 +17,6 @@ from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import WriterConfig
 from src.backend.io.writer import WriterEvent
 from src.backend.io.writer import WriterStatus
-from src.backend.support.parser_core.checksum import xor_checksum
 from src.backend.models import BleLogSource
 from src.backend.models import FrameStats
 from src.backend.models import TransportConfig
@@ -26,10 +25,11 @@ from src.backend.models import TransportMode
 from src.backend.support.transport import TransportStatus
 
 from tests.helpers import build_frame
+from tests.helpers import xor_checksum
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
-    return build_frame(payload, src, sn, xor_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
+    return build_frame(payload, src, sn, xor_checksum)
 
 
 def _sync_frames(src: int = BleLogSource.HOST) -> bytes:

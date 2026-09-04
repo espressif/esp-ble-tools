@@ -402,7 +402,7 @@ python console.py --mode spi --port <PORT>
 
 源码启动依赖本机 Python 环境、依赖源访问和系统 PATH 配置。安装脚本会尽量自动准备这些内容，但不同电脑环境可能需要手动处理。必要项包括：
 
-- Python 3.10 或更高版本。
+- Python 3.11 或更高版本。
 - `uv`，并且可以在 `PATH` 中被找到。
 - 可以访问 `pyproject.toml` 中声明的 Python 依赖包。
 

@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-build = ["pyinstaller", "cython"]
+build = ["pyinstaller"]
 test = ["pytest"]
 
 [project.scripts]
