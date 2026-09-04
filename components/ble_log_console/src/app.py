@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 from typing import cast
+from typing import TextIO
 
 from textual.app import App
 from textual.app import ComposeResult
@@ -37,6 +41,59 @@ from src.frontend.stats_screen import StatsScreen
 from src.frontend.status_panel import StatusPanel
 
 PIPELINE_POLL_INTERVAL_SEC = 0.05
+
+
+@contextmanager
+def _spawn_stderr_with_real_fileno() -> Iterator[None]:
+    """Expose a real stderr fd while multiprocessing processes are spawned.
+
+    Textual replaces sys.stderr with an in-memory capture wrapper whose
+    fileno() returns -1.  multiprocessing's resource tracker (only used by
+    the spawn start method, the macOS default) passes sys.stderr.fileno()
+    to the tracker child; a negative fd makes _posixsubprocess reject the
+    fd list with 'bad value(s) in fds_to_keep', failing every process
+    spawn.  While a pipeline is starting, keep routing writes to the
+    capture wrapper but report the real stderr fd instead.
+    """
+
+    stream = sys.stderr
+    fileno = getattr(stream, 'fileno', None)
+    if not callable(fileno):
+        yield
+        return
+    try:
+        reported_fd = fileno()
+    except Exception:
+        reported_fd = -1
+    if reported_fd >= 0:
+        yield
+        return
+
+    real_stderr = sys.__stderr__
+    if real_stderr is None or not callable(getattr(real_stderr, 'fileno', None)):
+        yield  # no real fd available anywhere; leave the spawn to fail as-is
+        return
+
+    class _SpawnStderr:
+        """Delegate all writes to the Textual capture wrapper, but report a real fd."""
+
+        __slots__ = ('_capture', '_real')
+
+        def __init__(self, capture: TextIO, real: TextIO) -> None:
+            self._capture = capture
+            self._real = real
+
+        def fileno(self) -> int:
+            return self._real.fileno()
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._capture, name)
+
+    sys.stderr = _SpawnStderr(stream, real_stderr)  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        sys.stderr = stream  # type: ignore[assignment]
 
 
 class BLELogApp(App):
@@ -157,7 +214,9 @@ class BLELogApp(App):
             self._output_path,
             debug=self._debug,
         )
-        self._publish_view_messages(self._capture_session.start())
+        with _spawn_stderr_with_real_fileno():
+            start_messages = self._capture_session.start()
+        self._publish_view_messages(start_messages)
         if self._capture_session.finished:
             return
 
