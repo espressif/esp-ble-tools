@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import struct
 
+import pytest
+
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser import parse_ble_log_chunk
 from src.backend.analysis.parser_events import EnhStatEvent
@@ -152,7 +154,30 @@ def test_feed_ignores_unstructured_ascii_text() -> None:
 
     assert batch.parsed_frames == 0
     assert batch.events == ()
-    assert batch.carried_bytes == len(b'Hello world\n')
+    # esp-blfd drops non-frame bytes immediately; only a sub-header tail
+    # (fewer than 6 bytes) stays buffered as a possible partial frame.
+    assert 0 < batch.carried_bytes < len(b'Hello world\n')
+
+
+def test_feed_resyncs_around_garbage_between_frames() -> None:
+    parser = BleLogParser()
+    frames = _sync_frames(src=BleLogSource.HOST)
+    frame_len = len(_make_frame(b'\x00\x00\x00\x00data', src=BleLogSource.HOST, sn=0))
+    noise = b'garbage noise between frames'
+
+    batch = parser.feed(frames[:frame_len] + noise + frames[frame_len:])
+
+    frame_events = [event for event in batch.events if isinstance(event, FrameEvent)]
+    assert len(frame_events) == 3
+    assert [event.frame_sn for event in frame_events] == [0, 1, 2]
+    assert batch.carried_bytes == 0
+
+
+def test_unsupported_header_only_checksum_scope_is_rejected() -> None:
+    with pytest.raises(ValueError, match='unsupported checksum mode'):
+        BleLogParser(
+            checksum_mode=ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY)
+        )
 
 
 def test_feed_bounds_unstructured_garbage_without_warning_event() -> None:
