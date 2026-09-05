@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import struct
+from typing import cast
 
 from src.backend.analysis.aggregator import CaptureAggregator
 from src.backend.analysis.aggregator import frame_size_from_payload
@@ -20,11 +21,6 @@ from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
 from src.backend.models import LossType
-from src.backend.models import ParsedFrame
-
-
-def _frame(source_code: int, frame_sn: int, payload: bytes, os_ts_ms: int = 0) -> ParsedFrame:
-    return ParsedFrame(source_code=source_code, frame_sn=frame_sn, payload=payload, os_ts_ms=os_ts_ms)
 
 
 def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
@@ -45,11 +41,10 @@ def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
 def test_regular_frame_updates_received_stats() -> None:
     aggregator = CaptureAggregator()
     payload = struct.pack('<I', 1234) + b'payload'
-    frame = _frame(BleLogSource.HOST, frame_sn=7, payload=payload, os_ts_ms=1234)
     frame_size = frame_size_from_payload(payload)
 
     update = aggregator.consume_events(
-        (FrameEvent(frame_size=frame_size, source_code=frame.source_code, frame_sn=frame.frame_sn),)
+        (FrameEvent(frame_size=frame_size, source_code=BleLogSource.HOST, frame_sn=7),)
     )
     snapshot = aggregator.snapshot(1.0)
 
@@ -61,11 +56,10 @@ def test_regular_frame_updates_received_stats() -> None:
 def test_ll_frame_updates_received_stats() -> None:
     aggregator = CaptureAggregator()
     payload = b'\x00\x00' + struct.pack('<I', 555000) + b'll'
-    frame = _frame(BleLogSource.LL_TASK, frame_sn=1, payload=payload)
     frame_size = frame_size_from_payload(payload)
 
     aggregator.consume_events(
-        (FrameEvent(frame_size=frame_size, source_code=frame.source_code, frame_sn=frame.frame_sn),)
+        (FrameEvent(frame_size=frame_size, source_code=BleLogSource.LL_TASK, frame_sn=1),)
     )
     snapshot = aggregator.snapshot(1.0)
 
@@ -75,14 +69,13 @@ def test_ll_frame_updates_received_stats() -> None:
 def test_redir_event_updates_stats_and_returns_text() -> None:
     aggregator = CaptureAggregator()
     payload = b'console line\n'
-    frame = _frame(BleLogSource.REDIR, frame_sn=2, payload=payload)
 
     update = aggregator.consume_events(
         (
             RedirEvent(
                 frame_size=frame_size_from_payload(payload),
-                source_code=frame.source_code,
-                frame_sn=frame.frame_sn,
+                source_code=BleLogSource.REDIR,
+                frame_sn=2,
                 text='console line\n',
                 wall_ms=100,
             ),
@@ -99,7 +92,6 @@ def test_internal_info_event_sets_version_and_is_forwarded() -> None:
     aggregator = CaptureAggregator()
     decoded = InfoResult(int_src=InternalSource.INFO, version=4, os_ts_ms=10)
     payload = struct.pack('<I', 10) + bytes([InternalSource.INFO, 4])
-    frame = _frame(BleLogSource.INTERNAL, frame_sn=1, payload=payload, os_ts_ms=10)
 
     update = aggregator.consume_events(
         (
@@ -114,7 +106,7 @@ def test_internal_info_event_sets_version_and_is_forwarded() -> None:
 
     assert update.frames_seen == 1
     assert update.internal_frames[0].int_src == InternalSource.INFO
-    assert update.internal_frames[0].decoded['version'] == 4
+    assert cast(InfoResult, update.internal_frames[0].decoded)['version'] == 4
     assert snapshot.stats.transport.rx_frames == 1
 
 
@@ -130,7 +122,6 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
         os_ts_ms=11,
     )
     payload = struct.pack('<I', 11) + bytes([InternalSource.BUF_UTIL, 0x21, 9, 3])
-    frame = _frame(BleLogSource.INTERNAL, frame_sn=2, payload=payload, os_ts_ms=11)
 
     aggregator.consume_events(
         (
@@ -152,7 +143,6 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
 def test_enh_stat_event_updates_loss_and_emits_loss_update() -> None:
     aggregator = CaptureAggregator()
     payload = struct.pack('<I', 12) + bytes([InternalSource.ENH_STAT]) + b'\x00' * 17
-    frame = _frame(BleLogSource.INTERNAL, frame_sn=3, payload=payload, os_ts_ms=12)
     first = EnhStatResult(
         int_src=InternalSource.ENH_STAT,
         src_code=BleLogSource.HOST,

@@ -6,9 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "ble-log-console"
 version = "1.0.2"
 description = "Textual-based BLE Log capture and analysis console"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "click",
+    "esp-blfd==0.2.1",
     "pyserial",
     "pyusb",
     "rich",
@@ -17,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-build = ["pyinstaller", "cython"]
+build = ["pyinstaller"]
 test = ["pytest"]
 
 [project.scripts]

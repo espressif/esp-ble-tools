@@ -5,19 +5,26 @@ from __future__ import annotations
 
 from queue import Empty
 from queue import Queue
+from threading import Thread
 
 from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.worker import ParserStatus
+from src.backend.analysis.worker import run_analysis_loop
 from src.backend.analysis.worker import run_parser_loop
-from src.backend.support.parser_core.checksum import xor_checksum
 from src.backend.models import BleLogSource
+from src.backend.models import ChecksumAlgorithm
+from src.backend.models import ChecksumMode
+from src.backend.models import ChecksumScope
 
 from tests.helpers import build_frame
+from tests.helpers import xor_checksum
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
-    return build_frame(payload, src, sn, xor_checksum, checksum_scope_full=True)  # type: ignore[no-any-return]
+    return build_frame(payload, src, sn, xor_checksum)
 
 
 def _sync_frames() -> bytes:
@@ -85,3 +92,44 @@ def test_parser_loop_ignores_empty_chunks() -> None:
     assert len(events) == 1
     assert isinstance(events[0], ParseSummary)
     assert events[0].raw_bytes == 0
+
+
+def test_parser_loop_reports_unsupported_checksum_mode() -> None:
+    parse_queue: Queue[bytes | None] = Queue()
+    output_queue: Queue[object] = Queue()
+
+    run_parser_loop(
+        parse_queue,
+        output_queue,
+        checksum_mode=ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY),
+    )
+
+    events = _events(output_queue)
+    assert len(events) == 1
+    assert isinstance(events[0], ParserStatus)
+    assert events[0].kind == 'error'
+    assert 'unsupported checksum mode' in events[0].message
+
+
+def test_analysis_loop_exits_after_unsupported_checksum_mode() -> None:
+    parse_queue: Queue[bytes | None] = Queue()
+    raw_stats_queue: Queue[int | None] = Queue()
+    output_queue: Queue[object] = Queue()
+    parse_queue.put(None)
+    raw_stats_queue.put(None)
+    thread = Thread(
+        target=run_analysis_loop,
+        args=(parse_queue, raw_stats_queue, output_queue),
+        kwargs={
+            'checksum_mode': ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY),
+        },
+        daemon=True,
+    )
+
+    thread.start()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    events = _events(output_queue)
+    assert any(isinstance(event, ParserStatus) and event.kind == 'error' for event in events)
+    assert any(isinstance(event, AggregatorProcessEvent) and event.kind == 'stopped' for event in events)

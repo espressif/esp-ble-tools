@@ -9,6 +9,12 @@ It supports:
 - **UART**: receive BLE logs from a serial port.
 - **SPI Bridge**: receive BLE logs through a BLE Log SPI USB Bridge device.
 
+## Supported Platforms
+
+- Windows (`x86_64`)
+- Linux (`x86_64`)
+- macOS (`x86_64`, `arm64`)
+
 ## Download
 
 Download the latest stable tool package from GitHub Release:

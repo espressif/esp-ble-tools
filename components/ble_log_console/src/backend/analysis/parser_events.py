@@ -55,7 +55,7 @@ class ParseChunkResult(NamedTuple):
 
     events: tuple[BleLogEvent, ...]
     parsed_frames: int
-    consumed: int
+    consumed: int  # Safe-to-discard prefix length.
 
 
 class ParseBatch(NamedTuple):
@@ -63,8 +63,8 @@ class ParseBatch(NamedTuple):
 
     raw_bytes: int
     parsed_frames: int
-    consumed: int
-    carried_bytes: int
+    consumed: int  # Bytes retired from prior carry plus this batch.
+    carried_bytes: int  # Bytes retained for the next batch.
     events: tuple[BleLogEvent, ...]
 
 

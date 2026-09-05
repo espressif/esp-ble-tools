@@ -3,8 +3,8 @@
 
 import sys
 
-if sys.version_info < (3, 10):  # noqa: UP036 — runtime guard for users on old Python
-    print(f'Error: Python 3.10 or later is required.\nCurrent version: {sys.version}')
+if sys.version_info < (3, 11):  # noqa: UP036 — runtime guard for users on old Python
+    print(f'Error: Python 3.11 or later is required.\nCurrent version: {sys.version}')
     sys.exit(1)
 
 try:

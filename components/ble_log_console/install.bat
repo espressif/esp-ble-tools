@@ -53,7 +53,7 @@ if %errorlevel% equ 0 exit /b 0
 call :find_python
 if %errorlevel% neq 0 (
     echo ERROR: Python was not found, and uv is not available on PATH.
-    echo Install Python 3.10 or later, or put uv.exe in PATH, then run install.bat again.
+    echo Install Python 3.11 or later, or put uv.exe in PATH, then run install.bat again.
     echo.
     echo Alternative uv install methods:
     echo   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 ^| iex"

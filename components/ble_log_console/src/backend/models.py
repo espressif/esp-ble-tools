@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
 from pathlib import Path
-import struct
 from typing import TypedDict
 
 from textual.message import Message
@@ -55,18 +54,6 @@ FRAME_HEADER_SIZE = 6  # 2B payload_len + 4B frame_meta
 FRAME_TAIL_SIZE = 4  # 4B checksum
 FRAME_OVERHEAD = FRAME_HEADER_SIZE + FRAME_TAIL_SIZE  # 10
 MAX_FRAME_SIZE = 2048  # Max payload_len sanity check
-MAX_REMAINDER_SIZE = 131072  # 128KB bounded buffer
-HEADER_FMT = '<HI'  # payload_len (uint16), frame_meta (uint32)
-CHECKSUM_FMT = '<I'  # checksum (uint32)
-HEADER_STRUCT = struct.Struct(HEADER_FMT)
-CHECKSUM_STRUCT = struct.Struct(CHECKSUM_FMT)
-
-
-class SyncState(str, Enum):
-    SEARCHING = 'SEARCHING'
-    CONFIRMING_SYNC = 'CONFIRMING'
-    SYNCED = 'SYNCED'
-    CONFIRMING_LOSS = 'CONFIRMING_LOSS'
 
 
 class ChecksumAlgorithm(str, Enum):
@@ -109,13 +96,6 @@ class InternalSource(int, Enum):
     FLUSH = 4
     BUF_UTIL = 5
     FINAL_STAT = 6
-
-@dataclass(slots=True)
-class ParsedFrame:
-    source_code: int
-    frame_sn: int
-    payload: bytes  # includes os_ts prefix for ble_log_write_hex() frames
-    os_ts_ms: int  # extracted from first 4 bytes of payload; only valid when has_os_ts(source_code) is True
 
 
 class InfoResult(TypedDict):

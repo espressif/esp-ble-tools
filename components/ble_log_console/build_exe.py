@@ -72,17 +72,6 @@ def _artifact_base_name(version: str) -> str:
     return f'{APP_NAME}_{_platform_suffix()}_v{version}'
 
 
-def _build_optional_extensions() -> None:
-    cmd = [sys.executable, 'setup.py', 'build_ext', '--inplace']
-    print(f'Building optional native extensions: {" ".join(cmd)}')
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
-        print(
-            'WARNING: Optional checksum extension build failed; packaging will use the Python fallback.',
-            file=sys.stderr,
-        )
-
-
 def main() -> None:
     args = _parse_args()
     if args.version is not None:
@@ -96,7 +85,6 @@ def main() -> None:
 
     artifact_base_name = _artifact_base_name(version)
     artifact_name = f'{artifact_base_name}.exe' if sys.platform == 'win32' else artifact_base_name
-    _build_optional_extensions()
 
     cmd = [
         sys.executable,
@@ -138,8 +126,6 @@ def main() -> None:
         'serial.tools.list_ports_windows',
         '--hidden-import',
         'serial.tools.list_ports_osx',
-        '--hidden-import',
-        'src.backend.support.parser_core.checksum_fast',
         '--collect-data',
         'textual',
         '--collect-data',
