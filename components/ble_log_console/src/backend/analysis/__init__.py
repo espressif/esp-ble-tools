@@ -14,6 +14,7 @@ from src.backend.analysis.parser import parse_ble_log_chunk
 from src.backend.analysis.parser_events import BleLogEvent
 from src.backend.analysis.parser_events import EnhStatEvent
 from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import FinalStatEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
@@ -39,6 +40,7 @@ __all__ = [
     'DEFAULT_CHECKSUM_MODE',
     'EnhStatEvent',
     'FrameEvent',
+    'FinalStatEvent',
     'InternalEvent',
     'InternalFrameUpdate',
     'ParseBatch',

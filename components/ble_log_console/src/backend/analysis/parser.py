@@ -15,6 +15,7 @@ from ble_log_frame_decoder import FrameFormat
 from src.backend.analysis.parser_events import BleLogEvent
 from src.backend.analysis.parser_events import EnhStatEvent
 from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import FinalStatEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
@@ -27,6 +28,7 @@ from src.backend.models import ChecksumAlgorithm
 from src.backend.models import ChecksumMode
 from src.backend.models import ChecksumScope
 from src.backend.models import EnhStatResult
+from src.backend.models import FinalStatResult
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
 from src.backend.support.parser_core.internal_decoder import decode_internal_frame
@@ -137,6 +139,16 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
                 EnhStatEvent(
                     frame_size=frame_size,
                     stat=cast(EnhStatResult, decoded),
+                )
+            )
+            return
+        if int_src == InternalSource.FINAL_STAT:
+            final_stat = cast(FinalStatResult, decoded)
+            events.append(
+                FinalStatEvent(
+                    frame_size=frame_size,
+                    os_ts_ms=final_stat['os_ts_ms'],
+                    entries=final_stat['entries'],
                 )
             )
             return

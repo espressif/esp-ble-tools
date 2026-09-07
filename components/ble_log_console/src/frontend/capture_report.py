@@ -21,6 +21,7 @@ from textual.widgets import Button
 from textual.widgets import Static
 
 from src.backend.models import CaptureReport
+from src.backend.models import CaptureSegmentSummary
 from src.backend.models import CaptureVerdict
 from src.backend.models import SequenceSummary
 from src.backend.models import TransportConfig
@@ -52,6 +53,7 @@ def build_capture_report(
     snapshot = result.final_snapshot
     regular_frames = snapshot.regular_frames if snapshot is not None else 0
     sequence = snapshot.sequence if snapshot is not None else SequenceSummary()
+    segments = snapshot.capture_segments if snapshot is not None else ()
     firmware_loss = snapshot.capture_firmware_loss if snapshot is not None else ()
     firmware_written_bytes = snapshot.capture_firmware_written_bytes if snapshot is not None else 0
     firmware_lost_bytes = snapshot.capture_firmware_lost_bytes if snapshot is not None else 0
@@ -78,7 +80,7 @@ def build_capture_report(
     )
     sequence_loss_rate = None
     if parser_complete and sequence.sources and not sequence.uncertain:
-        sequence_total = regular_frames + sequence.total_missing_frames
+        sequence_total = sum(source.observed_frames for source in sequence.sources) + sequence.total_missing_frames
         sequence_loss_rate = sequence.total_missing_frames / sequence_total if sequence_total else None
 
     errors = tuple(
@@ -164,6 +166,7 @@ def build_capture_report(
         average_bytes_per_sec=result.raw_bytes / duration_sec if duration_sec > 0 else 0.0,
         peak_bits_per_sec=peak_bits_per_sec,
         sequence=sequence,
+        segments=segments,
         firmware_loss=firmware_loss,
         firmware_written_bytes=firmware_written_bytes,
         firmware_lost_bytes=firmware_lost_bytes,
@@ -211,19 +214,6 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
     return f'{format_bytes(report.parser_raw_bytes)} / {format_bytes(report.raw_bytes)}{space}{left}{percent:.1%}{right}'
 
 
-def _firmware_write_evidence(report: CaptureReport, language: str) -> str:
-    rate = report.firmware_write_loss_rate
-    if rate is None:
-        return tr('Not enough data', language=language)
-    total = report.firmware_written_bytes + report.firmware_lost_bytes
-    left, right = ('（', '）') if language == 'zh_CN' else ('(', ')')
-    space = '' if language == 'zh_CN' else ' '
-    return (
-        f'{format_bytes(report.firmware_lost_bytes)} / {format_bytes(total)}'
-        f'{space}{left}{rate:.2%}{right}'
-    )
-
-
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
     language = language or get_language()
     separator = '：' if language == 'zh_CN' else ': '
@@ -264,8 +254,6 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
             f'{separator}{report.regular_frames}',
             f'  {tr("Possible sequence loss" if report.parser_complete else "Full-recording sequence continuity", language=language)}'
             f'{separator}{sequence_result}',
-            f'  {tr("Firmware log write failures (failed / total)" if report.parser_complete else "Firmware write failures in parsed portion (failed / total)", language=language)}{separator}'
-            f'{_firmware_write_evidence(report, language)}',
             '',
             f'{tr("Detailed report", language=language)}{separator}{report_path}',
             f'{tr("Raw data file", language=language)}{separator}{raw_path}',
@@ -315,15 +303,21 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f'  {field("Trailing carried bytes", report.parser_carried_bytes)}',
         '',
         f'{tr("Experimental quality metrics", language=language)}{separator.rstrip()}',
-        f'  {field("Firmware written bytes", format_bytes(report.firmware_written_bytes))}',
-        f'  {field("Firmware lost bytes", format_bytes(report.firmware_lost_bytes))}',
-        f'  {field("Firmware observed total bytes", format_bytes(report.firmware_written_bytes + report.firmware_lost_bytes))}',
         f'  {field("Firmware write failure rate", _format_rate(report.firmware_write_loss_rate, language))}',
         f'  {field("Sequence discontinuity rate", _format_rate(report.sequence_loss_rate, language))}',
         f'  {field("Recapture threshold", "5%")}',
         '',
-        f'{tr("Sequence continuity", language=language)}{separator.rstrip()}',
+        f'{tr("Capture segments", language=language)}{separator.rstrip()}',
     ]
+    if report.segments:
+        lines.extend(_format_segment(segment, language) for segment in report.segments)
+    else:
+        lines.append(f'  {tr("No FINAL_STAT segments were decoded.", language=language)}')
+
+    lines.extend([
+        '',
+        f'{tr("Sequence continuity", language=language)}{separator.rstrip()}',
+    ])
     if report.sequence.sources:
         if language == 'zh_CN':
             for source in report.sequence.sources:
@@ -388,6 +382,49 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
 
 def _format_rate(rate: float | None, language: str) -> str:
     return f'{rate:.4%}' if rate is not None else tr('Not enough data', language=language)
+
+
+def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
+    if segment.complete:
+        status = '完整' if language == 'zh_CN' else 'complete'
+    elif segment.final_stat_seen:
+        status = '开头不完整' if language == 'zh_CN' else 'partial start'
+    else:
+        status = '结尾不完整' if language == 'zh_CN' else 'partial end'
+
+    if not segment.received_frames:
+        sequence_text = '无数据' if language == 'zh_CN' else 'no data'
+    elif segment.sequence_uncertain:
+        sequence_text = '无法确认' if language == 'zh_CN' else 'uncertain'
+    elif segment.sequence_missing_frames:
+        sequence_text = (
+            f'缺失 {segment.sequence_missing_frames} 帧'
+            if language == 'zh_CN'
+            else f'{segment.sequence_missing_frames} missing'
+        )
+    else:
+        sequence_text = '连续' if language == 'zh_CN' else 'continuous'
+
+    if language == 'zh_CN':
+        firmware = (
+            f'固件写入失败 {segment.firmware_lost_frames} 帧'
+            if segment.final_stat_seen
+            else '无 FINAL_STAT 固件统计'
+        )
+        return (
+            f'  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；'
+            f'{firmware}；SN {sequence_text}'
+        )
+
+    firmware = (
+        f'firmware failed {segment.firmware_lost_frames} frame(s)'
+        if segment.final_stat_seen
+        else 'no FINAL_STAT firmware counters'
+    )
+    return (
+        f'  Segment {segment.index} ({status}): received {segment.received_frames} frame(s); '
+        f'{firmware}; SN {sequence_text}'
+    )
 
 
 def write_capture_report(report: CaptureReport, language: str | None = None) -> None:

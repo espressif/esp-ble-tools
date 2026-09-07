@@ -1,8 +1,10 @@
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.models import CaptureVerdict
+from src.backend.models import CaptureSegmentSummary
 from src.backend.models import FirmwareLossSummary
 from src.backend.models import FrameStats
 from src.backend.models import SequenceSourceSummary
@@ -143,17 +145,35 @@ def test_screen_summary_only_shows_customer_decision_fields() -> None:
     assert '自动质量检查（覆盖全部已保存数据）' in text
     assert '解析覆盖：100 B / 100 B（100.0%）' in text
     assert '序列号疑似缺失：2 帧' in text
-    assert '固件日志写入失败（失败 / 总量）：1 B / 1000 B（0.10%）' in text
+    assert '固件日志写入失败' not in text
     assert '详细报告：capture_report.txt' in text
     assert '原始数据文件：capture.bin' in text
     assert '解析覆盖情况' not in text
 
 
-def test_detailed_report_has_no_disclaimer() -> None:
-    text = format_capture_report(_report(_result()))
+def test_detailed_report_lists_final_stat_segments() -> None:
+    result = _result(firmware_written_bytes=200)
+    assert result.final_snapshot is not None
+    result = replace(
+        result,
+        final_snapshot=replace(
+            result.final_snapshot,
+            capture_segments=(
+                CaptureSegmentSummary(1, False, True, 2, 200, 10, 1000, 1, 50, 0, True),
+                CaptureSegmentSummary(2, True, True, 2, 200, 2, 200, 0, 0, 0, False),
+                CaptureSegmentSummary(3, False, False, 1, 100, 0, 0, 0, 0, 0, False),
+            ),
+        ),
+    )
 
-    assert 'cannot prove' not in text
-    assert 'cannot infer' not in text
+    text = format_capture_report(_report(result), language='zh_CN')
+
+    assert '分段统计' in text
+    assert '第 1 段（开头不完整）' in text
+    assert '第 2 段（完整）' in text
+    assert '第 3 段（结尾不完整）' in text
+    assert '固件写入 10 帧' not in text
+    assert '接收 2 帧 /' not in text
 
 
 def test_sequence_gap_and_firmware_loss_produce_warning() -> None:
@@ -211,19 +231,29 @@ def test_experimental_quality_threshold_is_detailed_only() -> None:
     assert report.firmware_write_loss_rate == 0.06
     assert any('Firmware write failure rate exceeded' in reason for reason in report.reasons)
     assert 'Firmware write failure rate: 6.0000%' in format_capture_report(report)
-    assert '固件日志写入失败（失败 / 总量）：60 B / 1000 B（6.00%）' in format_capture_summary(
-        report,
-        language='zh_CN',
-    )
+    assert '固件日志写入失败' not in format_capture_summary(report, language='zh_CN')
 
 
 def test_internal_firmware_loss_is_detailed_but_does_not_grade_customer_data() -> None:
     report = _report(_result(firmware_loss=7, firmware_loss_source=0))
 
     assert report.verdict is CaptureVerdict.READY
-    assert 'Firmware log write failures (failed / total): Not enough data' in format_capture_summary(report)
+    assert 'Firmware log write failures' not in format_capture_summary(report)
     assert 'INTERNAL: 7 frame(s)' in format_capture_report(report)
 
 
 def test_warning_verdict_uses_bright_yellow() -> None:
     assert 'color: ansi_bright_yellow;' in CaptureReportScreen.DEFAULT_CSS
+
+
+def test_sequence_rate_uses_only_frames_in_the_checked_segments() -> None:
+    result = _result(regular_frames=1000, missing_frames=10)
+    snapshot = result.final_snapshot
+    assert snapshot is not None
+    source = replace(snapshot.sequence.sources[0], observed_frames=90)
+    result = replace(result, final_snapshot=replace(snapshot, sequence=SequenceSummary((source,))))
+
+    report = _report(result)
+
+    assert report.sequence_loss_rate == 0.1
+    assert report.verdict is CaptureVerdict.RECAPTURE

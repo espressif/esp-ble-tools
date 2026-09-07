@@ -250,11 +250,11 @@ def run_aggregator_loop(
     parser_finalized = False
     last_snapshot_at = clock()
 
-    def emit_snapshot(force_elapsed: float | None = None) -> None:
+    def emit_snapshot(force_elapsed: float | None = None, *, final: bool = False) -> None:
         nonlocal last_snapshot_at
         now = clock()
         elapsed = force_elapsed if force_elapsed is not None else now - last_snapshot_at
-        _put_analysis_event(ui_queue, aggregator.snapshot(elapsed))
+        _put_analysis_event(ui_queue, aggregator.snapshot(elapsed, include_segments=final))
         last_snapshot_at = now
 
     try:
@@ -301,7 +301,7 @@ def run_aggregator_loop(
             if snapshot_interval_sec > 0 and clock() - last_snapshot_at >= snapshot_interval_sec:
                 emit_snapshot()
 
-        emit_snapshot(snapshot_elapsed_sec)
+        emit_snapshot(snapshot_elapsed_sec, final=True)
         _put_analysis_event(ui_queue, AggregatorProcessEvent(kind='finalized' if parser_finalized else 'stopped'))
     except Exception as e:
         _put_analysis_event(ui_queue, AggregatorProcessEvent(kind='error', message=str(e)))

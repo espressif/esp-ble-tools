@@ -329,6 +329,11 @@ class CapturePipeline:
             raise RuntimeError('capture pipeline is not started')
         events = _drain_events(self._ui_queue)
         self._result_events.extend(_events_for_result(events))
+        snapshots = [event for event in self._result_events if isinstance(event, AggregatorSnapshot)]
+        if snapshots:
+            latest = snapshots[-1]
+            self._result_events = [event for event in self._result_events if not isinstance(event, AggregatorSnapshot)]
+            self._result_events.append(latest)
         return events
 
     def wait_with_events(self, timeout: float | None = None) -> tuple[list[Any], CapturePipelineResult]:

@@ -10,6 +10,7 @@ from src.backend.analysis.aggregator import CaptureAggregator
 from src.backend.analysis.aggregator import frame_size_from_payload
 from src.backend.analysis.parser_events import EnhStatEvent
 from src.backend.analysis.parser_events import FrameEvent
+from src.backend.analysis.parser_events import FinalStatEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
@@ -18,6 +19,7 @@ from src.backend.models import BleLogSource
 from src.backend.models import BufUtilResult
 from src.backend.models import EnhStatResult
 from src.backend.models import FRAME_OVERHEAD
+from src.backend.models import FinalStatEntry
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
 
@@ -181,3 +183,85 @@ def test_parser_summary_overwrites_final_parser_counters() -> None:
     assert aggregator.parser_raw_bytes == 42
     assert aggregator.parser_frames == 3
     assert aggregator.parser_carried_bytes == 5
+
+
+def test_final_stat_closes_independent_capture_segments() -> None:
+    aggregator = CaptureAggregator()
+    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=1000,
+        entries=(FinalStatEntry(BleLogSource.HOST, 2, 0, 200, 0),),
+    )
+
+    aggregator.consume_events(
+        (
+            FrameEvent(100, BleLogSource.HOST, 0),
+            FrameEvent(100, BleLogSource.HOST, 1),
+            final,
+            FrameEvent(100, BleLogSource.HOST, 0),
+            FrameEvent(100, BleLogSource.HOST, 1),
+            final._replace(os_ts_ms=2000),
+        )
+    )
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=738, parsed_frames=7, carried_bytes=0))
+
+    snapshot = aggregator.snapshot(1.0)
+    source = snapshot.sequence.sources[0]
+    assert source.segments == 2
+    assert source.duplicate_frames == 0
+    assert len(snapshot.capture_segments) == 2
+    assert all(segment.complete for segment in snapshot.capture_segments)
+    assert snapshot.capture_segments[0].received_frames == 2
+    assert snapshot.capture_segments[0].firmware_written_bytes == 200
+    assert snapshot.capture_firmware_written_bytes == 400
+    assert aggregator.snapshot(1.0, include_segments=False).capture_segments == ()
+
+
+def test_first_and_last_segments_are_marked_partial_without_boundaries() -> None:
+    aggregator = CaptureAggregator()
+    aggregator.consume_events((FrameEvent(100, BleLogSource.HOST, 7),))
+    aggregator.consume_events(
+        (
+            FinalStatEvent(
+                frame_size=169,
+                os_ts_ms=1000,
+                entries=(FinalStatEntry(BleLogSource.HOST, 10, 0, 1000, 0),),
+            ),
+            FrameEvent(100, BleLogSource.HOST, 0),
+        )
+    )
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=369, parsed_frames=3, carried_bytes=0))
+
+    segments = aggregator.snapshot(1.0).capture_segments
+    assert len(segments) == 2
+    assert segments[0].final_stat_seen and not segments[0].complete
+    assert not segments[1].final_stat_seen and not segments[1].complete
+
+
+def test_ambiguous_cross_segment_frame_is_retained_and_marked_uncertain() -> None:
+    aggregator = CaptureAggregator()
+    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=1000,
+        entries=(FinalStatEntry(BleLogSource.HOST, 1000, 0, 100_000, 0),),
+    )
+    aggregator.consume_events((FrameEvent(100, BleLogSource.HOST, 998), final))
+
+    aggregator.consume_events(
+        (
+            FrameEvent(100, BleLogSource.HOST, 0),
+            FrameEvent(100, BleLogSource.HOST, 1),
+            FrameEvent(100, BleLogSource.HOST, 998),
+            FrameEvent(100, BleLogSource.HOST, 2),
+            final._replace(os_ts_ms=2000, entries=(FinalStatEntry(BleLogSource.HOST, 3, 0, 300, 0),)),
+        )
+    )
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=738, parsed_frames=7, carried_bytes=0))
+
+    sequence = aggregator.snapshot(1.0).sequence.sources[0]
+    assert sequence.observed_frames == 5
+    assert sequence.uncertain

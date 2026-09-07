@@ -134,7 +134,7 @@ Then run the following command to start the program:
 After startup, the application displays the following screen:
 
 <p align="center">
-  <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 58%; max-width: 620px; max-height: 400px; object-fit: contain;">
+  <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 60%; max-width: 900px;">
 </p>
 
 First, choose the language used for warnings and the quality report, then select the transport mode. Select UART if you receive logs through a serial port, or SPI Bridge if you receive logs through an SPI Bridge device. After the mode is selected, the application automatically scans the available ports.
@@ -156,7 +156,7 @@ On Linux, UART and SPI Bridge may show different port name formats. Select a dev
 After startup, the interface mainly consists of the log area and the status bar, as shown below.
 
 <p align="center">
-  <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 58%; max-width: 620px; max-height: 400px; object-fit: contain;">
+  <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 70%; max-width: 900px;">
 </p>
 
 The log area displays forwarded serial logs, status messages, and warnings in real time.
@@ -204,14 +204,14 @@ After the program exits, it prints the actual save paths in the terminal. Large 
 After recording stops, the tool shows one of three conclusions:
 
 - `READY FOR ANALYSIS`: The data was saved successfully and can be decoded. It is ready to submit for analysis.
-- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted; if possible, make another recording as a backup.
-- `RECAPTURE RECOMMENDED`: The recording did not contain enough usable data, or the data could not be saved correctly. Check the connection, mode, port, baud rate, and firmware configuration, then record again.
+- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted to our technical support.
+- `RECAPTURE RECOMMENDED`: The recording did not contain enough usable data, the data could not be saved correctly, or the detected loss rate was high. Check the connection, mode, port, baud rate, and firmware configuration, then record again. If this happens repeatedly, contact technical support for assessment.
 
 The report screen shows the captured frame count, data size, and file locations. For further troubleshooting, provide both the generated `report.txt` and `.bin` files to technical support.
 
 The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
 
-“Firmware log write failures (failed / total)” directly shows failed bytes, total firmware-reported bytes, and the resulting percentage. The valid frame count shown elsewhere is not used as its denominator.
+The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. When firmware segment statistics are available, overall quality statistics use only complete segments. If continuity cannot be determined, it is shown as unverified.
 
 ### 5.5 Common Shortcuts
 

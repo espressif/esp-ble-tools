@@ -8,11 +8,11 @@ from typing import cast
 
 import pytest
 
-from ble_log_frame_decoder import FrameDecoder
 
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser import parse_ble_log_chunk
 from src.backend.analysis.parser_events import EnhStatEvent
+from src.backend.analysis.parser_events import FinalStatEvent
 from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import RedirEvent
@@ -43,10 +43,6 @@ def _sync_frames(src: int = 1) -> bytes:
 
 def _internal_payload(os_ts: int, int_src: int, sub_payload: bytes) -> bytes:
     return struct.pack('<I', os_ts) + bytes([int_src]) + sub_payload
-
-
-def test_parser_uses_blfd_decoder() -> None:
-    assert isinstance(BleLogParser()._decoder, FrameDecoder)  # noqa: SLF001
 
 
 def test_feed_emits_batch_with_frame_events() -> None:
@@ -156,6 +152,20 @@ def test_feed_emits_enh_stat_event() -> None:
     assert enh_events[0].stat['lost_frame_cnt'] == 5
     assert enh_events[0].stat['written_bytes_cnt'] == 4096
     assert enh_events[0].stat['lost_bytes_cnt'] == 256
+
+
+def test_feed_emits_final_stat_event() -> None:
+    parser = BleLogParser()
+    entry = struct.pack('<BIIII', BleLogSource.HOST, 100, 2, 4096, 128)
+    payload = _internal_payload(os_ts=4321, int_src=InternalSource.FINAL_STAT, sub_payload=b'\x01' + entry)
+
+    batch = parser.feed(_make_frame(payload, src=BleLogSource.INTERNAL, sn=1))
+
+    event = next(event for event in batch.events if isinstance(event, FinalStatEvent))
+    assert event.os_ts_ms == 4321
+    assert event.entries[0].source_code == BleLogSource.HOST
+    assert event.entries[0].written_frame_cnt == 100
+    assert event.entries[0].failed_frame_cnt == 2
 
 
 def test_feed_filters_false_init_done_version_zero() -> None:

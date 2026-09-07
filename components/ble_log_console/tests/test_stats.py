@@ -168,7 +168,6 @@ class TestRecordFrameWithSN:
 
     def test_sn_gap_tracked(self) -> None:
         stats = StatsAccumulator()
-        stats.set_firmware_version(4)  # enable SN gap tracking (requires version >= 4)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         # SN=257 is beyond the reorder window (256), forcing SN=1 to be confirmed lost
         stats.record_frame(frame_size=100, src_code=1, frame_sn=257)
@@ -284,13 +283,11 @@ class TestRecordEnhStat:
 class TestRecordFrameReturnsGap:
     def test_returns_zero_for_sequential_frames(self) -> None:
         stats = StatsAccumulator()
-        stats.set_firmware_version(4)
         assert stats.record_frame(frame_size=100, src_code=1, frame_sn=0) == 0
         assert stats.record_frame(frame_size=100, src_code=1, frame_sn=1) == 0
 
     def test_returns_gap_count_for_large_jump(self) -> None:
         stats = StatsAccumulator()
-        stats.set_firmware_version(4)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         gap = stats.record_frame(frame_size=100, src_code=1, frame_sn=300)
         assert gap > 0
@@ -299,13 +296,6 @@ class TestRecordFrameReturnsGap:
         stats = StatsAccumulator()
         assert stats.record_frame(frame_size=100, src_code=1, frame_sn=-1) == 0
         assert stats.record_frame(frame_size=100, src_code=0, frame_sn=5) == 0
-
-    def test_info_version_does_not_gate_sn_tracking(self) -> None:
-        stats = StatsAccumulator()
-        stats.set_firmware_version(3)
-        stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
-        gap = stats.record_frame(frame_size=100, src_code=1, frame_sn=300)
-        assert gap > 0
 
     def test_sn_gap_enabled_by_default(self) -> None:
         stats = StatsAccumulator()

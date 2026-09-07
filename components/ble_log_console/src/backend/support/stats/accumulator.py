@@ -12,6 +12,7 @@ from src.backend.models import FrameStats
 from src.backend.models import FirmwareLossSummary
 from src.backend.models import FunnelSnapshot
 from src.backend.models import SequenceSummary
+from src.backend.models import SequenceSourceSummary
 from src.backend.models import SourceCode
 from src.backend.models import ThroughputInfo
 from src.backend.models import TransportBitrate
@@ -21,7 +22,6 @@ from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
 from src.backend.support.stats.sn_gap import SNGapTracker
 from src.backend.support.stats.transport import TransportMetrics
 
-_ZERO = FrameByteCount(frames=0, bytes=0)
 
 class StatsAccumulator:
     def __init__(self) -> None:
@@ -30,6 +30,7 @@ class StatsAccumulator:
         self._fw_loss = FirmwareLossTracker()
         self._fw_written = FirmwareWrittenTracker()
         self._sn_gap = SNGapTracker()
+        self._sequence_total = SequenceSummary()
         self._buf_util = BufUtilTracker()
         self._per_source_received_frames: dict[SourceCode, int] = {}
         self._per_source_received_bytes: dict[SourceCode, int] = {}
@@ -39,10 +40,6 @@ class StatsAccumulator:
         self._capture_written: dict[SourceCode, tuple[int, int]] = {}
         self._total_elapsed: float = 0.0
         self._prev_written: dict[SourceCode, tuple[int, int]] = {}
-
-    def set_firmware_version(self, version: int) -> None:
-        # INFO remains useful metadata, but current frame headers always carry SN.
-        del version
 
     def record_bytes(self, count: int) -> None:
         self._transport.record_bytes(count)
@@ -69,10 +66,20 @@ class StatsAccumulator:
         return sum(self._per_source_received_frames.values())
 
     def sequence_snapshot(self) -> SequenceSummary:
-        return self._sn_gap.snapshot()
+        return merge_sequence_summaries((self._sequence_total, self._sn_gap.snapshot()))
 
     def finalize_sequence(self) -> SequenceSummary:
-        return self._sn_gap.finalize()
+        self.seal_sequence_segment()
+        return self._sequence_total
+
+    def seal_sequence_segment(self) -> SequenceSummary:
+        """Close the current FINAL_STAT interval and start a fresh SN window."""
+
+        summary = self._sn_gap.finalize()
+        if summary.sources:
+            self._sequence_total = merge_sequence_summaries((self._sequence_total, summary))
+        self._sn_gap = SNGapTracker()
+        return summary
 
     def capture_firmware_loss(self) -> tuple[FirmwareLossSummary, ...]:
         return tuple(
@@ -173,7 +180,7 @@ class StatsAccumulator:
         if reason == 'init':
             # INIT_DONE confirms a new firmware instance. FLUSH may be followed
             # by older asynchronously buffered frames, so it is not an SN cut.
-            self._sn_gap.start_new_segment()
+            self.seal_sequence_segment()
             # ENH_STAT-coupled: full reset
             self._fw_loss.reset()
             self._fw_written.reset()
@@ -260,3 +267,26 @@ class StatsAccumulator:
         self._prev_written = dict(written_totals)
 
         return result
+
+
+def merge_sequence_summaries(summaries: tuple[SequenceSummary, ...]) -> SequenceSummary:
+    merged: dict[SourceCode, SequenceSourceSummary] = {}
+    for summary in summaries:
+        for current in summary.sources:
+            previous = merged.get(current.source)
+            if previous is None:
+                merged[current.source] = current
+                continue
+            merged[current.source] = SequenceSourceSummary(
+                source=current.source,
+                observed_frames=previous.observed_frames + current.observed_frames,
+                first_sn=previous.first_sn,
+                last_sn=current.last_sn,
+                missing_frames=previous.missing_frames + current.missing_frames,
+                segments=previous.segments + current.segments,
+                late_frames=previous.late_frames + current.late_frames,
+                duplicate_frames=previous.duplicate_frames + current.duplicate_frames,
+                wraps=previous.wraps + current.wraps,
+                uncertain=previous.uncertain or current.uncertain,
+            )
+    return SequenceSummary(tuple(merged[source] for source in sorted(merged)))

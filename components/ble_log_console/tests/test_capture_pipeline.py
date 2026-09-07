@@ -30,6 +30,24 @@ from tests.helpers import build_frame
 from tests.helpers import xor_checksum
 
 
+def test_capture_retains_only_latest_snapshot_and_keeps_errors() -> None:
+    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    pipeline = CapturePipeline(config, WriterConfig(Path('capture.bin')))
+    pipeline._ui_queue = Queue()
+    error = ParserStatus(kind='error', message='parser failed')
+    pipeline._ui_queue.put(error)
+    latest = None
+    for index in range(30):
+        latest = AggregatorSnapshot(FrameStats(), (), (), index, index, index, 0)
+        pipeline._ui_queue.put(latest)
+        pipeline.drain_events()
+
+    result = _result_from_events(pipeline._result_events)
+    assert len(pipeline._result_events) == 2
+    assert result.final_snapshot is latest
+    assert result.parser_error == 'parser failed'
+
+
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
     return build_frame(payload, src, sn, xor_checksum)
 

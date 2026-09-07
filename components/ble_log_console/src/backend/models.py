@@ -125,7 +125,22 @@ class BufUtilResult(TypedDict):
     os_ts_ms: int
 
 
-InternalDecoderResult = InfoResult | EnhStatResult | BufUtilResult
+@dataclass(frozen=True)
+class FinalStatEntry:
+    source_code: SourceCode
+    written_frame_cnt: int
+    failed_frame_cnt: int
+    written_bytes_cnt: int
+    failed_bytes_cnt: int
+
+
+class FinalStatResult(TypedDict):
+    int_src: InternalSource
+    entries: tuple[FinalStatEntry, ...]
+    os_ts_ms: int
+
+
+InternalDecoderResult = InfoResult | EnhStatResult | BufUtilResult | FinalStatResult
 
 
 # Sources written via ble_log_write_hex_ll() or stream_write have no 4-byte os_ts prefix.
@@ -304,6 +319,23 @@ class SequenceSummary:
 
 
 @dataclass(frozen=True)
+class CaptureSegmentSummary:
+    """One firmware flush interval observed during a capture."""
+
+    index: int
+    complete: bool
+    final_stat_seen: bool
+    received_frames: int
+    received_bytes: int
+    firmware_written_frames: int
+    firmware_written_bytes: int
+    firmware_lost_frames: int
+    firmware_lost_bytes: int
+    sequence_missing_frames: int
+    sequence_uncertain: bool
+
+
+@dataclass(frozen=True)
 class FirmwareLossSummary:
     """Firmware buffer loss observed after this capture established a baseline."""
 
@@ -344,6 +376,7 @@ class CaptureReport:
     average_bytes_per_sec: float
     peak_bits_per_sec: float
     sequence: SequenceSummary
+    segments: tuple[CaptureSegmentSummary, ...]
     firmware_loss: tuple[FirmwareLossSummary, ...]
     firmware_written_bytes: int
     firmware_lost_bytes: int
