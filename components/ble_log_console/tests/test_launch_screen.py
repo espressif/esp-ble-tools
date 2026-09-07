@@ -12,6 +12,8 @@ from src.frontend.launch_screen import BAUD_RATES
 from src.frontend.launch_screen import DEFAULT_BAUD_RATE
 from src.frontend.launch_screen import SPI_PORT_LABEL_PREFIX
 from src.frontend.launch_screen import LaunchScreen
+from src.i18n import get_language
+from src.i18n import set_language
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -110,6 +112,16 @@ class TestLaunchScreenInit:
         """LaunchScreen should have a quit binding on 'q'."""
         keys = [b.key for b in LaunchScreen.BINDINGS]
         assert 'q' in keys
+
+    def test_language_is_selected_before_connecting(self) -> None:
+        screen = LaunchScreen()
+        event = MagicMock()
+        event.value = 'zh_CN'
+        try:
+            screen.language_changed(event)
+            assert get_language() == 'zh_CN'
+        finally:
+            set_language('en')
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +303,7 @@ class TestComposeMethod:
         for widget_id in [
             'launch-container',
             'launch-title',
+            'language-select',
             'port-select',
             'refresh-btn',
             'dir-input',

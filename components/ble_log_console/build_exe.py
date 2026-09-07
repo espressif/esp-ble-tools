@@ -85,7 +85,6 @@ def main() -> None:
 
     artifact_base_name = _artifact_base_name(version)
     artifact_name = f'{artifact_base_name}.exe' if sys.platform == 'win32' else artifact_base_name
-
     cmd = [
         sys.executable,
         '-m',
@@ -126,6 +125,8 @@ def main() -> None:
         'serial.tools.list_ports_windows',
         '--hidden-import',
         'serial.tools.list_ports_osx',
+        '--hidden-import',
+        'ble_log_frame_decoder._native',
         '--collect-data',
         'textual',
         '--collect-data',

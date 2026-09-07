@@ -137,15 +137,15 @@ After startup, the application displays the following screen:
   <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 58%; max-width: 620px; max-height: 400px; object-fit: contain;">
 </p>
 
-First, select the transport mode. Select UART if you receive logs through a serial port, or SPI Bridge if you receive logs through an SPI Bridge device. After the mode is selected, the application automatically scans the available ports.
+First, choose the language used for warnings and the quality report, then select the transport mode. Select UART if you receive logs through a serial port, or SPI Bridge if you receive logs through an SPI Bridge device. After the mode is selected, the application automatically scans the available ports.
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
-When you stop capturing, press `q` or `Ctrl+C` to exit the application. Logs are automatically saved in the configured directory. Large captures may be split into multiple `part` files, and the exit message summarizes the saved files.
+To end a capture, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then displays a capture quality report instead of exiting immediately. From the report, you can record again with the same configuration or exit. Large captures may be split into multiple `part` files.
 
 When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to this tool together with the BLE Log data. The tool displays them in real time and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory. No additional action is required. See [Log File Save Rules](#53-log-file-save-rules) for details.
 
-> Note: When stopping capture, use `q` or `Ctrl+C` to exit the application normally. If the terminal window is closed directly, the process may be terminated by the system before the final data flush completes.
+> Note: End capture with **Stop & Review**, `q`, or `Ctrl+C`, and wait for `FINALIZING` to complete. Closing the terminal window directly may terminate the process before the final data flush and quality report complete.
 
 Note that in a Linux environment, the available port name formats for SPI mode and UART mode are different. This is determined by the port naming rules of the two transport modes and does not affect normal use.
 
@@ -161,7 +161,9 @@ After startup, the interface mainly consists of the log area and the status bar,
 
 The log area displays parsed BLE logs, tool prompts, and warning messages in real time.
 
-The status bar shows the current connection status, captured raw data, current speed, peak speed, frame rate, and firmware-reported lost-frame statistics.
+The status bar shows the current connection status, captured raw data, current speed, peak speed, and frame rate. Loss is calculated for the current capture after recording stops.
+
+Click **Stop & Review** to safely end the current recording and open its quality report. Wait while `FINALIZING` saves the remaining transport data.
 
 The tool supports adaptive window resizing. When the window is small, some status information may not fit on screen. Enlarge the window or scroll to view the remaining information.
 
@@ -189,16 +191,34 @@ If serial-log forwarding is enabled in the firmware, regular console logs that w
 ble_log_YYYYMMDD_HHMMSS_console.log
 ```
 
-After the program exits, it prints the actual save paths in the terminal. Large captures may be split into multiple `part` files.
+After a safe stop, the matching quality report is saved as:
 
-### 5.4 Common Shortcuts
+```text
+ble_log_YYYYMMDD_HHMMSS_report.txt
+```
+
+After the program exits, it prints the actual save paths in the terminal. Large captures may be split into multiple `part` files. If another capture starts within the same second, a numeric suffix is added so existing files are never overwritten.
+
+### 5.4 Capture Quality Report
+
+The report gives one of three conclusions:
+
+- `READY FOR ANALYSIS`: Raw data was finalized, regular BLE Log frames were decoded, and the observed loss rate for customer-data sources was zero.
+- `SAVED WITH WARNINGS`: Raw data was retained, but up to 5% observed loss, a transport error, or incomplete live-parser coverage was detected. If a restart or abnormal jump makes continuity unreliable, the report says `Unable to verify`.
+- `RECAPTURE RECOMMENDED`: No raw data was saved, the raw file could not be finalized, a complete parse found no regular BLE Log frames, or an experimental loss rate exceeded 5%.
+
+The screen highlights the verdict and recommendation, then summarizes duration, raw size, valid log frames, parser coverage, possible sequence loss, firmware-reported loss, and key file paths. Per-source sequence details, rates, and errors remain available in the matching `report.txt` file.
+
+The detailed report records the experimental firmware write-failure rate and transport sequence-discontinuity rate; the final dialog does not expand these percentages. The `INTERNAL` source remains available in detailed statistics but does not grade customer-data quality.
+
+### 5.5 Common Shortcuts
 
 The following shortcuts are commonly used while the application is running. They can be used to view statistics, reset the device, exit the application, and more.
 
 | Key | Function |
 | --- | --- |
-| `q` | Exit |
-| `Ctrl+C` | Exit |
+| `q` | Stop and review while recording; exit from the report |
+| `Ctrl+C` | Stop and review while recording; exit from the report |
 | `c` | Clear the log area |
 | `s` | Toggle auto-scroll |
 | `d` | View received log statistics |

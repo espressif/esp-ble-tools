@@ -139,7 +139,6 @@ def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
         frames_seen=sum(update.frames_seen for update in updates),
         redir_events=tuple(event for update in updates for event in update.redir_events),
         internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
-        frame_losses=tuple(loss for update in updates for loss in update.frame_losses),
     )
 
 

@@ -22,7 +22,7 @@ if not exist "%SCRIPT_DIR%\.venv" (
 )
 
 echo Building executable ...
-uv run --no-sync python build_exe.py %*
+uv run python build_exe.py %*
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 if not exist "dist\artifact_name.txt" (

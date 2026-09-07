@@ -33,6 +33,8 @@ from src.frontend.rendering import launch_control_css
 from src.frontend.rendering import launch_screen_safe_css
 from src.frontend.rendering import launch_width_stable_css
 from src.frontend.rendering import terminal_border_style
+from src.i18n import get_language
+from src.i18n import set_language
 
 BAUD_RATES: list[int] = [115200, 230400, 460800, 921600, 1500000, 2000000, 3000000]
 DEFAULT_BAUD_RATE: int = 3000000
@@ -83,7 +85,8 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     }
 
     #mode-select,
-    #baud-select {
+    #baud-select,
+    #language-select {
         width: 100%;
     }
 
@@ -153,6 +156,14 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         with Vertical(id='launch-container'):
             yield Label('BLE Log Console Setup', id='launch-title')
 
+            yield Label('Language / 语言', classes='field-label')
+            yield Select(
+                (('English', 'en'), ('简体中文', 'zh_CN')),
+                value=get_language(),
+                allow_blank=False,
+                id='language-select',
+            )
+
             yield Label('Transport Mode', classes='field-label')
             yield Select(mode_options, value=_mode_select_value(self._mode), id='mode-select')
 
@@ -177,6 +188,11 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     def on_mount(self) -> None:
         self._sync_mode_fields()
+
+    @on(Select.Changed, '#language-select')
+    def language_changed(self, event: Select.Changed) -> None:
+        if event.value is not Select.BLANK:
+            set_language(str(event.value))
 
     @on(Button.Pressed, '#refresh-btn')
     def refresh_ports(self) -> None:

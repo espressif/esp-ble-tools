@@ -6,7 +6,6 @@
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import CaptureAggregator
-from src.backend.analysis.aggregator import FrameLossUpdate
 from src.backend.analysis.aggregator import InternalFrameUpdate
 from src.backend.analysis.aggregator import frame_size_from_payload
 from src.backend.analysis.parser import BleLogParser
@@ -40,7 +39,6 @@ __all__ = [
     'DEFAULT_CHECKSUM_MODE',
     'EnhStatEvent',
     'FrameEvent',
-    'FrameLossUpdate',
     'InternalEvent',
     'InternalFrameUpdate',
     'ParseBatch',

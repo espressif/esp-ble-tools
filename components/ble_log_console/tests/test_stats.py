@@ -209,6 +209,27 @@ class TestRecordEnhStat:
             src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
         assert (d_f, d_b) == (5, 250)
 
+    def test_capture_loss_preserves_deltas_across_flush_baselines(self) -> None:
+        stats = StatsAccumulator()
+        stats.record_enh_stat(1, 10, 5, 1000, 500)
+        stats.record_enh_stat(1, 20, 7, 2000, 700)
+        stats.reset('flush')
+        stats.record_enh_stat(1, 5, 1, 500, 100)
+        stats.record_enh_stat(1, 10, 3, 1000, 300)
+
+        capture_loss = stats.capture_firmware_loss()
+
+        assert capture_loss[0].frames == 4
+        assert capture_loss[0].bytes == 400
+
+    def test_quality_bytes_use_capture_deltas_and_exclude_internal(self) -> None:
+        stats = StatsAccumulator()
+        stats.reset('init')
+        stats.record_enh_stat(0, 5, 2, 500, 200)
+        stats.record_enh_stat(1, 10, 1, 1000, 100)
+
+        assert stats.capture_firmware_quality_bytes() == (1000, 100)
+
     def test_torn_read_guard_rejects_implausible_written_bytes(self) -> None:
         stats = StatsAccumulator()
         baudrate = 3_000_000
@@ -279,18 +300,18 @@ class TestRecordFrameReturnsGap:
         assert stats.record_frame(frame_size=100, src_code=1, frame_sn=-1) == 0
         assert stats.record_frame(frame_size=100, src_code=0, frame_sn=5) == 0
 
-    def test_sn_gap_disabled_for_old_firmware(self) -> None:
+    def test_info_version_does_not_gate_sn_tracking(self) -> None:
         stats = StatsAccumulator()
         stats.set_firmware_version(3)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         gap = stats.record_frame(frame_size=100, src_code=1, frame_sn=300)
-        assert gap == 0
+        assert gap > 0
 
-    def test_sn_gap_disabled_by_default(self) -> None:
+    def test_sn_gap_enabled_by_default(self) -> None:
         stats = StatsAccumulator()
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         gap = stats.record_frame(frame_size=100, src_code=1, frame_sn=300)
-        assert gap == 0
+        assert gap > 0
 
 
 class TestReset:

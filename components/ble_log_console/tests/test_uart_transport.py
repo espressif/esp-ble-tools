@@ -1,14 +1,28 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from unittest.mock import patch
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.support.transport.uart_transport import PROVIDER
 from src.backend.support.transport.uart_transport import UartTransport
+from src.backend.support.transport.uart_transport import list_serial_ports
 from src.backend.support.transport.uart_transport import validate_uart_port
+
+
+@patch('src.backend.support.transport.uart_transport.sys.platform', 'linux')
+@patch('src.backend.support.transport.uart_transport.serial.tools.list_ports.comports')
+def test_linux_port_list_only_includes_usb_serial_devices(mock_comports: MagicMock) -> None:
+    mock_comports.return_value = [
+        SimpleNamespace(device='/dev/ttyS0'),
+        SimpleNamespace(device='/dev/ttyUSB0'),
+        SimpleNamespace(device='/dev/ttyACM0'),
+    ]
+
+    assert list_serial_ports() == ['/dev/ttyUSB0', '/dev/ttyACM0']
 
 
 class TestValidateUartPort:

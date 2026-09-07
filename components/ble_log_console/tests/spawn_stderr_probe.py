@@ -36,7 +36,17 @@ class SpawnCaptureSession:
         return ()
 
 
+class WidgetStub:
+    def clear(self) -> None:
+        pass
+
+
 class ProbeApp(app_module.BLELogApp):
+    _widget = WidgetStub()
+
+    def query_one(self, *args: object, **kwargs: object) -> WidgetStub:
+        return self._widget
+
     def run_probe(self) -> None:
         self._output_path = Path('unused.bin')
         self._start_capture()

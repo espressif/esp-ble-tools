@@ -195,6 +195,8 @@ def cli(
     app.run()
     _echo_saved_paths('Capture', app.saved_capture_paths)
     _echo_saved_paths('Console log', app.saved_console_log_paths)
+    if app.saved_report_path is not None:
+        _echo_saved_paths('Capture report', [app.saved_report_path])
 
 
 @cli.command(name='ports')

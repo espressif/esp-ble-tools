@@ -9,7 +9,9 @@ from src.backend.models import BleLogSource
 from src.backend.models import BufUtilEntry
 from src.backend.models import FrameByteCount
 from src.backend.models import FrameStats
+from src.backend.models import FirmwareLossSummary
 from src.backend.models import FunnelSnapshot
+from src.backend.models import SequenceSummary
 from src.backend.models import SourceCode
 from src.backend.models import ThroughputInfo
 from src.backend.models import TransportBitrate
@@ -20,9 +22,6 @@ from src.backend.support.stats.sn_gap import SNGapTracker
 from src.backend.support.stats.transport import TransportMetrics
 
 _ZERO = FrameByteCount(frames=0, bytes=0)
-
-_SN_PRODUCED_MIN_VERSION = 4
-
 
 class StatsAccumulator:
     def __init__(self) -> None:
@@ -35,12 +34,15 @@ class StatsAccumulator:
         self._per_source_received_frames: dict[SourceCode, int] = {}
         self._per_source_received_bytes: dict[SourceCode, int] = {}
         self._enh_stat_prev: dict[SourceCode, tuple[int, int, int, int]] = {}
+        self._enh_zero_baseline = False
+        self._capture_loss: dict[SourceCode, tuple[int, int]] = {}
+        self._capture_written: dict[SourceCode, tuple[int, int]] = {}
         self._total_elapsed: float = 0.0
         self._prev_written: dict[SourceCode, tuple[int, int]] = {}
-        self._sn_gap_enabled = False  # disabled until firmware version >= 4 confirmed
 
     def set_firmware_version(self, version: int) -> None:
-        self._sn_gap_enabled = version >= _SN_PRODUCED_MIN_VERSION
+        # INFO remains useful metadata, but current frame headers always carry SN.
+        del version
 
     def record_bytes(self, count: int) -> None:
         self._transport.record_bytes(count)
@@ -50,22 +52,41 @@ class StatsAccumulator:
         self._transport.record_frame()
         gap = 0
         if frame_sn >= 0 and src_code > 0:
-            if self._sn_gap_enabled:
-                gap = self._sn_gap.record(src_code, frame_sn)
+            gap = self._sn_gap.record(src_code, frame_sn)
             self._per_source_received_frames[src_code] = self._per_source_received_frames.get(src_code, 0) + 1
             self._per_source_received_bytes[src_code] = self._per_source_received_bytes.get(src_code, 0) + frame_size
         return gap
 
-    @property
-    def sn_gap_enabled(self) -> bool:
-        return self._sn_gap_enabled
-
     def record_frame_sn(self, src_code: SourceCode, frame_sn: int) -> int:
         """Record sequence number for an already-counted regular frame."""
 
-        if not self._sn_gap_enabled or frame_sn < 0 or src_code <= 0:
+        if frame_sn < 0 or src_code <= 0:
             return 0
         return self._sn_gap.record(src_code, frame_sn)
+
+    @property
+    def regular_frame_count(self) -> int:
+        return sum(self._per_source_received_frames.values())
+
+    def sequence_snapshot(self) -> SequenceSummary:
+        return self._sn_gap.snapshot()
+
+    def finalize_sequence(self) -> SequenceSummary:
+        return self._sn_gap.finalize()
+
+    def capture_firmware_loss(self) -> tuple[FirmwareLossSummary, ...]:
+        return tuple(
+            FirmwareLossSummary(source=source, frames=frames, bytes=byte_count)
+            for source, (frames, byte_count) in sorted(self._capture_loss.items())
+            if frames > 0 or byte_count > 0
+        )
+
+    def capture_firmware_quality_bytes(self) -> tuple[int, int]:
+        """Return comparable ENH written/lost byte deltas for regular sources."""
+
+        written = sum(value[1] for source, value in self._capture_written.items() if source > 0)
+        lost = sum(value[1] for source, value in self._capture_loss.items() if source > 0)
+        return written, lost
 
     def record_regular_frame_summary(
         self,
@@ -129,8 +150,18 @@ class StatsAccumulator:
                 return (0, 0)
 
         self._enh_stat_prev[src_code] = (written_frames, lost_frames, written_bytes, lost_bytes)
-        self._fw_written.record(src_code, written_frames, written_bytes)
-        return self._fw_loss.record(src_code, lost_frames, lost_bytes)  # type: ignore[no-any-return]
+        if prev is None and self._enh_zero_baseline:
+            self._fw_written.record(src_code, 0, 0)
+            self._fw_loss.record(src_code, 0, 0)
+        new_written_frames, new_written_bytes = self._fw_written.record(src_code, written_frames, written_bytes)
+        if new_written_frames > 0 or new_written_bytes > 0:
+            old_frames, old_bytes = self._capture_written.get(src_code, (0, 0))
+            self._capture_written[src_code] = (old_frames + new_written_frames, old_bytes + new_written_bytes)
+        new_frames, new_bytes = self._fw_loss.record(src_code, lost_frames, lost_bytes)
+        if new_frames > 0 or new_bytes > 0:
+            old_frames, old_bytes = self._capture_loss.get(src_code, (0, 0))
+            self._capture_loss[src_code] = (old_frames + new_frames, old_bytes + new_bytes)
+        return new_frames, new_bytes
 
     # -- Reset -------------------------------------------------------------------
 
@@ -139,14 +170,15 @@ class StatsAccumulator:
 
         reason: "init" (INIT_DONE) or "flush" (FLUSH)
         """
-        # SN-coupled: always full reset
-        self._sn_gap.reset()
-
         if reason == 'init':
+            # INIT_DONE confirms a new firmware instance. FLUSH may be followed
+            # by older asynchronously buffered frames, so it is not an SN cut.
+            self._sn_gap.start_new_segment()
             # ENH_STAT-coupled: full reset
             self._fw_loss.reset()
             self._fw_written.reset()
             self._enh_stat_prev.clear()
+            self._enh_zero_baseline = True
             self._prev_written.clear()
             self._buf_util.reset()
         elif reason == 'flush':
@@ -154,6 +186,7 @@ class StatsAccumulator:
             self._fw_loss.reset_baselines()
             self._fw_written.reset_baselines()
             self._enh_stat_prev.clear()
+            self._enh_zero_baseline = False
             # Console-local: preserve (no action)
 
     # -- Snapshots ---------------------------------------------------------------

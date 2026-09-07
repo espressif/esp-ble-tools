@@ -173,6 +173,24 @@ def test_pipeline_aggregates_parser_events_and_raw_bytes(tmp_path: Path) -> None
     assert output_path.read_bytes() == frames
 
 
+def test_pipeline_final_snapshot_seals_sequence_gaps(tmp_path: Path) -> None:
+    stop_event = Event()
+    payload = b'\x00\x00\x00\x00data'
+    frames = _make_frame(payload, BleLogSource.HOST, 0) + _make_frame(payload, BleLogSource.HOST, 2)
+    output_path = tmp_path / 'ble_log.bin'
+
+    result = run_capture_pipeline_inprocess(
+        FakeReader([frames], stop_event),
+        WriterConfig(output_path),
+        stop_requested=stop_event,
+    )
+
+    assert result.final_snapshot is not None
+    source = result.final_snapshot.sequence.sources[0]
+    assert source.observed_frames == 2
+    assert source.missing_frames == 1
+
+
 def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     status = WriterStatus(

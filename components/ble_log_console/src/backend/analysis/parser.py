@@ -20,7 +20,6 @@ from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
-from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import MAX_FRAME_SIZE
 from src.backend.models import BleLogSource
@@ -30,6 +29,7 @@ from src.backend.models import ChecksumScope
 from src.backend.models import EnhStatResult
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
+from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 
 DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
 
@@ -89,20 +89,16 @@ class BleLogParser:
 
     def __init__(self, checksum_mode: ChecksumMode | None = None) -> None:
         self._decoder = _decoder_for_mode(checksum_mode)
-        self._raw_bytes = 0
-        self._parsed_frames = 0
 
     def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
-        self._raw_bytes += len(chunk)
         buffered_before = self._decoder.stats.buffered_bytes
         frames = self._decoder.feed(chunk)
         buffered_after = self._decoder.stats.buffered_bytes
         events: list[BleLogEvent] = []
         for frame in frames:
-            self._parsed_frames += 1
             _append_frame_event(frame, events, received_at_ms)
         return ParseBatch(
             raw_bytes=len(chunk),
@@ -115,15 +111,16 @@ class BleLogParser:
     def finalize(self) -> ParseSummary:
         """Return final parser totals without reparsing raw data."""
 
+        stats = self._decoder.finish()
         return ParseSummary(
-            raw_bytes=self._raw_bytes,
-            parsed_frames=self._parsed_frames,
-            carried_bytes=self._decoder.stats.buffered_bytes,
+            raw_bytes=stats.bytes_received,
+            parsed_frames=stats.frames_decoded,
+            carried_bytes=stats.trailing_bytes,
         )
 
 
 def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:
-    frame_size = len(frame.payload) + FRAME_OVERHEAD
+    frame_size = frame.size
     source_code = frame.source_code
     frame_sn = frame.sequence_number
     if source_code == BleLogSource.INTERNAL:

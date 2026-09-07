@@ -8,6 +8,8 @@ from typing import cast
 
 import pytest
 
+from ble_log_frame_decoder import FrameDecoder
+
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser import parse_ble_log_chunk
 from src.backend.analysis.parser_events import EnhStatEvent
@@ -41,6 +43,10 @@ def _sync_frames(src: int = 1) -> bytes:
 
 def _internal_payload(os_ts: int, int_src: int, sub_payload: bytes) -> bytes:
     return struct.pack('<I', os_ts) + bytes([int_src]) + sub_payload
+
+
+def test_parser_uses_blfd_decoder() -> None:
+    assert isinstance(BleLogParser()._decoder, FrameDecoder)  # noqa: SLF001
 
 
 def test_feed_emits_batch_with_frame_events() -> None:

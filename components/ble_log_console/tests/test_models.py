@@ -3,7 +3,6 @@
 
 from src.backend.models import FrameByteCount
 from src.backend.models import FunnelSnapshot
-from src.backend.models import LossType
 from src.backend.models import ThroughputInfo
 from src.backend.models import TransportBitrate
 
@@ -12,11 +11,6 @@ def test_frame_byte_count() -> None:
     fbc = FrameByteCount(frames=100, bytes=5000)
     assert fbc.frames == 100
     assert fbc.bytes == 5000
-
-
-def test_loss_type_enum() -> None:
-    assert LossType.BUFFER == 'buffer'
-    assert LossType.TRANSPORT == 'transport'
 
 
 def test_funnel_snapshot_structure() -> None:

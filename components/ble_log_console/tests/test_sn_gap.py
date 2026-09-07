@@ -26,6 +26,7 @@ class TestSNGapTracker:
         assert self.tracker.record(1, 6) == 0  # late fill
         assert self.tracker.record(1, 7) == 0  # late fill
         assert self.tracker.totals().get(1, 0) == 0
+        assert self.tracker.finalize().sources[0].last_sn == 8
 
     # --- Confirmed loss ---
     def test_loss_confirmed_when_window_expires(self) -> None:
@@ -36,19 +37,26 @@ class TestSNGapTracker:
         assert gaps > 0  # SN=1 expired as confirmed loss
         assert self.tracker.totals()[1] > 0
 
+    def test_large_forward_gap_is_counted_without_walking_every_sn(self) -> None:
+        self.tracker.record(1, 0)
+        self.tracker.record(1, 1_000_000)
+
+        source = self.tracker.finalize().sources[0]
+
+        assert source.missing_frames == 999_999
+
     # --- Late arrival behind window ---
     def test_late_arrival_ignored(self) -> None:
         self.tracker.record(1, 0)
         self.tracker.record(1, 257)  # force window advance past 0
         assert self.tracker.record(1, 1) == 0  # too late, ignored
 
-    # --- Reset detection ---
-    def test_large_backward_jump_resets_baseline(self) -> None:
+    # --- Ambiguous reset/old data ---
+    def test_large_backward_jump_is_not_guessed_as_a_reset(self) -> None:
         self.tracker.record(1, 1000)
-        # SN jumps back to 5 (far beyond REORDER_WINDOW backward)
-        assert self.tracker.record(1, 5) == 0
-        # After re-baseline, SN=6 should be normal
-        assert self.tracker.record(1, 6) == 0
+        self.tracker.record(1, 5)
+
+        assert self.tracker.finalize().sources[0].uncertain
 
     # --- Multi-source independence ---
     def test_sources_independent(self) -> None:
@@ -78,3 +86,63 @@ class TestSNGapTracker:
         self.tracker.reset(src_code=1)
         assert self.tracker.record(1, 0) == 0  # re-baselined
         assert self.tracker.record(2, 21) == 0  # unaffected
+
+    def test_finalize_seals_pending_gaps_through_highest_observed_sn(self) -> None:
+        self.tracker.record(1, 5)
+        self.tracker.record(1, 8)
+
+        summary = self.tracker.finalize()
+
+        source = summary.sources[0]
+        assert source.first_sn == 5
+        assert source.last_sn == 8
+        assert source.observed_frames == 2
+        assert source.missing_frames == 2
+        assert source.segments == 1
+
+    def test_new_segment_preserves_previous_segment_summary(self) -> None:
+        self.tracker.record(1, 5)
+        self.tracker.record(1, 8)
+        self.tracker.start_new_segment()
+        self.tracker.record(1, 0)
+        self.tracker.record(1, 1)
+
+        source = self.tracker.finalize().sources[0]
+
+        assert source.observed_frames == 4
+        assert source.missing_frames == 2
+        assert source.segments == 2
+        assert source.first_sn == 5
+        assert source.last_sn == 1
+
+    def test_finalize_does_not_infer_frames_after_last_observed_sn(self) -> None:
+        self.tracker.record(1, 42)
+
+        source = self.tracker.finalize().sources[0]
+
+        assert source.missing_frames == 0
+
+    def test_very_late_frames_reconcile_confirmed_gaps(self) -> None:
+        late = (100, 500)
+        for frame_sn in range(1000):
+            if frame_sn not in late:
+                self.tracker.record(1, frame_sn)
+        for frame_sn in late:
+            self.tracker.record(1, frame_sn)
+
+        source = self.tracker.finalize().sources[0]
+
+        assert source.missing_frames == 0
+        assert source.segments == 1
+        assert source.last_sn == 999
+        assert source.late_frames == 2
+
+    def test_sparse_gap_evidence_is_bounded(self) -> None:
+        tracker = SNGapTracker(max_gap_ranges=1)
+        for frame_sn in range(1000):
+            if frame_sn not in (100, 500):
+                tracker.record(1, frame_sn)
+
+        source = tracker.finalize().sources[0]
+
+        assert source.uncertain

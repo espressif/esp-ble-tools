@@ -7,7 +7,7 @@ Verifies that reset("init") and reset("flush") dispatch correctly per the spec:
 
 | Group            | Components                              | INIT_DONE    | FLUSH                              |
 |------------------|-----------------------------------------|--------------|------------------------------------|
-| SN-coupled       | SNGapTracker                            | full reset   | full reset                         |
+| SN-coupled       | SNGapTracker                            | new segment  | preserved                          |
 | ENH_STAT-coupled | FirmwareLossTracker, FirmwareWritten    | full reset   | reset baselines, keep latest snapshot |
 | Console-local    | TransportMetrics, per_source_received,  | preserve     | preserve                           |
 |                  | throughput cache                        |              |                                    |
@@ -50,13 +50,16 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         self._populate(stats)
         stats.reset('init')
-        # After init reset, loss tracker should be clean
-        # First report after reset establishes new baseline
+        # INIT_DONE is a trusted zero baseline, so the first report belongs
+        # to this capture instead of being discarded as historical loss.
         stats.record_enh_stat(1, 50, 3, 2500, 150)
         funnel = stats.funnel_snapshot()
         for snap in funnel:
             if snap.source == 1:
                 assert snap.buffer_loss.frames == 3  # first report absolute value
+        capture_loss = stats.capture_firmware_loss()
+        assert capture_loss[0].frames == 8
+        assert capture_loss[0].bytes == 400
 
     def test_init_resets_firmware_written(self) -> None:
         stats = StatsAccumulator()
@@ -87,20 +90,17 @@ class TestResetPropagation:
 
     # === FLUSH Tests ===
 
-    def test_flush_resets_sn_gap(self) -> None:
+    def test_flush_preserves_sn_tracking(self) -> None:
         stats = StatsAccumulator()
         stats.record_frame(100, 1, 0)
         stats.record_frame(100, 1, 1)
         stats.reset('flush')
-        # After flush, SN tracker is fully reset
-        stats.record_frame(100, 1, 0)  # SN restarts from 0
-        # Should not count gap from old SN=1 to new SN=0
-        # The per_source_received should include the 2 pre-flush frames + 1 post-flush
-        funnel = stats.funnel_snapshot()
-        for snap in funnel:
-            if snap.source == 1:
-                # 2 pre-flush + 1 post-flush = 3 total received
-                assert snap.received.frames == 3
+        stats.record_frame(100, 1, 0)
+
+        sequence = stats.finalize_sequence().sources[0]
+        assert sequence.missing_frames == 0
+        assert sequence.segments == 1
+        assert sequence.duplicate_frames == 1
 
     def test_flush_updates_firmware_loss_to_latest_snapshot(self) -> None:
         stats = StatsAccumulator()

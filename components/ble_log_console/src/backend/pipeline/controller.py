@@ -57,6 +57,9 @@ class CapturePipelineResult:
     parse_dropped_chunks: int = 0
     parse_dropped_bytes: int = 0
     parser_lag_bytes: int = 0
+    writer_finalized: bool = False
+    aggregator_finalized: bool = False
+    final_snapshot: AggregatorSnapshot | None = None
 
 
 def _drain_events(ui_queue: Any) -> list[Any]:
@@ -100,6 +103,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
     parse_dropped_bytes = 0
     writer_finalized = False
     aggregator_finalized = False
+    final_snapshot: AggregatorSnapshot | None = None
 
     for event in events:
         if isinstance(event, ReaderProcessEvent):
@@ -123,6 +127,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
             if event.kind == 'error' and parser_error is None:
                 parser_error = event.message
         elif isinstance(event, AggregatorSnapshot):
+            final_snapshot = event
             parser_raw_bytes = event.parser_raw_bytes
             parser_frames = event.parser_frames
             parser_carried_bytes = event.parser_carried_bytes
@@ -156,6 +161,9 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         parse_dropped_chunks=parse_dropped_chunks,
         parse_dropped_bytes=parse_dropped_bytes,
         parser_lag_bytes=parser_lag_bytes,
+        writer_finalized=writer_finalized,
+        aggregator_finalized=aggregator_finalized,
+        final_snapshot=final_snapshot,
     )
 
 
@@ -336,6 +344,9 @@ class CapturePipeline:
                     parse_dropped_chunks=result.parse_dropped_chunks,
                     parse_dropped_bytes=result.parse_dropped_bytes,
                     parser_lag_bytes=result.parser_lag_bytes,
+                    writer_finalized=result.writer_finalized,
+                    aggregator_finalized=result.aggregator_finalized,
+                    final_snapshot=result.final_snapshot,
                 ),
             )
         return events, result

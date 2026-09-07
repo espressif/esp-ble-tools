@@ -20,7 +20,7 @@ if not exist "%SCRIPT_DIR%\.venv" (
     exit /b 1
 )
 
-uv run --no-sync python console.py %*
+uv run python console.py %*
 exit /b %errorlevel%
 
 :find_uv

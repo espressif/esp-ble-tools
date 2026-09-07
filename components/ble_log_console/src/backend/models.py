@@ -10,6 +10,7 @@ to read before we split the contracts into smaller modules.
 
 from dataclasses import dataclass
 from dataclasses import field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TypedDict
@@ -211,11 +212,6 @@ class BufUtilPool(int, Enum):
     REDIR = 3
 
 
-class LossType(str, Enum):
-    BUFFER = 'buffer'  # firmware buffer full, frame dropped
-    TRANSPORT = 'transport'  # UART/link loss
-
-
 @dataclass(frozen=True)
 class BufUtilEntry:
     """Single LBM buffer utilization snapshot."""
@@ -274,6 +270,85 @@ class FrameStats:
     transport: TransportSnapshot = field(default_factory=TransportSnapshot)
     loss: LossSnapshot = field(default_factory=LossSnapshot)
     per_source_rx_bytes: dict[SourceCode, int] | None = None
+
+
+@dataclass(frozen=True)
+class SequenceSourceSummary:
+    """Capture-local sequence continuity for one BLE Log source."""
+
+    source: SourceCode
+    observed_frames: int
+    first_sn: int | None
+    last_sn: int | None
+    missing_frames: int
+    segments: int
+    late_frames: int = 0
+    duplicate_frames: int = 0
+    wraps: int = 0
+    uncertain: bool = False
+
+
+@dataclass(frozen=True)
+class SequenceSummary:
+    """Sequence continuity across all regular BLE Log sources."""
+
+    sources: tuple[SequenceSourceSummary, ...] = ()
+
+    @property
+    def total_missing_frames(self) -> int:
+        return sum(source.missing_frames for source in self.sources)
+
+    @property
+    def uncertain(self) -> bool:
+        return any(source.uncertain for source in self.sources)
+
+
+@dataclass(frozen=True)
+class FirmwareLossSummary:
+    """Firmware buffer loss observed after this capture established a baseline."""
+
+    source: SourceCode
+    frames: int
+    bytes: int
+
+
+class CaptureVerdict(str, Enum):
+    READY = 'READY FOR ANALYSIS'
+    WARNING = 'SAVED WITH WARNINGS'
+    RECAPTURE = 'RECAPTURE RECOMMENDED'
+
+
+@dataclass(frozen=True)
+class CaptureReport:
+    """Final, customer-facing evidence about one capture."""
+
+    verdict: CaptureVerdict
+    reasons: tuple[str, ...]
+    transport_config: TransportConfig
+    started_at: datetime
+    ended_at: datetime
+    duration_sec: float
+    raw_paths: tuple[Path, ...]
+    console_log_paths: tuple[Path, ...]
+    report_path: Path
+    raw_bytes: int
+    parser_frames: int
+    regular_frames: int
+    parser_complete: bool
+    parser_raw_bytes: int
+    parser_carried_bytes: int
+    parse_dropped_chunks: int
+    parse_dropped_bytes: int
+    parser_lag_bytes: int
+    average_bytes_per_sec: float
+    peak_bits_per_sec: float
+    sequence: SequenceSummary
+    firmware_loss: tuple[FirmwareLossSummary, ...]
+    firmware_write_loss_rate: float | None
+    sequence_loss_rate: float | None
+    errors: tuple[str, ...]
+    warnings: tuple[str, ...]
+    report_write_error: str | None = None
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {
@@ -347,24 +422,13 @@ class UserNotice(Message):
         self.level = level
 
 
-class FrameLossDetected(Message):
-    def __init__(
-        self,
-        source_name: str,
-        loss_type: LossType,
-        lost_frames: int,
-        lost_bytes: int,
-        sn_range: tuple[int, int] | None = None,
-    ) -> None:
-        super().__init__()
-        self.source_name = source_name
-        self.loss_type = loss_type
-        self.lost_frames = lost_frames
-        self.lost_bytes = lost_bytes
-        self.sn_range = sn_range
-
-
 class BackendStopped(Message):
     def __init__(self, reason: str = '') -> None:
         super().__init__()
         self.reason = reason
+
+
+class CaptureFinished(Message):
+    def __init__(self, report: CaptureReport) -> None:
+        super().__init__()
+        self.report = report

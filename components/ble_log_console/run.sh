@@ -19,4 +19,4 @@ if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     exit 1
 fi
 
-exec uv run --no-sync python console.py "$@"
+exec uv run python console.py "$@"

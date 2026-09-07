@@ -20,7 +20,6 @@ from src.backend.models import EnhStatResult
 from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
-from src.backend.models import LossType
 
 
 def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
@@ -141,7 +140,7 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
     assert snapshot.buf_util_snapshots[0].inflight_peak == 3
 
 
-def test_enh_stat_event_updates_loss_and_emits_loss_update() -> None:
+def test_enh_stat_event_updates_loss() -> None:
     aggregator = CaptureAggregator()
     payload = struct.pack('<I', 12) + bytes([InternalSource.ENH_STAT]) + b'\x00' * 17
     first = EnhStatResult(
@@ -169,11 +168,6 @@ def test_enh_stat_event_updates_loss_and_emits_loss_update() -> None:
 
     assert update.frames_seen == 1
     assert update.internal_frames[0].int_src == InternalSource.ENH_STAT
-    assert len(update.frame_losses) == 1
-    assert update.frame_losses[0].source_name == 'HOST'
-    assert update.frame_losses[0].loss_type == LossType.BUFFER
-    assert update.frame_losses[0].lost_frames == 2
-    assert update.frame_losses[0].lost_bytes == 128
     assert snapshot.stats.loss.total_frames == 2
     assert snapshot.stats.loss.total_bytes == 128
 

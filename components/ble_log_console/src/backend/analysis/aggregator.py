@@ -19,13 +19,13 @@ from src.backend.models import BufUtilEntry
 from src.backend.models import BufUtilResult
 from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import FrameStats
+from src.backend.models import FirmwareLossSummary
 from src.backend.models import FunnelSnapshot
 from src.backend.models import InfoResult
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
-from src.backend.models import LossType
+from src.backend.models import SequenceSummary
 from src.backend.models import TransportBitrate
-from src.backend.models import resolve_source_name
 from src.backend.support.stats import StatsAccumulator
 
 
@@ -38,24 +38,12 @@ class InternalFrameUpdate:
 
 
 @dataclass(frozen=True)
-class FrameLossUpdate:
-    """Incremental loss notice derived from firmware statistics."""
-
-    source_name: str
-    loss_type: LossType
-    lost_frames: int
-    lost_bytes: int
-    sn_range: tuple[int, int] | None = None
-
-
-@dataclass(frozen=True)
 class AggregatorUpdate:
     """Incremental output produced after consuming parser events."""
 
     frames_seen: int = 0
     redir_events: tuple[RedirEvent, ...] = ()
     internal_frames: tuple[InternalFrameUpdate, ...] = ()
-    frame_losses: tuple[FrameLossUpdate, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -69,6 +57,11 @@ class AggregatorSnapshot:
     parser_raw_bytes: int
     parser_frames: int
     parser_carried_bytes: int
+    regular_frames: int = 0
+    sequence: SequenceSummary = SequenceSummary()
+    capture_firmware_loss: tuple[FirmwareLossSummary, ...] = ()
+    capture_firmware_written_bytes: int = 0
+    capture_firmware_lost_bytes: int = 0
 
 
 class CaptureAggregator:
@@ -132,6 +125,7 @@ class CaptureAggregator:
         self._parser_raw_bytes = summary.raw_bytes
         self._parser_frames = summary.parsed_frames
         self._parser_carried_bytes = summary.carried_bytes
+        self._stats.finalize_sequence()
 
     def consume_events(self, events: tuple[BleLogEvent, ...]) -> AggregatorUpdate:
         """Consume parsed BLE log events and return UI/log-friendly updates."""
@@ -142,9 +136,7 @@ class CaptureAggregator:
         per_source_bytes: dict[int, int] = {}
         redir_events: list[RedirEvent] = []
         internal_frames: list[InternalFrameUpdate] = []
-        frame_losses: list[FrameLossUpdate] = []
         stats = self._stats
-        sn_gap_enabled = stats.sn_gap_enabled
 
         def flush_regular_frames() -> None:
             nonlocal regular_frame_count
@@ -164,8 +156,7 @@ class CaptureAggregator:
                 if frame_sn >= 0 and src_code > 0:
                     per_source_frames[src_code] = per_source_frames.get(src_code, 0) + 1
                     per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
-                    if sn_gap_enabled:
-                        stats.record_frame_sn(src_code, frame_sn)
+                    stats.record_frame_sn(src_code, frame_sn)
                 redir_events.append(event)
             elif event_type is FrameEvent:
                 frame_size = event.frame_size
@@ -175,31 +166,29 @@ class CaptureAggregator:
                 if frame_sn >= 0 and src_code > 0:
                     per_source_frames[src_code] = per_source_frames.get(src_code, 0) + 1
                     per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
-                    if sn_gap_enabled:
-                        stats.record_frame_sn(src_code, frame_sn)
+                    stats.record_frame_sn(src_code, frame_sn)
             elif event_type is EnhStatEvent:
                 flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
                 internal_frames.append(InternalFrameUpdate(int_src=InternalSource.ENH_STAT, decoded=event.stat))
-                self._record_enh_stat(event, frame_losses)
+                self._record_enh_stat(event)
             elif event_type is InternalEvent:
                 flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
                 internal_frames.append(InternalFrameUpdate(int_src=event.int_src, decoded=event.decoded))
                 self._record_internal_effect(event)
-                sn_gap_enabled = stats.sn_gap_enabled
 
         flush_regular_frames()
         return AggregatorUpdate(
             frames_seen=self._stats.frame_count - frame_count_before,
             redir_events=tuple(redir_events),
             internal_frames=tuple(internal_frames),
-            frame_losses=tuple(frame_losses),
         )
 
     def snapshot(self, elapsed_sec: float) -> AggregatorSnapshot:
         """Harvest periodic stats for UI/log sinks."""
 
+        firmware_written_bytes, firmware_lost_bytes = self._stats.capture_firmware_quality_bytes()
         return AggregatorSnapshot(
             stats=self._stats.snapshot(elapsed_sec),
             funnel_snapshots=tuple(self._stats.funnel_snapshot(elapsed_sec)),
@@ -208,6 +197,11 @@ class CaptureAggregator:
             parser_raw_bytes=self._parser_raw_bytes,
             parser_frames=self._parser_frames,
             parser_carried_bytes=self._parser_carried_bytes,
+            regular_frames=self._stats.regular_frame_count,
+            sequence=self._stats.sequence_snapshot(),
+            capture_firmware_loss=self._stats.capture_firmware_loss(),
+            capture_firmware_written_bytes=firmware_written_bytes,
+            capture_firmware_lost_bytes=firmware_lost_bytes,
         )
 
     def _record_internal_frame(self, frame_size: int) -> None:
@@ -230,24 +224,15 @@ class CaptureAggregator:
                 inflight_peak=buf['inflight_peak'],
             )
 
-    def _record_enh_stat(self, event: EnhStatEvent, frame_losses: list[FrameLossUpdate]) -> None:
+    def _record_enh_stat(self, event: EnhStatEvent) -> None:
         stat = event.stat
-        new_frames, new_bytes = self._stats.record_enh_stat(
+        self._stats.record_enh_stat(
             src_code=stat['src_code'],
             written_frames=stat['written_frame_cnt'],
             lost_frames=stat['lost_frame_cnt'],
             written_bytes=stat['written_bytes_cnt'],
             lost_bytes=stat['lost_bytes_cnt'],
         )
-        if new_frames > 0:
-            frame_losses.append(
-                FrameLossUpdate(
-                    source_name=resolve_source_name(stat['src_code']),
-                    loss_type=LossType.BUFFER,
-                    lost_frames=new_frames,
-                    lost_bytes=new_bytes,
-                )
-            )
 
 
 def frame_size_from_payload(payload: bytes) -> int:
