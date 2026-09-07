@@ -9,6 +9,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import IO
 from typing import Any
@@ -30,6 +31,8 @@ from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
 from src.backend.models import UserNotice
 from src.backend.models import format_bytes
+from src.frontend.rendering import normalize_console_text
+from src.frontend.rendering import strip_ansi_sequences
 
 REDIR_LINE_BUFFER_LIMIT = 16 * 1024
 REDIR_UI_BATCH_LINE_LIMIT = 128
@@ -72,7 +75,7 @@ def console_log_part_path(base_path: Path, part_index: int) -> Path:
 
 def _default_text_file_factory(path: Path) -> IO[str]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    return open(path, 'w')  # noqa: SIM115
+    return open(path, 'w', encoding='utf-8', newline='\n')  # noqa: SIM115
 
 
 def _flush_and_close_text_file(file_obj: IO[str]) -> None:
@@ -91,6 +94,19 @@ def _next_capture_notice_threshold(current: int) -> int:
         if current < threshold:
             return threshold
     return current + CAPTURE_NOTICE_STEP
+
+
+def _normalize_console_log_text(text: str) -> str:
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return normalize_console_text(strip_ansi_sequences(text).replace('\x1b', ''))
+
+
+def _format_receive_timestamp(received_at_ms: int) -> str:
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=' ', timespec='milliseconds')
+
+
+def _format_receive_time(received_at_ms: int) -> str:
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime('%H:%M:%S.%f')[:-3]
 
 
 class CaptureEventPresenter:
@@ -116,6 +132,10 @@ class CaptureEventPresenter:
         self._console_log_path = console_log_part_path(output_path, 1)
         self._console_part_index = 1
         self._console_part_bytes = 0
+        self._console_line_buf = ''
+        self._console_line_prefixed = False
+        self._console_line_received_at_ms = 0
+        self._console_timestamp_pending = False
         self._redir_line_buf = ''
         self._disconnected = False
         now = self._clock()
@@ -188,6 +208,11 @@ class CaptureEventPresenter:
 
         if self._console_log_file is None:
             return
+        if self._console_line_buf.endswith('\r'):
+            self._write_console_line(self._console_line_buf[:-1], self._console_line_received_at_ms, complete=True)
+        else:
+            self._write_console_line(self._console_line_buf, self._console_line_received_at_ms, complete=False)
+        self._console_line_buf = ''
         _flush_and_close_text_file(self._console_log_file)
         self._console_log_file = None
 
@@ -261,8 +286,8 @@ class CaptureEventPresenter:
                     sn_range=loss.sn_range,
                 )
             )
-        for text in event.redir_texts:
-            messages.extend(self._write_redir_text(text))
+        for redir in event.redir_events:
+            messages.extend(self._write_redir_text(redir.text, redir.received_at_ms))
         return tuple(messages)
 
     def _handle_writer_event(self, event: WriterEvent) -> tuple[Message, ...]:
@@ -315,29 +340,67 @@ class CaptureEventPresenter:
             return (UserNotice(f'Aggregator error: {event.message}', level='warning'),)
         return ()
 
-    def _write_redir_text(self, text: str) -> list[Message]:
+    def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
         messages: list[Message] = []
+        self._console_timestamp_pending = not self._console_line_prefixed
         old_console_path_count = len(self._saved_console_log_paths)
         self._ensure_console_log_open()
         if len(self._saved_console_log_paths) > old_console_path_count and old_console_path_count > 0:
             messages.append(UserNotice(f'Console log rotated to {self._saved_console_log_paths[-1]}'))
-        if self._console_log_file is not None:
-            self._console_log_file.write(text)
-            self._flush_console_log_if_due()
-        self._console_part_bytes += len(text.encode(errors='replace'))
+
+        self._console_line_buf += text
+        self._console_line_received_at_ms = received_at_ms
+        while True:
+            cr = self._console_line_buf.find('\r')
+            lf = self._console_line_buf.find('\n')
+            line_end = min(index for index in (cr, lf) if index >= 0) if cr >= 0 or lf >= 0 else -1
+            if line_end < 0 or (line_end == len(self._console_line_buf) - 1 and cr == line_end):
+                break
+            separator_size = (
+                2 if cr == line_end and self._console_line_buf[line_end : line_end + 2] == '\r\n' else 1
+            )
+            line = self._console_line_buf[:line_end]
+            self._console_line_buf = self._console_line_buf[line_end + separator_size :]
+            self._write_console_line(line, received_at_ms, complete=True)
+        # ponytail: bound unterminated lines; add a streaming ANSI parser only if firmware emits larger lines.
+        while len(self._console_line_buf) > REDIR_LINE_BUFFER_LIMIT:
+            console_text = self._console_line_buf[:REDIR_LINE_BUFFER_LIMIT]
+            self._console_line_buf = self._console_line_buf[REDIR_LINE_BUFFER_LIMIT:]
+            self._write_console_line(console_text, received_at_ms, complete=False)
 
         self._redir_line_buf += text
         if '\n' in self._redir_line_buf:
             lines = self._redir_line_buf.split('\n')
             self._redir_line_buf = lines.pop()
-            self._append_redir_log_lines(messages, lines)
+            self._append_redir_log_lines(messages, lines, received_at_ms)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
             messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
         return messages
 
-    def _append_redir_log_lines(self, messages: list[Message], lines: list[str]) -> None:
+    def _write_console_line(self, text: str, received_at_ms: int, *, complete: bool) -> None:
+        normalized = _normalize_console_log_text(text)
+        if normalized and self._console_timestamp_pending and not self._console_line_prefixed:
+            timestamp = _format_receive_timestamp(received_at_ms)
+            self._append_console_log_text(f'[{timestamp}] ')
+            self._console_line_prefixed = True
+            self._console_timestamp_pending = False
+        self._append_console_log_text(normalized)
+        if complete:
+            self._append_console_log_text('\n')
+            self._console_line_prefixed = False
+
+    def _append_console_log_text(self, text: str) -> None:
+        if self._console_log_file is None or not text:
+            return
+        self._console_log_file.write(text)
+        self._console_part_bytes += len(text.encode(errors='replace'))
+        self._flush_console_log_if_due()
+
+    def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
         non_empty_lines = [line for line in lines if line]
+        if non_empty_lines:
+            non_empty_lines[0] = f'[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}'
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:

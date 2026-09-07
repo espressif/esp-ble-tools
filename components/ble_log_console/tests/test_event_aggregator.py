@@ -77,14 +77,15 @@ def test_redir_event_updates_stats_and_returns_text() -> None:
                 source_code=BleLogSource.REDIR,
                 frame_sn=2,
                 text='console line\n',
-                wall_ms=100,
+                received_at_ms=100,
             ),
         )
     )
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1
-    assert update.redir_texts == ('console line\n',)
+    assert update.redir_events[0].text == 'console line\n'
+    assert update.redir_events[0].received_at_ms == 100
     assert snapshot.stats.per_source_rx_bytes == {BleLogSource.REDIR: len(payload) + FRAME_OVERHEAD}
 
 

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from src.backend.analysis.worker import AggregatorProcessEvent
@@ -15,6 +16,7 @@ from src.backend.io.writer import WriterEvent
 from src.backend.io.writer import WriterStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.analysis.worker import ParserStatus
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.models import BackendStopped
 from src.backend.models import FrameStats
 from src.backend.models import InternalFrameDecoded
@@ -27,6 +29,24 @@ from src.backend.models import UserNotice
 from src.backend.support.transport import TransportStatus
 from src.frontend.capture_events import CaptureEventPresenter
 from src.frontend.capture_events import console_log_part_path
+
+
+def _redir(text: str, received_at_ms: int = 0) -> RedirEvent:
+    return RedirEvent(
+        frame_size=len(text) + 10,
+        source_code=8,
+        frame_sn=0,
+        text=text,
+        received_at_ms=received_at_ms,
+    )
+
+
+def _timestamp(received_at_ms: int) -> str:
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=' ', timespec='milliseconds')
+
+
+def _short_timestamp(received_at_ms: int) -> str:
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime('%H:%M:%S.%f')[:-3]
 
 
 def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
@@ -52,39 +72,54 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
 
-    first = presenter.handle_event(AggregatorUpdate(redir_texts=('hello ',)))
-    second = presenter.handle_event(AggregatorUpdate(redir_texts=('world\npartial',)))
+    first = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('hello ', 1000),)))
+    second = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('world\npartial', 2000),)))
 
     assert first == ()
     assert len(second) == 1
     assert isinstance(second[0], LogLine)
-    assert second[0].text == 'hello world'
+    assert second[0].text == f'[{_short_timestamp(2000)}]  hello world'
     presenter.close()
-    assert console_log_part_path(output_path, 1).read_text() == 'hello world\npartial'
+    stamp = _timestamp(2000)
+    assert console_log_part_path(output_path, 1).read_text() == f'[{stamp}] hello world\npartial'
     assert presenter.state.saved_console_log_paths == (console_log_part_path(output_path, 1),)
+
+
+def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
+    output_path = tmp_path / 'ble_log.bin'
+    presenter = CaptureEventPresenter(output_path)
+
+    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('\x1b[0;', 1000),)))
+    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('32mgreen\x1b[0m\r\nnext\rline\t\x01', 2000),)))
+    presenter.close()
+
+    stamp = _timestamp(2000).encode()
+    assert console_log_part_path(output_path, 1).read_bytes() == (
+        b'[' + stamp + b'] green\nnext\nline    '
+    )
 
 
 def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
 
-    messages = presenter.handle_event(AggregatorUpdate(redir_texts=('one\ntwo\nthree\n',)))
+    messages = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('one\ntwo\nthree\n', 2000),)))
 
     assert len(messages) == 1
     assert isinstance(messages[0], LogLine)
-    assert messages[0].text == 'one\ntwo\nthree'
+    assert messages[0].text == f'[{_short_timestamp(2000)}]  one\ntwo\nthree'
 
 
 def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path, console_part_max_bytes=3)
 
-    presenter.handle_event(AggregatorUpdate(redir_texts=('abc',)))
-    presenter.handle_event(AggregatorUpdate(redir_texts=('de',)))
+    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('abc\n'),)))
+    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('de\n'),)))
     presenter.close()
 
-    assert console_log_part_path(output_path, 1).read_text() == 'abc'
-    assert console_log_part_path(output_path, 2).read_text() == 'de'
+    assert console_log_part_path(output_path, 1).read_text().endswith('abc\n')
+    assert console_log_part_path(output_path, 2).read_text().endswith('de\n')
     assert presenter.state.saved_console_log_paths == (
         console_log_part_path(output_path, 1),
         console_log_part_path(output_path, 2),
@@ -201,7 +236,7 @@ def test_reader_opened_becomes_connected_notice(tmp_path: Path) -> None:
 def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
-    presenter.handle_event(AggregatorUpdate(redir_texts=('hello\n',)))
+    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('hello\n'),)))
 
     messages = presenter.handle_result(
         CapturePipelineResult(
@@ -219,7 +254,7 @@ def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) 
         )
     )
 
-    assert console_log_part_path(output_path, 1).read_text() == 'hello\n'
+    assert console_log_part_path(output_path, 1).read_text() == f'[{_timestamp(0)}] hello\n'
     assert isinstance(messages[0], BackendStopped)
     assert messages[0].reason == 'Capture completed'
     assert presenter.state.disconnected

@@ -20,6 +20,7 @@ from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.worker import ParserStatus
 from src.backend.analysis.worker import drain_aggregator_events
@@ -47,6 +48,7 @@ __all__ = [
     'ParseSummary',
     'ParserStatus',
     'RedirEvent',
+    'ReceivedChunk',
     'drain_aggregator_events',
     'drain_parser_events',
     'frame_size_from_payload',

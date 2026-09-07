@@ -15,6 +15,7 @@ from src.backend.analysis.aggregator import frame_size_from_payload
 from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
+from src.backend.analysis.parser_events import RedirEvent
 from src.backend.analysis.worker import ParserStatus
 from src.backend.models import BleLogSource
 
@@ -124,6 +125,29 @@ def test_aggregator_loop_merges_available_parse_batches_into_one_update() -> Non
     updates = [event for event in _events(ui_queue) if isinstance(event, AggregatorUpdate)]
     assert len(updates) == 1
     assert updates[0].frames_seen == 2
+
+
+def test_aggregator_loop_preserves_redir_receive_timestamp() -> None:
+    parser_event_queue: Queue[object] = Queue()
+    raw_stats_queue: Queue[int | None] = Queue()
+    ui_queue: Queue[object] = Queue()
+    raw_stats_queue.put(20)
+    raw_stats_queue.put(None)
+    parser_event_queue.put(
+        ParseBatch(
+            raw_bytes=20,
+            parsed_frames=1,
+            consumed=20,
+            carried_bytes=0,
+            events=(RedirEvent(20, BleLogSource.REDIR, 1, 'line\n', 123),),
+        )
+    )
+    parser_event_queue.put(ParseSummary(raw_bytes=20, parsed_frames=1, carried_bytes=0))
+
+    run_aggregator_loop(parser_event_queue, raw_stats_queue, ui_queue, snapshot_elapsed_sec=1.0)
+
+    updates = [event for event in _events(ui_queue) if isinstance(event, AggregatorUpdate)]
+    assert updates[0].redir_events[0].received_at_ms == 123
 
 
 def test_aggregator_loop_emits_periodic_snapshot() -> None:

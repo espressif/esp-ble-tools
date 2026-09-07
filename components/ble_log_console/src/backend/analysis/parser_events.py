@@ -44,7 +44,14 @@ class RedirEvent(NamedTuple):
     source_code: SourceCode
     frame_sn: int
     text: str
-    wall_ms: int
+    received_at_ms: int
+
+
+class ReceivedChunk(NamedTuple):
+    """Raw transport bytes with their computer receive time."""
+
+    data: bytes
+    received_at_ms: int
 
 
 BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | RedirEvent

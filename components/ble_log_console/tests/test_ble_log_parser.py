@@ -116,7 +116,7 @@ def test_parser_accepts_explicit_sum_full_checksum_mode() -> None:
     payload = b'\x00\x00\x00\x00data'
     frames = b''.join(_make_sum_frame(payload, src=BleLogSource.HOST, sn=sn) for sn in range(3))
 
-    batch = parser.feed(frames)
+    batch = parser.feed(frames, received_at_ms=123)
 
     assert batch.parsed_frames == 3
     assert len([event for event in batch.events if isinstance(event, FrameEvent)]) == 3
@@ -167,14 +167,14 @@ def test_feed_emits_redir_payload_event() -> None:
     parser = BleLogParser()
     frames = b''.join(_make_frame(b'console line\n', src=BleLogSource.REDIR, sn=sn) for sn in range(3))
 
-    batch = parser.feed(frames)
+    batch = parser.feed(frames, received_at_ms=123)
 
     redir_events = [event for event in batch.events if isinstance(event, RedirEvent)]
     assert len(redir_events) == 3
     assert redir_events[0].source_code == BleLogSource.REDIR
     assert redir_events[0].frame_sn == 0
     assert redir_events[0].text == 'console line\n'
-    assert redir_events[0].wall_ms >= 0
+    assert redir_events[0].received_at_ms == 123
 
 
 def test_feed_ignores_unstructured_ascii_text() -> None:

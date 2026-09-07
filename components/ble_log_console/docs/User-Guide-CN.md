@@ -1,5 +1,5 @@
 # BLE Log Console 快速使用指南
-版本：v1.0.3
+版本：v1.0.4
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
@@ -113,16 +113,16 @@ Windows 下使用 `ble_log_console_windows_v1.0.3.exe`。推荐直接双击图�
 
 #### 4.1.2 Linux 系统
 
-Linux 下使用 `ble_log_console_ubuntu_v1.0.3`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+Linux 下使用 `ble_log_console_ubuntu_v1.0.4`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.3
+chmod +x ./ble_log_console_ubuntu_v1.0.4
 ```
 
 如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.3
+sudo ./ble_log_console_ubuntu_v1.0.4
 ```
 
 该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
@@ -130,7 +130,7 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 随后执行以下命令即可启动本程序：
 
 ```bash
-./ble_log_console_ubuntu_v1.0.3
+./ble_log_console_ubuntu_v1.0.4
 ```
 
 > 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
@@ -148,6 +148,8 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 &emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 
 &emsp;停止采集后，按 `q` 或 `Ctrl+C` 即可退出应用。日志会自动保存在指定目录下。较大的采集文件可能会被拆分为多个 `part` 文件，退出时会汇总显示已保存的文件。
+
+&emsp;固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到本工具。工具会实时显示这些日志，并自动将其单独保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件，无需额外操作。具体保存规则见 [日志文件保存规则](#53-日志文件保存规则)。
 
 > 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。若直接关闭终端窗口，进程可能被系统强制终止，最后的数据写入流程可能无法完成。
 
@@ -190,7 +192,7 @@ sudo ./ble_log_console_ubuntu_v1.0.3
 ble_log_YYYYMMDD_HHMMSS.bin
 ```
 
-如果 UART PORT 0 输出了 `REDIR` 文本日志，还会额外保存：
+如果固件启用了串口日志转发，原本输出到 UART0（串口监视器）的普通 console log 还会额外保存为：
 
 ```text
 ble_log_YYYYMMDD_HHMMSS_console.log
@@ -334,12 +336,12 @@ python console.py --mode spi --port <PORT>
 
 | 操作 | Linux | Windows |
 | --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu_v1.0.3 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu_v1.0.3 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.3` | `ble_log_console_windows_v1.0.3.exe` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.3 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.3 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.3 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
+| 查看帮助 | `./ble_log_console_ubuntu_v1.0.4 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
+| 列出端口 | `./ble_log_console_ubuntu_v1.0.4 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
+| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.4` | `ble_log_console_windows_v1.0.3.exe` |
+| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
+| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
+| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.4 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
 
 ### 命令行参数
 
@@ -366,6 +368,7 @@ python console.py --mode spi --port <PORT>
 
 * [端口列表里看不到设备](#faq-no-port)
 * [程序启动但没有日志](#faq-no-logs)
+* [串口监视器日志为什么会出现在工具里，并保存在哪里](#faq-console-log)
 * [源码环境安装失败](#faq-source-setup)
 * [ESP32P4 Bridge 固件版本如何确认](#faq-esp32p4-version)
 
@@ -379,7 +382,7 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.3`，并在执行后拔插过设备。
+- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.4`，并在执行后拔插过设备。
 
 <a id="faq-no-logs"></a>
 
@@ -393,6 +396,16 @@ python console.py --mode spi --port <PORT>
 - UART 模式下，工具中选择的波特率是否与固件配置一致。
 - ESP 设备和串口工具或 SPI Bridge 之间的接线是否正确。
 - SPI Bridge 模式下，ESP 设备固件中的 MOSI、SCLK、CS 对应 GPIO 是否与实际接线一致。
+
+<a id="faq-console-log"></a>
+
+### 串口监视器日志为什么会出现在工具里，并保存在哪里？
+
+固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件。
+
+从 v1.0.4 开始，每组这类 console log 的首行会显示电脑本地接收时间，例如 `[15:14:54.367]`；对应 `_console.log` 文件使用包含日期和时区的完整格式。后续没有重复时间戳的行仍属于同一组日志。该时间由工具在电脑收到数据时添加，不是固件运行时间。
+
+`_console.log` 会移除 ANSI/ESC 等显示控制字符并统一换行，原始 `.bin` 数据不会因此改变。
 
 
 
