@@ -304,6 +304,24 @@ class CapturePipeline:
             for process in (self._io_process, self._analysis_process)
         )
 
+    def io_is_alive(self) -> bool:
+        return self._io_process is not None and self._io_process.is_alive()
+
+    def analysis_is_alive(self) -> bool:
+        return self._analysis_process is not None and self._analysis_process.is_alive()
+
+    def abort_analysis(self, message: str) -> None:
+        """Stop a live quality check after raw capture has safely finished."""
+
+        process = self._analysis_process
+        if process is not None and process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(1.0)
+        self._result_events.append(ParserStatus(kind='error', message=message))
+
     def drain_events(self) -> list[Any]:
         """Drain events for UI consumption without losing final result state."""
 

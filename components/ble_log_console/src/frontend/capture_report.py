@@ -51,16 +51,16 @@ def build_capture_report(
 ) -> CaptureReport:
     snapshot = result.final_snapshot
     regular_frames = snapshot.regular_frames if snapshot is not None else 0
-    sequence = snapshot.sequence if snapshot is not None else None
+    sequence = snapshot.sequence if snapshot is not None else SequenceSummary()
     firmware_loss = snapshot.capture_firmware_loss if snapshot is not None else ()
     firmware_written_bytes = snapshot.capture_firmware_written_bytes if snapshot is not None else 0
     firmware_lost_bytes = snapshot.capture_firmware_lost_bytes if snapshot is not None else 0
-    firmware_total_bytes = firmware_written_bytes + firmware_lost_bytes
-    firmware_write_loss_rate = firmware_lost_bytes / firmware_total_bytes if firmware_total_bytes else None
-    sequence_loss_rate = None
-    if sequence is not None and sequence.sources and not sequence.uncertain:
-        sequence_total = regular_frames + sequence.total_missing_frames
-        sequence_loss_rate = sequence.total_missing_frames / sequence_total if sequence_total else None
+    raw_complete = bool(
+        result.raw_bytes > 0
+        and result.raw_paths
+        and result.writer_error is None
+        and result.writer_finalized
+    )
     parser_complete = bool(
         snapshot is not None
         and result.aggregator_finalized
@@ -72,6 +72,14 @@ def build_capture_report(
         and result.parser_lag_bytes == 0
         and result.parser_raw_bytes == result.raw_bytes
     )
+    firmware_total_bytes = firmware_written_bytes + firmware_lost_bytes
+    firmware_write_loss_rate = (
+        firmware_lost_bytes / firmware_total_bytes if parser_complete and firmware_total_bytes else None
+    )
+    sequence_loss_rate = None
+    if parser_complete and sequence.sources and not sequence.uncertain:
+        sequence_total = regular_frames + sequence.total_missing_frames
+        sequence_loss_rate = sequence.total_missing_frames / sequence_total if sequence_total else None
 
     errors = tuple(
         f'{label}: {message}'
@@ -100,37 +108,37 @@ def build_capture_report(
             warnings.append('Live parsing did not cover all saved raw data; sequence integrity is not fully verified.')
         if result.reader_error:
             warnings.append('The transport ended unexpectedly; the files saved before disconnection are retained.')
-        if sequence is not None and sequence.uncertain:
+        if parser_complete and sequence.uncertain:
             warnings.append('Sequence continuity could not be verified within the bounded tracker.')
-        elif sequence is not None and sequence.total_missing_frames > 0:
+        elif parser_complete and sequence.total_missing_frames > 0:
             warnings.append(
                 f'Observed sequence discontinuity: {sequence.total_missing_frames} missing frame number(s).'
             )
         firmware_lost_frames = sum(item.frames for item in firmware_loss if item.source > 0)
-        firmware_lost_bytes = sum(item.bytes for item in firmware_loss if item.source > 0)
-        if firmware_lost_frames > 0 or firmware_lost_bytes > 0:
+        firmware_loss_observed_bytes = sum(item.bytes for item in firmware_loss if item.source > 0)
+        if firmware_lost_frames > 0 or firmware_loss_observed_bytes > 0:
             warnings.append(
                 'Observed firmware buffer loss during capture: '
-                f'{firmware_lost_frames} frame(s), {format_bytes(firmware_lost_bytes)}.'
+                f'{firmware_lost_frames} frame(s), {format_bytes(firmware_loss_observed_bytes)}.'
             )
         if result.parser_error or result.aggregator_error:
             warnings.append('The raw capture was saved, but live verification failed; retain the raw files for support.')
 
-        if parser_complete and any(
-            rate is not None and rate > _QUALITY_RECAPTURE_THRESHOLD
-            for rate in (firmware_write_loss_rate, sequence_loss_rate)
-        ):
+        threshold_reasons: list[str] = []
+        if firmware_write_loss_rate is not None and firmware_write_loss_rate > _QUALITY_RECAPTURE_THRESHOLD:
+            threshold_reasons.append('Firmware write failure rate exceeded the 5% recapture threshold.')
+        if sequence_loss_rate is not None and sequence_loss_rate > _QUALITY_RECAPTURE_THRESHOLD:
+            threshold_reasons.append('Sequence discontinuity rate exceeded the 5% recapture threshold.')
+
+        if parser_complete and threshold_reasons:
             verdict = CaptureVerdict.RECAPTURE
-            reasons.append('Experimental loss rate exceeded the 5% recapture threshold.')
+            reasons.extend(threshold_reasons)
         elif warnings or errors:
             verdict = CaptureVerdict.WARNING
             reasons.extend(warnings)
         else:
             verdict = CaptureVerdict.READY
             reasons.append('Raw data was finalized, BLE Log frames were decoded, and no continuity loss was observed.')
-
-    if sequence is None:
-        sequence = SequenceSummary()
 
     peak_bits_per_sec = snapshot.stats.transport.max_rx_bits_per_sec if snapshot is not None else 0.0
     return CaptureReport(
@@ -144,6 +152,7 @@ def build_capture_report(
         console_log_paths=console_log_paths,
         report_path=report_path,
         raw_bytes=result.raw_bytes,
+        raw_complete=raw_complete,
         parser_frames=result.parser_frames,
         regular_frames=regular_frames,
         parser_complete=parser_complete,
@@ -156,6 +165,8 @@ def build_capture_report(
         peak_bits_per_sec=peak_bits_per_sec,
         sequence=sequence,
         firmware_loss=firmware_loss,
+        firmware_written_bytes=firmware_written_bytes,
+        firmware_lost_bytes=firmware_lost_bytes,
         firmware_write_loss_rate=firmware_write_loss_rate,
         sequence_loss_rate=sequence_loss_rate,
         errors=errors,
@@ -190,7 +201,27 @@ def _localized_reasons(report: CaptureReport, language: str) -> list[str]:
 
 def _localized_error(error: str, language: str) -> str:
     label, separator, message = error.partition(': ')
-    return f'{tr(label, language=language)}{separator}{message}'
+    return f'{tr(label, language=language)}{separator}{tr(message, language=language)}'
+
+
+def _coverage_text(report: CaptureReport, language: str) -> str:
+    percent = min(report.parser_raw_bytes / report.raw_bytes, 1.0) if report.raw_bytes else 0.0
+    left, right = ('（', '）') if language == 'zh_CN' else ('(', ')')
+    space = '' if language == 'zh_CN' else ' '
+    return f'{format_bytes(report.parser_raw_bytes)} / {format_bytes(report.raw_bytes)}{space}{left}{percent:.1%}{right}'
+
+
+def _firmware_write_evidence(report: CaptureReport, language: str) -> str:
+    rate = report.firmware_write_loss_rate
+    if rate is None:
+        return tr('Not enough data', language=language)
+    total = report.firmware_written_bytes + report.firmware_lost_bytes
+    left, right = ('（', '）') if language == 'zh_CN' else ('(', ')')
+    space = '' if language == 'zh_CN' else ' '
+    return (
+        f'{format_bytes(report.firmware_lost_bytes)} / {format_bytes(total)}'
+        f'{space}{left}{rate:.2%}{right}'
+    )
 
 
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
@@ -208,23 +239,33 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
         else report.report_path
     )
     raw_path = report.raw_paths[0] if report.raw_paths else tr('NOT SAVED', language=language)
+    parser_scope = 'all saved data' if report.parser_complete else 'parsed portion only'
+    scope_left, scope_right = ('（', '）') if language == 'zh_CN' else ('(', ')')
+    scope_space = '' if language == 'zh_CN' else ' '
+    sequence_result = (
+        tr('Unable to verify', language=language)
+        if not report.parser_complete or report.sequence.uncertain
+        else f'{report.sequence.total_missing_frames} {frames}'
+    )
     return '\n'.join(
         (
             f'{tr("Recommendation", language=language)}{separator}{tr(advice, language=language)}',
             '',
-            f'{tr("Capture result", language=language)}{separator.rstrip()}',
+            f'{tr("Saved data (reliable)" if report.raw_complete else "Saved data (incomplete)", language=language)}{separator.rstrip()}',
             f'  {tr("Duration", language=language)}{separator}{report.duration_sec:.1f} s',
             f'  {tr("Raw", language=language)}{separator}'
             f'{tr("{size}, {count} file(s)", language=language, size=format_bytes(report.raw_bytes), count=len(report.raw_paths))}',
-            f'  {tr("Regular BLE Log frames", language=language)}{separator}{report.regular_frames}',
             '',
-            f'{tr("Quality checks", language=language)}{separator.rstrip()}',
+            f'{tr("Automated quality check", language=language)}{scope_space}'
+            f'{scope_left}{tr(parser_scope, language=language)}{scope_right}{separator.rstrip()}',
             f'  {tr("Parser coverage summary", language=language)}{separator}'
-            f'{tr("Complete result" if report.parser_complete else "Incomplete result", language=language)}',
-            f'  {tr("Possible sequence loss", language=language)}{separator}'
-            f'{tr("Unable to verify", language=language) if report.sequence.uncertain else f"{report.sequence.total_missing_frames} {frames}"}',
-            f'  {tr("Firmware-reported loss", language=language)}{separator}'
-            f'{sum(item.frames for item in report.firmware_loss if item.source > 0)} {frames}',
+            f'{_coverage_text(report, language)}',
+            f'  {tr("Regular BLE Log frames" if report.parser_complete else "Frames found in parsed portion", language=language)}'
+            f'{separator}{report.regular_frames}',
+            f'  {tr("Possible sequence loss" if report.parser_complete else "Full-recording sequence continuity", language=language)}'
+            f'{separator}{sequence_result}',
+            f'  {tr("Firmware log write failures (failed / total)" if report.parser_complete else "Firmware write failures in parsed portion (failed / total)", language=language)}{separator}'
+            f'{_firmware_write_evidence(report, language)}',
             '',
             f'{tr("Detailed report", language=language)}{separator}{report_path}',
             f'{tr("Raw data file", language=language)}{separator}{raw_path}',
@@ -248,6 +289,11 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f'{tr("Reasons", language=language)}{separator.rstrip()}',
         *(f'  - {reason}' for reason in _localized_reasons(report, language)),
         '',
+        f'{tr("Reliability", language=language)}{separator.rstrip()}',
+        f'  {field("Saved raw data", tr("Complete and reliable" if report.raw_complete else "Incomplete", language=language))}',
+        f'  {field("Automated quality check", tr("all saved data" if report.parser_complete else "parsed portion only", language=language))}',
+        f'  {field("Parser coverage summary", _coverage_text(report, language))}',
+        '',
         f'{tr("Capture", language=language)}{separator.rstrip()}',
         f'  {field("Mode", cfg.mode.value)}',
         f'  {field("Port", cfg.port)}',
@@ -269,6 +315,9 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f'  {field("Trailing carried bytes", report.parser_carried_bytes)}',
         '',
         f'{tr("Experimental quality metrics", language=language)}{separator.rstrip()}',
+        f'  {field("Firmware written bytes", format_bytes(report.firmware_written_bytes))}',
+        f'  {field("Firmware lost bytes", format_bytes(report.firmware_lost_bytes))}',
+        f'  {field("Firmware observed total bytes", format_bytes(report.firmware_written_bytes + report.firmware_lost_bytes))}',
         f'  {field("Firmware write failure rate", _format_rate(report.firmware_write_loss_rate, language))}',
         f'  {field("Sequence discontinuity rate", _format_rate(report.sequence_loss_rate, language))}',
         f'  {field("Recapture threshold", "5%")}',

@@ -34,19 +34,20 @@ We recommend reading the user guide before first use.
 
 ```bash
 # Windows
-ble_log_console_windows_v1.0.3.exe
+ble_log_console_windows_v1.0.5.exe
 
 # Linux
-chmod +x ./ble_log_console_ubuntu_v1.0.4
-./ble_log_console_ubuntu_v1.0.4
+chmod +x ./ble_log_console_ubuntu_v1.0.5
+./ble_log_console_ubuntu_v1.0.5
 ```
 
-3. Select the transport mode, port, baud rate if using UART, and log save directory, then click **Connect**.
+3. Select the language, transport mode, port, UART baud rate, and log save directory, then click **Connect**.
+4. Click **Stop & Review** when recording is complete. The tool saves the data and displays a quality result.
 
 If you use SPI Bridge on Linux for the first time, run the tool once with `sudo`, then replug the Bridge device:
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.4
+sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
 Logs are saved to the selected directory. For wiring, firmware configuration, command-line usage, and troubleshooting, see the [User Guide](./docs/User-Guide-EN.md).

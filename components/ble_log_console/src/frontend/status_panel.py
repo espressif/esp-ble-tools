@@ -63,7 +63,7 @@ class StatusPanel(Widget):
         width = self.size.width
         if self.finalizing:
             return Text.from_markup(
-                '[bold yellow]FINALIZING[/bold yellow]\nSaving remaining transport data and building capture report'
+                '[bold yellow]FINALIZING[/bold yellow]\nSaving data and completing quality check (up to 20s)'
             )
         if self.disconnected:
             if width < COMPACT_STATUS_WIDTH:

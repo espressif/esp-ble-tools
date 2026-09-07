@@ -1,5 +1,5 @@
 # BLE Log Console 快速使用指南
-版本：v1.0.4
+版本：v1.0.5
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
@@ -106,23 +106,23 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 
 #### 4.1.1 Windows 系统
 
-Windows 下使用 `ble_log_console_windows_v1.0.3.exe`。推荐直接双击图标启动。
+Windows 下使用 `ble_log_console_windows_v1.0.5.exe`。推荐直接双击图标启动。
 
 > 注意：本工具包现支持 `Windows 10` 及以上版本。
 
 
 #### 4.1.2 Linux 系统
 
-Linux 下使用 `ble_log_console_ubuntu_v1.0.4`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+Linux 下使用 `ble_log_console_ubuntu_v1.0.5`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.4
+chmod +x ./ble_log_console_ubuntu_v1.0.5
 ```
 
 如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.4
+sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
 该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
@@ -130,7 +130,7 @@ sudo ./ble_log_console_ubuntu_v1.0.4
 随后执行以下命令即可启动本程序：
 
 ```bash
-./ble_log_console_ubuntu_v1.0.4
+./ble_log_console_ubuntu_v1.0.5
 ```
 
 > 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
@@ -143,18 +143,18 @@ sudo ./ble_log_console_ubuntu_v1.0.4
   <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 60%; max-width: 900px;">
 </p>
 
-&emsp;首先选择界面和质量报告使用的语言，再选择传输模式：若通过串口接收日志，选择 UART；若通过 SPI Bridge 设备接收日志，选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
+&emsp;首先选择长文本使用的语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
 
 &emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 
-&emsp;需要结束采集时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。较大的采集文件可能会被拆分为多个 `part` 文件。
+&emsp;需要结束采集时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，再等待质量检查完成，最长等待 20 秒，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。较大的采集文件可能会被拆分为多个 `part` 文件。
 
 &emsp;固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到本工具。工具会实时显示这些日志，并自动将其单独保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件，无需额外操作。具体保存规则见 [日志文件保存规则](#53-日志文件保存规则)。
 
-> 注意：结束采集时请使用 **Stop & Review**、`q` 或 `Ctrl+C`，并等待 `FINALIZING` 完成。若直接关闭终端窗口，进程可能被系统强制终止，最后的数据写入和质量报告可能无法完成。
+> 注意：结束采集时请使用 **Stop & Review**、`q` 或 `Ctrl+C`。界面显示 `FINALIZING`（正在保存）时请耐心等待。若直接关闭终端窗口，最后的数据和质量报告可能无法保存完整。
 
 
-&emsp;需要注意的是，在 Linux 环境下，SPI 模式与 UART 模式的可用端口名称格式不同，这是由两种传输模式的端口命名规则所致，不影响正常使用。
+&emsp;Linux 下 UART 和 SPI Bridge 显示的端口名称可能不同，按当前模式选择设备即可。
 
 
 
@@ -168,27 +168,27 @@ sudo ./ble_log_console_ubuntu_v1.0.4
   <img src="./figure/log-screen.png" alt="BLE Log Console 日志界面" style="width: 70%; max-width: 900px;">
 </p>
 
-日志区域会实时显示解析出的 BLE Log、工具提示和告警信息。
+日志区域会实时显示设备转发的串口日志、运行提示和警告。
 
-&emsp;状态栏会显示当前连接状态、已捕获原始数据量、当前速度、峰值速度和帧率。丢失情况在录制结束后按本次录制的口径计算。
+&emsp;状态栏会显示当前连接状态、电脑已收到的数据量、当前速度、峰值速度和帧率。是否存在数据异常，以结束录制后的质量报告为准。
 
-&emsp;点击 **Stop & Review** 会安全结束当前录制并打开质量报告。`FINALIZING` 期间请等待工具完成剩余数据保存。
+&emsp;点击 **Stop & Review** 会安全结束当前录制并打开质量报告。界面显示 `FINALIZING` 时，工具正在保存剩余数据，请等待完成。
 
 &emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能显示不全，可放大窗口或通过滚动查看其余信息。
 
 ### 5.2 正常状态说明
 
-&emsp;如上图所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已捕获并保存的原始数据量；当 `RX` 达到一定数据量时，会出现蓝色箭头处的提示。
+&emsp;如上图所示，`Frames` 表示工具已识别出的有效日志帧数，`RX` 表示电脑已收到并保存的数据量。
 
-&emsp;**正常状态：** 使用过程中，若红色箭头处的 `frames` 数量**持续增加**，传输速度**不为 0**，且出现蓝色箭头处的**大小提示**，说明工具正在正常运行。
+&emsp;**正常状态：** `RX` 和 `Frames` 持续增加，说明工具正在正常接收和识别日志。如果 `RX` 增加但 `Frames` 长时间不增加，请优先检查传输模式、UART 波特率、固件配置和接线。
 
 > 如果连接正常，但上述指标存在异常，请检查 `BLE Log` 模块是否正常开启，或者连线是否完全正确。
 
-> 注意：出现高实时流量提示，表示实时解析或界面显示可能暂时落后于原始数据采集，并不代表原始数据保存异常。原始数据会先写入 `.bin` 文件再进行解析；若原始数据写入路径跟不上，工具会明确报告 raw writer 或 reader backpressure 错误。
+> 注意：出现高流量提示时，界面更新可能暂时变慢，但工具仍会优先保存数据。如果数据保存失败，界面会直接提示错误。
 
 ### 5.3 日志文件保存规则
 
-捕获文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间戳生成：
+录制文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间生成：
 
 ```text
 ble_log_YYYYMMDD_HHMMSS.bin
@@ -206,19 +206,21 @@ ble_log_YYYYMMDD_HHMMSS_console.log
 ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
-程序退出后会在终端打印实际保存路径。较大的采集文件可能会被拆分为多个 `part` 文件。同一秒内再次录制时，文件名会自动增加序号，已有文件不会被覆盖。
+程序退出后会在终端打印实际保存路径。较大的录制会自动分成多个文件。同一秒内再次录制时，文件名会自动增加序号，不会覆盖已有文件。
 
 ### 5.4 录制质量报告
 
-质量报告会给出以下三种结论：
+结束录制后，工具会给出以下三种结论：
 
-- `READY FOR ANALYSIS`：原始数据已正常保存，存在可解析的 BLE Log frame，且客户数据 source 的观察丢失率为零。
-- `SAVED WITH WARNINGS`：原始数据已保留，但观察到不超过 5% 的丢失、传输异常，或实时解析未完整覆盖 raw 数据。若重启或异常跳变使连续性无法可靠判断，报告会显示“无法确认”。
-- `RECAPTURE RECOMMENDED`：没有保存到原始数据、raw 文件未能正常封存、完整解析后仍没有普通 BLE Log frame，或实验性丢失率超过 5%。
+- `READY FOR ANALYSIS`（可用于分析）：数据已正常保存并且能够解析，可以直接提交分析。
+- `SAVED WITH WARNINGS`（已保存，但存在警告）：数据已经保存，但录制过程中可能存在中断、丢失或无法确认的情况。文件仍可提交分析；条件允许时，可以再录制一份作为补充。
+- `RECAPTURE RECOMMENDED`（建议重新录制）：本次没有获得足够的有效数据，或者数据未能正常保存。请检查连接、模式、端口、波特率和固件配置后重新录制。
 
-界面突出显示结论和操作建议，并汇总录制时长、原始数据量、有效日志帧数、解析覆盖情况、序列号疑似缺失、固件报告丢失及关键文件路径。各 source 的 sequence number 明细、速率和错误信息保存在对应的 `report.txt` 中。
+报告页面会显示本次录制的帧数、数据量和文件位置。需要进一步排查时，可将生成的 `report.txt` 和 `.bin` 文件一起提供给技术支持。
 
-详细报告会记录实验性的固件写入失败率和传输序列不连续率，最终弹窗不展开这些百分比。`INTERNAL` source 只保留在详细统计中，不参与客户数据质量分级。
+报告会分别说明原始数据是否完整保存，以及自动质量检查覆盖了多少数据。如果检查未能在 20 秒内完成，原始数据仍会保留；帧数和丢失检查只代表已经解析的部分，整份录制的连续性会显示为“无法确认”。
+
+“固件日志写入失败（失败 / 总量）”会直接显示失败字节数、固件统计总字节数和比例。该比例不使用界面中的有效日志帧数作为分母。
 
 ### 5.5 常用快捷键
 
@@ -356,29 +358,29 @@ python console.py --mode spi --port <PORT>
 
 | 操作 | Linux | Windows |
 | --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu_v1.0.4 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu_v1.0.4 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.4` | `ble_log_console_windows_v1.0.3.exe` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.4 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
+| 查看帮助 | `./ble_log_console_ubuntu_v1.0.5 --help` | `ble_log_console_windows_v1.0.5.exe --help` |
+| 列出端口 | `./ble_log_console_ubuntu_v1.0.5 ports` | `ble_log_console_windows_v1.0.5.exe ports` |
+| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.5` | `ble_log_console_windows_v1.0.5.exe` |
+| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.5 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.5.exe --mode uart --port COM3` |
+| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.5 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.5.exe --mode spi --port <PORT>` |
+| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.5 ls` | `ble_log_console_windows_v1.0.5.exe ls` |
 
 ### 命令行参数
 
 | 参数 | 缩写 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `--mode` | `-m` | `uart` | 传输模式：`uart` 或 `spi` |
-| `--port` | `-p` | 可选 | 传输端点。省略时打开交互界面 |
+| `--port` | `-p` | 可选 | 串口或 SPI Bridge 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
-| `--log-dir` | `-d` | `./logs` | 捕获文件保存目录 |
-| `--debug` | 无 | 关闭 | 显示额外的解析、流量和固件状态调试事件 |
+| `--log-dir` | `-d` | `./logs` | 录制文件保存目录 |
+| `--debug` | 无 | 关闭 | 显示额外的调试信息 |
 
 子命令：
 
 | 命令 | 说明 |
 | --- | --- |
-| `ports` | 列出 UART 和 SPI Bridge 端点，可用 `--mode` 过滤 |
-| `ls` | 列出指定目录中的 `ble_log_*.bin` 捕获文件 |
+| `ports` | 列出 UART 串口和 SPI Bridge 端口，可用 `--mode` 过滤 |
+| `ls` | 列出指定目录中的 `ble_log_*.bin` 录制文件 |
 
 `--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。
 
@@ -402,7 +404,7 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.4`，并在执行后拔插过设备。
+- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.5`，并在执行后拔插过设备。
 
 <a id="faq-no-logs"></a>
 
@@ -423,9 +425,9 @@ python console.py --mode spi --port <PORT>
 
 固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件。
 
-从 v1.0.4 开始，每组这类 console log 的首行会显示电脑本地接收时间，例如 `[15:14:54.367]`；对应 `_console.log` 文件使用包含日期和时区的完整格式。后续没有重复时间戳的行仍属于同一组日志。该时间由工具在电脑收到数据时添加，不是固件运行时间。
+每组 console log 的第一行会显示电脑收到该组日志的时间，例如 `[15:14:54.367]`；后续没有时间戳的行仍属于同一组日志。这个时间不是设备的运行时间。
 
-`_console.log` 会移除 ANSI/ESC 等显示控制字符并统一换行，原始 `.bin` 数据不会因此改变。
+`_console.log` 会自动清理颜色等显示控制字符并统一换行，不会改变原始 `.bin` 文件。
 
 
 

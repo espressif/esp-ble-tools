@@ -332,6 +332,7 @@ class CaptureReport:
     console_log_paths: tuple[Path, ...]
     report_path: Path
     raw_bytes: int
+    raw_complete: bool
     parser_frames: int
     regular_frames: int
     parser_complete: bool
@@ -344,6 +345,8 @@ class CaptureReport:
     peak_bits_per_sec: float
     sequence: SequenceSummary
     firmware_loss: tuple[FirmwareLossSummary, ...]
+    firmware_written_bytes: int
+    firmware_lost_bytes: int
     firmware_write_loss_rate: float | None
     sequence_loss_rate: float | None
     errors: tuple[str, ...]

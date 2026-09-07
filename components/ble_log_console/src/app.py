@@ -393,7 +393,9 @@ class BLELogApp(App):
         stop_button.disabled = True
         stop_button.label = 'Finalizing...'
         capture_session.stop()
-        self.post_message(UserNotice(tr('Finalizing capture: saving remaining data and building the quality report.')))
+        self.post_message(
+            UserNotice(tr('Finalizing capture: saving data, then allowing up to 20 seconds for the quality check.'))
+        )
 
     def _on_report_result(self, action: str | None) -> None:
         if action != 'again':

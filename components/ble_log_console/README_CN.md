@@ -28,19 +28,20 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 ```bash
 # Windows
-ble_log_console_windows_v1.0.3.exe
+ble_log_console_windows_v1.0.5.exe
 
 # Linux
-chmod +x ./ble_log_console_ubuntu_v1.0.4
-./ble_log_console_ubuntu_v1.0.4
+chmod +x ./ble_log_console_ubuntu_v1.0.5
+./ble_log_console_ubuntu_v1.0.5
 ```
 
-3. 在界面中选择传输模式、端口、UART 波特率和日志保存目录，然后点击 **Connect** 开始接收日志。
+3. 在界面中选择语言、传输模式、端口、UART 波特率和日志保存目录，然后点击 **Connect** 开始接收日志。
+4. 录制完成后点击 **Stop & Review**，工具会保存数据并显示质量结论。
 
 Linux 下首次使用 SPI Bridge 时，请先用 `sudo` 运行一次工具，然后重新拔插 Bridge 设备：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.4
+sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
 日志会保存到选择的目录。接线方式、固件配置、命令行用法和常见问题请查看 [中文用户指南](./docs/User-Guide-CN.md)。

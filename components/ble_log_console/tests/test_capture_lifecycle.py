@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -66,7 +67,8 @@ def test_session_finishes_with_saved_report(tmp_path: Path) -> None:
     config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
     with patch('src.frontend.capture_session.CapturePipeline') as pipeline_type:
         pipeline = pipeline_type.return_value
-        pipeline.is_alive.return_value = False
+        pipeline.io_is_alive.return_value = False
+        pipeline.analysis_is_alive.return_value = False
         pipeline.drain_events.return_value = []
         pipeline.wait_with_events.return_value = ([], _completed_result(output))
         session = CaptureSession(config, output)
@@ -89,6 +91,47 @@ def test_session_stop_is_idempotent(tmp_path: Path) -> None:
     pipeline_type.return_value.stop.assert_called_once_with()
 
 
+def test_session_stops_partial_analysis_after_twenty_seconds(tmp_path: Path) -> None:
+    output = tmp_path / 'capture.bin'
+    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    now = [0.0]
+    result = _completed_result(output)
+    result = replace(
+        result,
+        parser_error='Live quality check did not finish within 20 seconds.',
+        parser_raw_bytes=10,
+        parser_lag_bytes=10,
+        completed=False,
+        aggregator_finalized=False,
+    )
+    with patch('src.frontend.capture_session.CapturePipeline') as pipeline_type:
+        pipeline = pipeline_type.return_value
+        pipeline.drain_events.return_value = []
+        pipeline.io_is_alive.return_value = False
+        pipeline.analysis_is_alive.return_value = True
+        pipeline.wait_with_events.return_value = ([], result)
+        session = CaptureSession(
+            config,
+            output,
+            analysis_drain_timeout_sec=20.0,
+            clock=lambda: now[0],
+        )
+        session.start()
+
+        assert session.poll() == ()
+        now[0] = 19.9
+        assert session.poll() == ()
+        pipeline.abort_analysis.assert_not_called()
+
+        now[0] = 20.0
+        messages = session.poll()
+
+    pipeline.abort_analysis.assert_called_once()
+    finished = next(message for message in messages if isinstance(message, CaptureFinished))
+    assert not finished.report.parser_complete
+    assert finished.report.verdict.value == 'SAVED WITH WARNINGS'
+
+
 def test_report_write_failure_keeps_capture_result(tmp_path: Path) -> None:
     output = tmp_path / 'capture.bin'
     config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
@@ -97,7 +140,8 @@ def test_report_write_failure_keeps_capture_result(tmp_path: Path) -> None:
         patch('src.frontend.capture_session.write_capture_report', side_effect=OSError('read only')),
     ):
         pipeline = pipeline_type.return_value
-        pipeline.is_alive.return_value = False
+        pipeline.io_is_alive.return_value = False
+        pipeline.analysis_is_alive.return_value = False
         pipeline.drain_events.return_value = []
         pipeline.wait_with_events.return_value = ([], _completed_result(output))
         session = CaptureSession(config, output)

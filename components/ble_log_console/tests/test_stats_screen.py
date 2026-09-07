@@ -124,16 +124,18 @@ class TestBuildConsoleTable:
     def test_column_headers(self) -> None:
         table = _build_console_table([])
         headers = [str(col.header) for col in table.columns]
-        assert 'Source' in headers
-        assert any('Received' in h for h in headers)
-        assert any('Average' in h for h in headers)
-        assert any('Peak' in h for h in headers)
+        assert headers == [
+            'Source',
+            'Received\nFrames',
+            'Received\nBytes',
+            'Average\nFrames/s',
+            'Average\nBits/s',
+        ]
 
     def test_single_source(self) -> None:
         snap = _snap(_SRC_HOST, tp_fps=850.0, peak_frames=12)
         table = _build_console_table([snap])
         assert table.row_count == 1
-        assert len(table.columns) == 7
 
     def test_zero_throughput_shows_dash(self) -> None:
         snap = _snap(_SRC_HOST, tp_fps=0.0, peak_frames=0)

@@ -1,5 +1,5 @@
 # BLE Log Console Quick Start Guide
-Version: v1.0.4
+Version: v1.0.5
 
 ## Introduction
 
@@ -101,22 +101,22 @@ The tool package provides applications for different operating systems. Download
 
 #### 4.1.1 Windows System
 
-On Windows, use `ble_log_console_windows_v1.0.3.exe`. The recommended way to start it is to double-click the icon.
+On Windows, use `ble_log_console_windows_v1.0.5.exe`. The recommended way to start it is to double-click the icon.
 
 > Note: This tool package currently supports `Windows 10` and later.
 
 #### 4.1.2 Linux System
 
-On Linux, use `ble_log_console_ubuntu_v1.0.4`. If the file does not have execute permission, enter the corresponding directory first and run:
+On Linux, use `ble_log_console_ubuntu_v1.0.5`. If the file does not have execute permission, enter the corresponding directory first and run:
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.4
+chmod +x ./ble_log_console_ubuntu_v1.0.5
 ```
 
 If you plan to use SPI Bridge on Linux, run the following command before the first use:
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.4
+sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
 This command installs the USB access permission rules required by SPI Bridge. After the command finishes, unplug and reconnect the SPI Bridge device once. After that, `sudo` is no longer required for normal use.
@@ -124,7 +124,7 @@ This command installs the USB access permission rules required by SPI Bridge. Af
 Then run the following command to start the program:
 
 ```bash
-./ble_log_console_ubuntu_v1.0.4
+./ble_log_console_ubuntu_v1.0.5
 ```
 
 > Note: This tool package currently supports `Ubuntu 22.04` and later.
@@ -141,13 +141,13 @@ First, choose the language used for warnings and the quality report, then select
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
-To end a capture, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then displays a capture quality report instead of exiting immediately. From the report, you can record again with the same configuration or exit. Large captures may be split into multiple `part` files.
+To end a capture, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit. Large captures may be split into multiple `part` files.
 
 When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to this tool together with the BLE Log data. The tool displays them in real time and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory. No additional action is required. See [Log File Save Rules](#53-log-file-save-rules) for details.
 
-> Note: End capture with **Stop & Review**, `q`, or `Ctrl+C`, and wait for `FINALIZING` to complete. Closing the terminal window directly may terminate the process before the final data flush and quality report complete.
+> Note: End capture with **Stop & Review**, `q`, or `Ctrl+C`. While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
 
-Note that in a Linux environment, the available port name formats for SPI mode and UART mode are different. This is determined by the port naming rules of the two transport modes and does not affect normal use.
+On Linux, UART and SPI Bridge may show different port name formats. Select a device from the current mode's list.
 
 ## 5. User Interface and Log Files
 
@@ -159,27 +159,27 @@ After startup, the interface mainly consists of the log area and the status bar,
   <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 58%; max-width: 620px; max-height: 400px; object-fit: contain;">
 </p>
 
-The log area displays parsed BLE logs, tool prompts, and warning messages in real time.
+The log area displays forwarded serial logs, status messages, and warnings in real time.
 
-The status bar shows the current connection status, captured raw data, current speed, peak speed, and frame rate. Loss is calculated for the current capture after recording stops.
+The status bar shows the connection state, amount of data received by the PC, current speed, peak speed, and frame rate. Use the quality report after recording to check for data problems.
 
-Click **Stop & Review** to safely end the current recording and open its quality report. Wait while `FINALIZING` saves the remaining transport data.
+Click **Stop & Review** to safely end the current recording and open its quality report. While `FINALIZING` is displayed, the tool is saving the remaining data.
 
 The tool supports adaptive window resizing. When the window is small, some status information may not fit on screen. Enlarge the window or scroll to view the remaining information.
 
 ### 5.2 Normal Status Description
 
-As shown above, the `frames` statistic at the red arrow indicates the number of parsed `BLE log frame` entries. The `RX` value on the left indicates the amount of raw data captured and saved. When `RX` reaches a certain data size, the prompt at the blue arrow appears.
+As shown above, `Frames` is the number of valid log frames recognized by the tool. `RX` is the amount of data received and saved by the PC.
 
-**Normal status:** During use, if the `frames` value at the red arrow keeps increasing, the transfer speed is **not 0**, and the **size prompt** at the blue arrow appears, the tool is running normally.
+**Normal status:** If both `RX` and `Frames` keep increasing, the tool is receiving and recognizing logs normally. If `RX` increases but `Frames` does not increase for a long time, first check the transport mode, UART baud rate, firmware configuration, and wiring.
 
 > If the connection is normal but the indicators above are abnormal, check whether the `BLE Log` module is enabled properly and whether the wiring is fully correct.
 
-> Note: A high realtime traffic notice means live parsing or UI display may temporarily lag behind raw data capture. It does not mean raw data saving is abnormal. Raw data is written to the `.bin` file before parsing; if the raw data write path cannot keep up, the tool reports a raw writer or reader backpressure error explicitly.
+> Note: During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
 
 ### 5.3 Log File Save Rules
 
-Capture files are saved to the log directory selected at startup. If the save path is not changed, they are saved to the `logs` directory under the current directory. File names are generated from timestamps:
+Recording files are saved to the log directory selected at startup. If the save path is not changed, they are saved to the `logs` directory under the current directory. File names are generated from the start time:
 
 ```text
 ble_log_YYYYMMDD_HHMMSS.bin
@@ -197,19 +197,21 @@ After a safe stop, the matching quality report is saved as:
 ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
-After the program exits, it prints the actual save paths in the terminal. Large captures may be split into multiple `part` files. If another capture starts within the same second, a numeric suffix is added so existing files are never overwritten.
+After the program exits, it prints the actual save paths in the terminal. Large recordings are automatically split into multiple files. If another recording starts within the same second, a numeric suffix is added so existing files are not overwritten.
 
 ### 5.4 Capture Quality Report
 
-The report gives one of three conclusions:
+After recording stops, the tool shows one of three conclusions:
 
-- `READY FOR ANALYSIS`: Raw data was finalized, regular BLE Log frames were decoded, and the observed loss rate for customer-data sources was zero.
-- `SAVED WITH WARNINGS`: Raw data was retained, but up to 5% observed loss, a transport error, or incomplete live-parser coverage was detected. If a restart or abnormal jump makes continuity unreliable, the report says `Unable to verify`.
-- `RECAPTURE RECOMMENDED`: No raw data was saved, the raw file could not be finalized, a complete parse found no regular BLE Log frames, or an experimental loss rate exceeded 5%.
+- `READY FOR ANALYSIS`: The data was saved successfully and can be decoded. It is ready to submit for analysis.
+- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted; if possible, make another recording as a backup.
+- `RECAPTURE RECOMMENDED`: The recording did not contain enough usable data, or the data could not be saved correctly. Check the connection, mode, port, baud rate, and firmware configuration, then record again.
 
-The screen highlights the verdict and recommendation, then summarizes duration, raw size, valid log frames, parser coverage, possible sequence loss, firmware-reported loss, and key file paths. Per-source sequence details, rates, and errors remain available in the matching `report.txt` file.
+The report screen shows the captured frame count, data size, and file locations. For further troubleshooting, provide both the generated `report.txt` and `.bin` files to technical support.
 
-The detailed report records the experimental firmware write-failure rate and transport sequence-discontinuity rate; the final dialog does not expand these percentages. The `INTERNAL` source remains available in detailed statistics but does not grade customer-data quality.
+The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
+
+“Firmware log write failures (failed / total)” directly shows failed bytes, total firmware-reported bytes, and the resulting percentage. The valid frame count shown elsewhere is not used as its denominator.
 
 ### 5.5 Common Shortcuts
 
@@ -342,29 +344,29 @@ This section provides additional command-line usage for the tool package. Common
 
 | Operation | Linux | Windows |
 | --- | --- | --- |
-| View help | `./ble_log_console_ubuntu_v1.0.4 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
-| List ports | `./ble_log_console_ubuntu_v1.0.4 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
-| Start interactive mode | `./ble_log_console_ubuntu_v1.0.4` | `ble_log_console_windows_v1.0.3.exe` |
-| Start UART mode | `./ble_log_console_ubuntu_v1.0.4 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
-| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.4 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
-| View saved logs | `./ble_log_console_ubuntu_v1.0.4 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
+| View help | `./ble_log_console_ubuntu_v1.0.5 --help` | `ble_log_console_windows_v1.0.5.exe --help` |
+| List ports | `./ble_log_console_ubuntu_v1.0.5 ports` | `ble_log_console_windows_v1.0.5.exe ports` |
+| Start interactive mode | `./ble_log_console_ubuntu_v1.0.5` | `ble_log_console_windows_v1.0.5.exe` |
+| Start UART mode | `./ble_log_console_ubuntu_v1.0.5 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.5.exe --mode uart --port COM3` |
+| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.5 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.5.exe --mode spi --port <PORT>` |
+| View saved logs | `./ble_log_console_ubuntu_v1.0.5 ls` | `ble_log_console_windows_v1.0.5.exe ls` |
 
 ### Command-Line Options
 
 | Option | Short | Default | Description |
 | --- | --- | --- | --- |
 | `--mode` | `-m` | `uart` | Transport mode: `uart` or `spi` |
-| `--port` | `-p` | optional | Transport endpoint. Omit to open the interactive interface |
+| `--port` | `-p` | optional | Serial or SPI Bridge port. Omit to open the interactive interface |
 | `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
-| `--log-dir` | `-d` | `./logs` | Capture file save directory |
-| `--debug` | none | off | Show extra parser, traffic, and firmware-state debug events |
+| `--log-dir` | `-d` | `./logs` | Recording file save directory |
+| `--debug` | none | off | Show extra debugging information |
 
 Subcommands:
 
 | Command | Description |
 | --- | --- |
-| `ports` | List UART and SPI Bridge endpoints. Use `--mode` to filter |
-| `ls` | List `ble_log_*.bin` capture files in the specified directory |
+| `ports` | List UART serial ports and SPI Bridge ports. Use `--mode` to filter |
+| `ls` | List `ble_log_*.bin` recording files in the specified directory |
 
 `--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.
 
@@ -388,7 +390,7 @@ Please check:
 - Whether the device is powered on.
 - Whether the correct firmware is running on the device.
 - Whether the port is already occupied by another program.
-- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.4` once and unplugged/reconnected the device after running it.
+- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.5` once and unplugged/reconnected the device after running it.
 
 <a id="faq-no-logs"></a>
 
@@ -409,9 +411,9 @@ Please check:
 
 When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to BLE Log Console together with the BLE Log data. The tool displays them in the log area and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory.
 
-Starting with v1.0.4, the first line of each such console-log group shows the PC's local receive time, for example `[15:14:54.367]`. The corresponding `_console.log` file uses the full date and time-zone format. Following lines without a repeated timestamp still belong to the same log group. The tool adds this timestamp when the PC receives the data; it is not firmware runtime.
+The first line of each console-log group shows when the PC received it, for example `[15:14:54.367]`. Following lines without a timestamp belong to the same group. This is not the device runtime.
 
-The `_console.log` file removes ANSI/ESC display control characters and normalizes line endings; the original `.bin` data is unchanged.
+The `_console.log` file automatically removes color and other display-control characters and normalizes line endings. The original `.bin` file is unchanged.
 
 <a id="faq-source-setup"></a>
 

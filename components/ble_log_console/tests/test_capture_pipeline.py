@@ -7,7 +7,9 @@ from pathlib import Path
 from queue import Queue
 from threading import Event
 from typing import IO
+from unittest.mock import MagicMock
 
+from src.backend.analysis.worker import ParserStatus
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.pipeline.controller import run_capture_pipeline_inprocess
@@ -251,6 +253,21 @@ def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> No
 
     assert [type(event) for event in events] == [AggregatorUpdate, WriterEvent]
     assert pipeline._result_events == [events[1]]  # type: ignore[attr-defined]
+
+
+def test_abort_analysis_stops_process_and_records_incomplete_check(tmp_path: Path) -> None:
+    pipeline = CapturePipeline(
+        TransportConfig(mode=TransportMode.UART, label='fake', port='fake'),
+        WriterConfig(tmp_path / 'capture.bin'),
+    )
+    process = MagicMock()
+    process.is_alive.side_effect = (True, False)
+    pipeline._analysis_process = process  # type: ignore[attr-defined]
+
+    pipeline.abort_analysis('quality check timed out')
+
+    process.terminate.assert_called_once_with()
+    assert pipeline._result_events[-1] == ParserStatus(kind='error', message='quality check timed out')  # type: ignore[attr-defined]
 
 
 def test_writer_error_marks_pipeline_incomplete(tmp_path: Path) -> None:

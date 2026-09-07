@@ -24,12 +24,15 @@ def _result(
     writer_error: str | None = None,
     parser_error: str | None = None,
     parse_backlog: bool = False,
+    parser_raw_bytes: int | None = None,
+    parse_dropped_bytes: int = 0,
     firmware_loss: int = 0,
     firmware_written_bytes: int = 0,
     firmware_lost_bytes: int = 0,
     firmware_loss_source: int = 5,
     sequence_uncertain: bool = False,
 ) -> CapturePipelineResult:
+    parser_raw_bytes = raw_bytes if parser_raw_bytes is None else parser_raw_bytes
     sequence = SequenceSummary(
         sources=(
             SequenceSourceSummary(
@@ -50,12 +53,18 @@ def _result(
         funnel_snapshots=(),
         buf_util_snapshots=(),
         captured_bytes=raw_bytes,
-        parser_raw_bytes=raw_bytes,
+        parser_raw_bytes=parser_raw_bytes,
         parser_frames=regular_frames,
         parser_carried_bytes=0,
         regular_frames=regular_frames,
         sequence=sequence,
-        capture_firmware_loss=(FirmwareLossSummary(source=firmware_loss_source, frames=firmware_loss, bytes=64),)
+        capture_firmware_loss=(
+            FirmwareLossSummary(
+                source=firmware_loss_source,
+                frames=firmware_loss,
+                bytes=firmware_lost_bytes or 64,
+            ),
+        )
         if firmware_loss
         else (),
         capture_firmware_written_bytes=firmware_written_bytes,
@@ -69,10 +78,13 @@ def _result(
         aggregator_error=None,
         parse_backlog=parse_backlog,
         raw_bytes=raw_bytes,
-        parser_raw_bytes=raw_bytes,
+        parser_raw_bytes=parser_raw_bytes,
         parser_frames=regular_frames,
         parser_carried_bytes=0,
         completed=writer_error is None and parser_error is None and not parse_backlog,
+        parse_dropped_chunks=1 if parse_dropped_bytes else 0,
+        parse_dropped_bytes=parse_dropped_bytes,
+        parser_lag_bytes=max(0, raw_bytes - parser_raw_bytes),
         writer_finalized=writer_error is None,
         aggregator_finalized=parser_error is None,
         final_snapshot=snapshot,
@@ -112,18 +124,26 @@ def test_report_can_be_rendered_in_chinese() -> None:
 
 
 def test_screen_summary_only_shows_customer_decision_fields() -> None:
-    report = _report(_result(regular_frames=100, missing_frames=2, firmware_loss=1))
+    report = _report(
+        _result(
+            regular_frames=100,
+            missing_frames=2,
+            firmware_loss=1,
+            firmware_written_bytes=999,
+            firmware_lost_bytes=1,
+        )
+    )
     text = format_capture_summary(report, language='zh_CN')
 
     assert '建议：数据可以提交分析，但录制质量存在警告。' in text
-    assert '录制结果' in text
+    assert '已保存数据（可信）' in text
     assert '持续时间：10.0 s' in text
     assert '原始数据：100 B，共 1 个文件' in text
     assert '有效日志帧：100' in text
-    assert '质量检查' in text
-    assert '解析覆盖：完整' in text
+    assert '自动质量检查（覆盖全部已保存数据）' in text
+    assert '解析覆盖：100 B / 100 B（100.0%）' in text
     assert '序列号疑似缺失：2 帧' in text
-    assert '固件报告丢失：1 帧' in text
+    assert '固件日志写入失败（失败 / 总量）：1 B / 1000 B（0.10%）' in text
     assert '详细报告：capture_report.txt' in text
     assert '原始数据文件：capture.bin' in text
     assert '解析覆盖情况' not in text
@@ -159,11 +179,16 @@ def test_no_decoded_regular_frames_recommends_recapture() -> None:
 
 
 def test_parser_backlog_preserves_raw_but_marks_report_warning() -> None:
-    report = _report(_result(parse_backlog=True))
+    report = _report(_result(parse_backlog=True, parser_raw_bytes=60, parse_dropped_bytes=40))
 
     assert report.verdict is CaptureVerdict.WARNING
     assert report.raw_bytes == 100
     assert not report.parser_complete
+    text = format_capture_summary(report, language='zh_CN')
+    assert '已保存数据（可信）' in text
+    assert '解析覆盖：60 B / 100 B（60.0%）' in text
+    assert '已解析部分识别到的有效日志帧：2' in text
+    assert '整份录制的序列号连续性：无法确认' in text
 
 
 def test_writer_failure_recommends_recapture() -> None:
@@ -184,15 +209,19 @@ def test_experimental_quality_threshold_is_detailed_only() -> None:
 
     assert report.verdict is CaptureVerdict.RECAPTURE
     assert report.firmware_write_loss_rate == 0.06
+    assert any('Firmware write failure rate exceeded' in reason for reason in report.reasons)
     assert 'Firmware write failure rate: 6.0000%' in format_capture_report(report)
-    assert '6.0000%' not in format_capture_summary(report)
+    assert '固件日志写入失败（失败 / 总量）：60 B / 1000 B（6.00%）' in format_capture_summary(
+        report,
+        language='zh_CN',
+    )
 
 
 def test_internal_firmware_loss_is_detailed_but_does_not_grade_customer_data() -> None:
     report = _report(_result(firmware_loss=7, firmware_loss_source=0))
 
     assert report.verdict is CaptureVerdict.READY
-    assert 'Firmware-reported loss: 0 frames' in format_capture_summary(report)
+    assert 'Firmware log write failures (failed / total): Not enough data' in format_capture_summary(report)
     assert 'INTERNAL: 7 frame(s)' in format_capture_report(report)
 
 

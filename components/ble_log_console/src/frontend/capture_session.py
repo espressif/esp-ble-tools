@@ -26,6 +26,7 @@ from src.frontend.capture_report import write_capture_report
 from src.i18n import tr
 
 PIPELINE_JOIN_TIMEOUT_SEC = 2.0
+ANALYSIS_DRAIN_TIMEOUT_SEC = 20.0
 
 
 class CaptureSession:
@@ -38,10 +39,14 @@ class CaptureSession:
         *,
         debug: bool = False,
         join_timeout_sec: float = PIPELINE_JOIN_TIMEOUT_SEC,
+        analysis_drain_timeout_sec: float = ANALYSIS_DRAIN_TIMEOUT_SEC,
+        clock=time.monotonic,
     ) -> None:
         self._output_path = output_path
         self._transport_config = transport_config
         self._join_timeout_sec = join_timeout_sec
+        self._analysis_drain_timeout_sec = analysis_drain_timeout_sec
+        self._clock = clock
         self._event_presenter = CaptureEventPresenter(output_path, debug=debug)
         self._pipeline = CapturePipeline(
             transport_config,
@@ -49,9 +54,10 @@ class CaptureSession:
         )
         self._finished = False
         self._stop_requested = False
+        self._analysis_drain_started_at: float | None = None
         self._report: CaptureReport | None = None
         self._started_at = datetime.now().astimezone()
-        self._started_monotonic = time.monotonic()
+        self._started_monotonic = self._clock()
 
     @property
     def finished(self) -> bool:
@@ -107,8 +113,18 @@ class CaptureSession:
             return ()
 
         messages = self._event_presenter.handle_events(self._pipeline.drain_events())
-        if self._pipeline.is_alive():
+        if self._pipeline.io_is_alive():
             return messages
+
+        if self._pipeline.analysis_is_alive():
+            now = self._clock()
+            if self._analysis_drain_started_at is None:
+                self._analysis_drain_started_at = now
+            if now - self._analysis_drain_started_at < self._analysis_drain_timeout_sec:
+                return messages
+            self._pipeline.abort_analysis(
+                f'Live quality check did not finish within {self._analysis_drain_timeout_sec:g} seconds.'
+            )
 
         return messages + self._finish()
 
@@ -138,7 +154,7 @@ class CaptureSession:
             self._transport_config,
             started_at=self._started_at,
             ended_at=ended_at,
-            duration_sec=time.monotonic() - self._started_monotonic,
+            duration_sec=self._clock() - self._started_monotonic,
             console_log_paths=self._event_presenter.state.saved_console_log_paths,
             report_path=report_path_for_capture(self._output_path),
         )
