@@ -143,8 +143,6 @@ Then select the port. In UART mode, you also need to select the baud rate, which
 
 To end a capture, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit. Large captures may be split into multiple `part` files.
 
-When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 (the serial monitor) are forwarded to this tool together with the BLE Log data. The tool displays them in real time and automatically saves them to `ble_log_YYYYMMDD_HHMMSS_console.log` in the selected log directory. No additional action is required. See [Log File Save Rules](#53-log-file-save-rules) for details.
-
 > Note: End capture with **Stop & Review**, `q`, or `Ctrl+C`. While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
 
 On Linux, UART and SPI Bridge may show different port name formats. Select a device from the current mode's list.
@@ -162,8 +160,6 @@ After startup, the interface mainly consists of the log area and the status bar,
 The log area displays forwarded serial logs, status messages, and warnings in real time.
 
 The status bar shows the connection state, amount of data received by the PC, current speed, peak speed, and frame rate. Use the quality report after recording to check for data problems.
-
-Click **Stop & Review** to safely end the current recording and open its quality report. While `FINALIZING` is displayed, the tool is saving the remaining data.
 
 The tool supports adaptive window resizing. When the window is small, some status information may not fit on screen. Enlarge the window or scroll to view the remaining information.
 
@@ -209,176 +205,20 @@ After recording stops, the tool shows one of three conclusions:
 
 The report screen shows the captured frame count, data size, and file locations. For further troubleshooting, provide both the generated `report.txt` and `.bin` files to technical support.
 
-The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
+## 6. Further Information
 
-The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. When firmware segment statistics are available, overall quality statistics use only complete segments. If continuity cannot be determined, it is shown as unverified.
+Press `h` for more shortcuts. For source setup and command-line options, see the [repository README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md).
 
-### 5.5 Common Shortcuts
-
-The following shortcuts are commonly used while the application is running. They can be used to view statistics, reset the device, exit the application, and more.
-
-| Key | Function |
-| --- | --- |
-| `q` | Stop and review while recording; exit from the report |
-| `Ctrl+C` | Stop and review while recording; exit from the report |
-| `c` | Clear the log area |
-| `s` | Toggle auto-scroll |
-| `d` | View received log statistics |
-| `m` | View buffer usage |
-| `h` | Show shortcut help |
-| `r` | Reset the target device; not supported in SPI Bridge mode |
-
-## 6. Run from Source
-
-The tool also provides source code. Users who need local debugging, temporary tool changes, or feature verification can follow this chapter to run from source.
-
-### 6.1 Get the Source
-
-The source code is located in the BLE Log Console source directory. Enter this directory before use.
-
-```bash
-cd <ble_log_console source directory>
-```
-
-The main files and directories are:
-
-| File or Directory | Description |
-| --- | --- |
-| `console.py` | Application entry point |
-| `install.sh` | Linux source environment setup script |
-| `run.sh` | Linux source startup script |
-| `install.bat` | Windows source environment setup script |
-| `run.bat` | Windows source startup script |
-| `src/` | Tool source code |
-| `tests/` | Unit tests |
-| `logs/` | Default log save directory, created automatically after running |
-
-> Notes:
-> - For normal use, the packaged executable is recommended.
-> - Source startup is mainly intended for local debugging, temporary logic changes, or new feature verification.
-
-### 6.2 Use the Source
-
-Source startup is basically the same as using the packaged program. The tool is based on Python and uses `uv` to manage dependencies. On first use, run the install script to prepare the local environment, then use the startup script to run `console.py`.
-
-#### 6.2.1 Windows System
-
-On Windows, enter the source directory and prepare the environment on first use:
-
-```bat
-.\install.bat
-```
-
-Then run:
-
-```bat
-.\run.bat
-```
-
-Running without parameters opens the interactive interface, where you can select the transport mode, port, baud rate, and log save directory.
-
-You can also start a specified mode directly with command-line parameters:
-
-```bat
-.\run.bat --mode uart --port COM3 --baudrate 3000000
-.\run.bat --mode spi --port <PORT>
-```
-
-#### 6.2.2 Linux System
-
-On Linux, enter the source directory and prepare the environment on first use:
-
-```bash
-./install.sh
-```
-
-Then run:
-
-```bash
-./run.sh
-```
-
-If the script does not have execute permission, run:
-
-```bash
-chmod +x ./install.sh ./run.sh
-```
-
-Command-line startup examples:
-
-```bash
-./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
-./run.sh --mode spi --port <PORT>
-```
-
-#### 6.2.3 Run `console.py` Directly
-
-If you have already prepared the required Python environment manually, you can run `console.py` directly:
-
-```bash
-cd <ble_log_console source directory>
-python console.py
-```
-
-You can also install the dependencies in a normal Python environment and then run the tool:
-
-```bash
-python -m pip install .
-python console.py
-```
-
-Common commands:
-
-```bash
-python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
-python console.py --mode spi --port <PORT>
-```
-
-> Notes:
-> - Running `console.py` directly requires all Python dependencies to be installed.
-> - If you only need normal use, run `install.sh` or `install.bat` once first, then use `run.sh` or `run.bat`.
-
-## Appendix: Common Commands
-
-This section provides additional command-line usage for the tool package. Common commands are listed below.
-
-| Operation | Linux | Windows |
-| --- | --- | --- |
-| View help | `./ble_log_console_ubuntu_v1.0.5 --help` | `ble_log_console_windows_v1.0.5.exe --help` |
-| List ports | `./ble_log_console_ubuntu_v1.0.5 ports` | `ble_log_console_windows_v1.0.5.exe ports` |
-| Start interactive mode | `./ble_log_console_ubuntu_v1.0.5` | `ble_log_console_windows_v1.0.5.exe` |
-| Start UART mode | `./ble_log_console_ubuntu_v1.0.5 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.5.exe --mode uart --port COM3` |
-| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.5 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.5.exe --mode spi --port <PORT>` |
-| View saved logs | `./ble_log_console_ubuntu_v1.0.5 ls` | `ble_log_console_windows_v1.0.5.exe ls` |
-
-### Command-Line Options
-
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--mode` | `-m` | `uart` | Transport mode: `uart` or `spi` |
-| `--port` | `-p` | optional | Serial or SPI Bridge port. Omit to open the interactive interface |
-| `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
-| `--log-dir` | `-d` | `./logs` | Recording file save directory |
-| `--debug` | none | off | Show extra debugging information |
-
-Subcommands:
-
-| Command | Description |
-| --- | --- |
-| `ports` | List UART serial ports and SPI Bridge ports. Use `--mode` to filter |
-| `ls` | List `ble_log_*.bin` recording files in the specified directory |
-
-`--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.
-
-## Appendix: FAQ
+## Appendix: Troubleshooting and Notes
 
 Quick links:
 
 * [Device not shown in the port list](#faq-no-port)
 * [Program starts but no logs appear](#faq-no-logs)
-* [Why serial-monitor logs appear in the tool and where they are saved](#faq-console-log)
+* [Serial-monitor log display and saving](#faq-console-log)
 * [Source environment setup fails](#faq-source-setup)
-* [How to confirm ESP32P4 Bridge firmware version](#faq-esp32p4-version)
+* [Confirming ESP32P4 Bridge firmware version](#faq-esp32p4-version)
+* [Quality report is unverified or the check is incomplete](#faq-quality-check)
 
 <a id="faq-no-port"></a>
 
@@ -440,3 +280,13 @@ idf.py -p <PORT> monitor
 If you missed the startup log, press the reset button on the development board. The version information is printed again after ESP32P4 restarts.
 
 > Note: When checking the version, the ESP32P4 serial port cannot be used by `ble_log_console` in UART mode or another serial tool at the same time.
+
+<a id="faq-quality-check"></a>
+
+### Can I use the files if the quality report is unverified or the check is incomplete?
+
+The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
+
+The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. When firmware segment statistics are available, overall quality statistics use only complete segments. If continuity cannot be determined, it is shown as unverified.
+
+Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another capture is needed.
