@@ -247,7 +247,7 @@ class CapturePipeline:
 
     def start(self) -> None:
         if self._io_process is not None or self._analysis_process is not None:
-            raise RuntimeError('capture pipeline is already started')
+            raise RuntimeError('recording pipeline is already started')
 
         self._parse_queue = self._ctx.Queue(maxsize=self._parse_queue_size)
         self._raw_stats_queue = self._ctx.Queue()
@@ -295,7 +295,7 @@ class CapturePipeline:
 
     def reset_target(self) -> None:
         if self._command_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
         self._command_queue.put(ReaderCommand(kind='reset_target'))
 
     def is_alive(self) -> bool:
@@ -326,7 +326,7 @@ class CapturePipeline:
         """Drain events for UI consumption without losing final result state."""
 
         if self._ui_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
         events = _drain_events(self._ui_queue)
         self._result_events.extend(_events_for_result(events))
         snapshots = [event for event in self._result_events if isinstance(event, AggregatorSnapshot)]
@@ -338,7 +338,7 @@ class CapturePipeline:
 
     def wait_with_events(self, timeout: float | None = None) -> tuple[list[Any], CapturePipelineResult]:
         if self._io_process is None or self._analysis_process is None or self._ui_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
 
         self._io_process.join(timeout)
         if self._io_process.is_alive():
@@ -354,7 +354,7 @@ class CapturePipeline:
                 events,
                 CapturePipelineResult(
                     raw_paths=result.raw_paths,
-                    reader_error=result.reader_error or 'capture pipeline did not stop before timeout',
+                    reader_error=result.reader_error or 'recording pipeline did not stop before timeout',
                     writer_error=result.writer_error,
                     parser_error=result.parser_error,
                     aggregator_error=result.aggregator_error,

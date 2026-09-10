@@ -342,7 +342,7 @@ class BLELogApp(App):
         panel.finalizing = False
         stop_button = self.query_one('#stop-review', Button)
         stop_button.disabled = True
-        stop_button.label = 'Capture Finished'
+        stop_button.label = 'Recording Finished'
         if isinstance(self.screen, (StatsScreen, BufUtilScreen, ShortcutScreen)):
             self.pop_screen()
         self.push_screen(CaptureReportScreen(msg.report), callback=self._on_report_result)
@@ -368,7 +368,7 @@ class BLELogApp(App):
     def action_reset_chip(self) -> None:
         capture_session = self._capture_session
         if capture_session is None or not capture_session.reset_target():
-            self.query_one(LogView).write_warning(tr('Reset is not available because capture is not running'))
+            self.query_one(LogView).write_warning(tr('Reset is not available because recording is not running'))
             return
 
     @on(Button.Pressed, '#stop-review')
@@ -394,7 +394,7 @@ class BLELogApp(App):
         stop_button.label = 'Finalizing...'
         capture_session.stop()
         self.post_message(
-            UserNotice(tr('Finalizing capture: saving data, then allowing up to 20 seconds for the quality check.'))
+            UserNotice(tr('Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.'))
         )
 
     def _on_report_result(self, action: str | None) -> None:

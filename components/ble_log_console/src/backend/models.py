@@ -347,7 +347,8 @@ class FirmwareLossSummary:
 class CaptureVerdict(str, Enum):
     READY = 'READY FOR ANALYSIS'
     WARNING = 'SAVED WITH WARNINGS'
-    RECAPTURE = 'RECAPTURE RECOMMENDED'
+    CHECK_CONFIGURATION = 'CHECK CONFIGURATION'
+    RECAPTURE = 'RECORD AGAIN RECOMMENDED'
 
 
 @dataclass(frozen=True)

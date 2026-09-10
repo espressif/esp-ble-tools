@@ -96,14 +96,16 @@ def build_capture_report(
     reasons: list[str] = []
     warnings: list[str] = []
 
-    if result.raw_bytes <= 0 or not result.raw_paths:
-        reasons.append('No raw capture data was saved.')
-        verdict = CaptureVerdict.RECAPTURE
-    elif result.writer_error is not None or not result.writer_finalized:
-        reasons.append('Raw capture could not be finalized safely.')
+    if result.writer_error is not None or not result.writer_finalized:
+        reasons.append('Raw recording could not be finalized safely.')
         verdict = CaptureVerdict.RECAPTURE
     elif parser_complete and regular_frames == 0:
+        if result.raw_bytes <= 0 or not result.raw_paths:
+            reasons.append('No raw recording data was saved.')
         reasons.append('No regular BLE Log frames were decoded; check mode, wiring, and firmware configuration.')
+        verdict = CaptureVerdict.CHECK_CONFIGURATION
+    elif result.raw_bytes <= 0 or not result.raw_paths:
+        reasons.append('No raw recording data was saved.')
         verdict = CaptureVerdict.RECAPTURE
     else:
         if not parser_complete:
@@ -120,17 +122,17 @@ def build_capture_report(
         firmware_loss_observed_bytes = sum(item.bytes for item in firmware_loss if item.source > 0)
         if firmware_lost_frames > 0 or firmware_loss_observed_bytes > 0:
             warnings.append(
-                'Observed firmware buffer loss during capture: '
+                'Observed firmware buffer loss during recording: '
                 f'{firmware_lost_frames} frame(s), {format_bytes(firmware_loss_observed_bytes)}.'
             )
         if result.parser_error or result.aggregator_error:
-            warnings.append('The raw capture was saved, but live verification failed; retain the raw files for support.')
+            warnings.append('The raw recording was saved, but live verification failed; retain the raw files for support.')
 
         threshold_reasons: list[str] = []
         if firmware_write_loss_rate is not None and firmware_write_loss_rate > _QUALITY_RECAPTURE_THRESHOLD:
-            threshold_reasons.append('Firmware write failure rate exceeded the 5% recapture threshold.')
+            threshold_reasons.append('Firmware write failure rate exceeded the 5% record-again threshold.')
         if sequence_loss_rate is not None and sequence_loss_rate > _QUALITY_RECAPTURE_THRESHOLD:
-            threshold_reasons.append('Sequence discontinuity rate exceeded the 5% recapture threshold.')
+            threshold_reasons.append('Sequence discontinuity rate exceeded the 5% record-again threshold.')
 
         if parser_complete and threshold_reasons:
             verdict = CaptureVerdict.RECAPTURE
@@ -188,10 +190,10 @@ def _localized_reasons(report: CaptureReport, language: str) -> list[str]:
                     count=report.sequence.total_missing_frames,
                 )
             )
-        elif reason.startswith('Observed firmware buffer loss during capture:'):
+        elif reason.startswith('Observed firmware buffer loss during recording:'):
             reasons.append(
                 tr(
-                    'Observed firmware buffer loss during capture: {frames} frame(s), {bytes}.',
+                    'Observed firmware buffer loss during recording: {frames} frame(s), {bytes}.',
                     language=language,
                     frames=sum(item.frames for item in report.firmware_loss if item.source > 0),
                     bytes=format_bytes(sum(item.bytes for item in report.firmware_loss if item.source > 0)),
@@ -219,9 +221,13 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
     separator = '：' if language == 'zh_CN' else ': '
     frames = tr('frames', language=language)
     advice = {
-        CaptureVerdict.READY: 'This capture is ready to submit for analysis.',
-        CaptureVerdict.WARNING: 'The data can be submitted for analysis, but capture quality warnings were detected.',
-        CaptureVerdict.RECAPTURE: 'Check the connection and configuration, then capture again.',
+        CaptureVerdict.READY: 'This recording is ready to submit for analysis.',
+        CaptureVerdict.WARNING: 'The data can be submitted for analysis, but recording quality warnings were detected.',
+        CaptureVerdict.CHECK_CONFIGURATION: (
+            'No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log '
+            'configuration, then record again.'
+        ),
+        CaptureVerdict.RECAPTURE: 'Check the connection and configuration, then record again.',
     }[report.verdict]
     report_path = (
         f'{tr("NOT SAVED", language=language)} ({report.report_write_error})'
@@ -270,7 +276,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         return f'{tr(label, language=language)}{separator}{value}'
 
     lines = [
-        tr('BLE Log Capture Report', language=language),
+        tr('BLE Log Recording Report', language=language),
         '=' * 72,
         field('Verdict', tr(report.verdict.value, language=language)),
         '',
@@ -282,7 +288,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f'  {field("Automated quality check", tr("all saved data" if report.parser_complete else "parsed portion only", language=language))}',
         f'  {field("Parser coverage summary", _coverage_text(report, language))}',
         '',
-        f'{tr("Capture", language=language)}{separator.rstrip()}',
+        f'{tr("Recording", language=language)}{separator.rstrip()}',
         f'  {field("Mode", cfg.mode.value)}',
         f'  {field("Port", cfg.port)}',
         f'  {field("Baud rate", cfg.baudrate if cfg.mode.value == "uart" else tr("N/A", language=language))}',
@@ -305,9 +311,9 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f'{tr("Experimental quality metrics", language=language)}{separator.rstrip()}',
         f'  {field("Firmware write failure rate", _format_rate(report.firmware_write_loss_rate, language))}',
         f'  {field("Sequence discontinuity rate", _format_rate(report.sequence_loss_rate, language))}',
-        f'  {field("Recapture threshold", "5%")}',
+        f'  {field("Record-again threshold", "5%")}',
         '',
-        f'{tr("Capture segments", language=language)}{separator.rstrip()}',
+        f'{tr("Recording segments", language=language)}{separator.rstrip()}',
     ]
     if report.segments:
         lines.extend(_format_segment(segment, language) for segment in report.segments)
@@ -352,7 +358,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     else:
         lines.append(f'  {tr("No regular source frames were available for sequence verification.", language=language)}')
 
-    lines.extend(('', f'{tr("Firmware buffer loss observed during this capture", language=language)}{separator.rstrip()}'))
+    lines.extend(('', f'{tr("Firmware buffer loss observed during this recording", language=language)}{separator.rstrip()}'))
     if report.firmware_loss:
         for loss in report.firmware_loss:
             if language == 'zh_CN':
@@ -474,6 +480,10 @@ class CaptureReportScreen(ModalScreen[str]):
     }
 
     #capture-report-verdict.recapture {
+        color: $error;
+    }
+
+    #capture-report-verdict.check_configuration {
         color: $error;
     }
 

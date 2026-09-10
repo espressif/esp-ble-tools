@@ -105,7 +105,7 @@ class CaptureSession:
                 parser_carried_bytes=0,
                 completed=False,
             )
-            return (UserNotice(tr('Failed to start capture: {message}', message=e), level='warning'),) + self._finish_result(result)
+            return (UserNotice(tr('Failed to start recording: {message}', message=e), level='warning'),) + self._finish_result(result)
         return ()
 
     def poll(self) -> tuple[Message, ...]:
@@ -163,7 +163,7 @@ class CaptureSession:
             write_capture_report(report)
         except OSError as e:
             report = replace(report, report_write_error=str(e))
-            messages.append(UserNotice(tr('Capture report could not be saved: {message}', message=e), level='warning'))
+            messages.append(UserNotice(tr('Recording report could not be saved: {message}', message=e), level='warning'))
         self._report = report
         messages.append(CaptureFinished(report))
         return tuple(messages)

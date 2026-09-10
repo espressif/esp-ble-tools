@@ -65,6 +65,97 @@ def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
     assert messages[0].stats is snapshot.stats
 
 
+def test_capture_progress_notice_is_emitted_every_ten_seconds(tmp_path: Path) -> None:
+    now = [100.0]
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin', clock=lambda: now[0])
+
+    def snapshot(captured_bytes: int, parser_frames: int) -> AggregatorSnapshot:
+        return AggregatorSnapshot(
+            stats=FrameStats(),
+            funnel_snapshots=(),
+            buf_util_snapshots=(),
+            captured_bytes=captured_bytes,
+            parser_raw_bytes=captured_bytes,
+            parser_frames=parser_frames,
+            parser_carried_bytes=0,
+            regular_frames=parser_frames,
+        )
+
+    now[0] = 109.0
+    assert not any(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot(600_000, 10)))
+
+    now[0] = 110.0
+    notices = [
+        message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)
+    ]
+    assert [notice.text for notice in notices] == ['Recorded 683.6 KB, 20 frames']
+
+    now[0] = 119.0
+    assert not any(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot(2_000_000, 30)))
+
+    now[0] = 120.0
+    notices = [
+        message for message in presenter.handle_event(snapshot(2_100_000, 40)) if isinstance(message, UserNotice)
+    ]
+    assert [notice.text for notice in notices] == ['Recorded 2.00 MB, 40 frames']
+
+
+def test_no_data_warning_repeats_every_ten_seconds(tmp_path: Path) -> None:
+    now = [100.0]
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin', clock=lambda: now[0])
+    snapshot = AggregatorSnapshot(
+        stats=FrameStats(),
+        funnel_snapshots=(),
+        buf_util_snapshots=(),
+        captured_bytes=0,
+        parser_raw_bytes=0,
+        parser_frames=0,
+        parser_carried_bytes=0,
+    )
+
+    now[0] = 110.0
+    assert sum(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot)) == 1
+    now[0] = 119.0
+    assert not any(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot))
+    now[0] = 120.0
+    assert sum(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot)) == 1
+
+
+def test_internal_frames_do_not_hide_repeated_no_valid_frame_warning(tmp_path: Path) -> None:
+    now = [100.0]
+    presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin', clock=lambda: now[0])
+
+    def snapshot(captured_bytes: int, parser_frames: int) -> AggregatorSnapshot:
+        return AggregatorSnapshot(
+            stats=FrameStats(),
+            funnel_snapshots=(),
+            buf_util_snapshots=(),
+            captured_bytes=captured_bytes,
+            parser_raw_bytes=captured_bytes,
+            parser_frames=parser_frames,
+            parser_carried_bytes=0,
+            regular_frames=0,
+        )
+
+    now[0] = 110.0
+    notices = [
+        message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)
+    ]
+    assert len(notices) == 1
+    assert notices[0].level == 'warning'
+    assert notices[0].text == (
+        'No valid BLE Log frames were decoded for 10s. '
+        'Check transport mode, wiring, and firmware log configuration.'
+    )
+
+    now[0] = 120.0
+    notices = [
+        message for message in presenter.handle_event(snapshot(1_400_000, 40)) if isinstance(message, UserNotice)
+    ]
+    assert len(notices) == 1
+    assert notices[0].level == 'warning'
+
+
 def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)

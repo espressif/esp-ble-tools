@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ble-log-console"
 version = "1.0.5"
-description = "BLE Log capture and review console"
+description = "BLE Log recording and review console"
 requires-python = ">=3.11"
 dependencies = [
     "click",

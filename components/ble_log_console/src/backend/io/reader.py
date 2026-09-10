@@ -274,7 +274,7 @@ def run_reader_loop(
             record_parse_drop(
                 block,
                 (
-                    'Realtime parser fell behind; raw capture continues, '
+                    'Realtime parser fell behind; raw recording continues, '
                     'live stats may be incomplete.'
                 ),
             )
@@ -311,7 +311,7 @@ def run_reader_loop(
             report_parse_backlog(
                 (
                     'Realtime parser queue stayed full during shutdown; '
-                    'raw capture continues, final live stats may be incomplete.'
+                    'raw recording continues, final live stats may be incomplete.'
                 )
             )
         _finalize_writer(writer, ui_queue, emit_finalized=not writer_failed)
@@ -323,7 +323,7 @@ def run_reader_loop(
                     message=(
                         'Realtime parser skipped '
                         f'{parse_dropped_chunks} chunks ({parse_dropped_bytes} bytes); '
-                        'raw capture saved them, live stats are incomplete.'
+                        'raw recording saved them, live stats are incomplete.'
                     ),
                     status=reader.status(),
                     parse_dropped_chunks=parse_dropped_chunks,

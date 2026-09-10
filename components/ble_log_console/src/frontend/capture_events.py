@@ -36,18 +36,10 @@ REDIR_LINE_BUFFER_LIMIT = 16 * 1024
 REDIR_UI_BATCH_LINE_LIMIT = 128
 CONSOLE_LOG_FLUSH_INTERVAL_SEC = 1.0
 NO_DATA_WARNING_SEC = 10.0
-NO_DATA_WARNING_COOLDOWN_SEC = 60.0
+NO_DATA_WARNING_COOLDOWN_SEC = 10.0
 NO_FRAME_WARNING_SEC = 10.0
-NO_FRAME_WARNING_COOLDOWN_SEC = 60.0
-CAPTURE_NOTICE_THRESHOLDS = (
-    100 * 1024,
-    500 * 1024,
-    1 * 1024 * 1024,
-    10 * 1024 * 1024,
-    50 * 1024 * 1024,
-    100 * 1024 * 1024,
-)
-CAPTURE_NOTICE_STEP = 100 * 1024 * 1024
+NO_FRAME_WARNING_COOLDOWN_SEC = 10.0
+CAPTURE_NOTICE_INTERVAL_SEC = 10.0
 
 TextFileFactory = Callable[[Path], IO[str]]
 Clock = Callable[[], float]
@@ -85,13 +77,6 @@ def _flush_and_close_text_file(file_obj: IO[str]) -> None:
             pass
     finally:
         file_obj.close()
-
-
-def _next_capture_notice_threshold(current: int) -> int:
-    for threshold in CAPTURE_NOTICE_THRESHOLDS:
-        if current < threshold:
-            return threshold
-    return current + CAPTURE_NOTICE_STEP
 
 
 def _normalize_console_log_text(text: str) -> str:
@@ -140,11 +125,13 @@ class CaptureEventPresenter:
         self._last_console_flush_at = now
         self._last_data_at = now
         self._last_frame_at = now
-        self._last_idle_warning_at = 0.0
-        self._last_frame_warning_at = 0.0
+        self._last_idle_warning_at = now - NO_DATA_WARNING_COOLDOWN_SEC
+        self._last_frame_warning_at = now - NO_FRAME_WARNING_COOLDOWN_SEC
+        self._last_capture_notice_at = now
+        self._last_noticed_captured_bytes = 0
+        self._last_noticed_regular_frames = 0
         self._last_captured_bytes = 0
-        self._last_parser_frames = 0
-        self._next_capture_notice = CAPTURE_NOTICE_THRESHOLDS[0]
+        self._last_regular_frames = 0
 
     @property
     def state(self) -> CaptureEventState:
@@ -215,11 +202,11 @@ class CaptureEventPresenter:
 
         if event.captured_bytes > self._last_captured_bytes:
             self._last_data_at = now
-        if event.parser_frames > self._last_parser_frames:
+        if event.regular_frames > self._last_regular_frames:
             self._last_frame_at = now
 
         self._last_captured_bytes = event.captured_bytes
-        self._last_parser_frames = event.parser_frames
+        self._last_regular_frames = event.regular_frames
 
         if not self._debug:
             if (
@@ -243,7 +230,7 @@ class CaptureEventPresenter:
                 messages.append(
                     UserNotice(
                         tr(
-                            'Data is arriving, but no BLE log frames were decoded for 10s. '
+                            'No valid BLE Log frames were decoded for 10s. '
                             'Check transport mode, wiring, and firmware log configuration.'
                         ),
                         level='warning',
@@ -251,13 +238,22 @@ class CaptureEventPresenter:
                 )
                 self._last_frame_warning_at = now
 
-            while event.captured_bytes >= self._next_capture_notice:
+            if (
+                now - self._last_capture_notice_at >= CAPTURE_NOTICE_INTERVAL_SEC
+                and event.regular_frames > 0
+                and (
+                    event.captured_bytes > self._last_noticed_captured_bytes
+                    or event.regular_frames > self._last_noticed_regular_frames
+                )
+            ):
                 messages.append(
                     UserNotice(
-                        f'Have captured {format_bytes(event.captured_bytes)}, {event.parser_frames} frames'
+                        f'Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames'
                     )
                 )
-                self._next_capture_notice = _next_capture_notice_threshold(self._next_capture_notice)
+                self._last_capture_notice_at = now
+                self._last_noticed_captured_bytes = event.captured_bytes
+                self._last_noticed_regular_frames = event.regular_frames
 
         return tuple(messages)
 
@@ -276,7 +272,7 @@ class CaptureEventPresenter:
         if event.kind == 'opened' and event.status is not None and event.status.paths:
             return (LogLine(f'Saving to {event.status.paths[-1]}'),)
         if event.kind == 'rotated' and event.status is not None and event.status.paths:
-            return (UserNotice(f'Capture file rotated to {event.status.paths[-1]}'),)
+            return (UserNotice(f'Recording file rotated to {event.status.paths[-1]}'),)
         if event.kind == 'error':
             return (UserNotice(tr('Writer error: {message}', message=event.message), level='warning'),)
         return ()
@@ -289,7 +285,7 @@ class CaptureEventPresenter:
                 UserNotice(
                     tr(
                         event.message
-                        or 'Realtime parser fell behind; raw capture continues, live stats may be incomplete.'
+                        or 'Realtime parser fell behind; raw recording continues, live stats may be incomplete.'
                     ),
                     level='warning',
                 ),
@@ -298,7 +294,7 @@ class CaptureEventPresenter:
             return (
                 UserNotice(
                     tr(
-                        'Realtime parser skipped {chunks} chunks ({bytes}); raw capture saved them, live stats are incomplete.',
+                        'Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.',
                         chunks=event.parse_dropped_chunks,
                         bytes=format_bytes(event.parse_dropped_bytes),
                     ),

@@ -195,7 +195,25 @@ def test_uncertain_sequence_does_not_report_an_exact_loss() -> None:
 def test_no_decoded_regular_frames_recommends_recapture() -> None:
     report = _report(_result(regular_frames=0))
 
-    assert report.verdict is CaptureVerdict.RECAPTURE
+    assert report.verdict is CaptureVerdict.CHECK_CONFIGURATION
+    assert 'Verdict: CHECK CONFIGURATION' in format_capture_report(report)
+    assert '结论：检查配置' in format_capture_report(report, language='zh_CN')
+    assert (
+        'No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log '
+        'configuration, then record again.'
+        in format_capture_summary(report)
+    )
+    assert '没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。' in (
+        format_capture_summary(report, language='zh_CN')
+    )
+
+
+def test_incomplete_parser_with_no_frames_keeps_warning_advice() -> None:
+    report = _report(_result(regular_frames=0, parse_backlog=True, parser_raw_bytes=60, parse_dropped_bytes=40))
+
+    assert report.verdict is CaptureVerdict.WARNING
+    assert 'recording quality warnings were detected' in format_capture_summary(report)
+    assert 'Check the transport mode' not in format_capture_summary(report)
 
 
 def test_parser_backlog_preserves_raw_but_marks_report_warning() -> None:
@@ -244,6 +262,10 @@ def test_internal_firmware_loss_is_detailed_but_does_not_grade_customer_data() -
 
 def test_warning_verdict_uses_bright_yellow() -> None:
     assert 'color: ansi_bright_yellow;' in CaptureReportScreen.DEFAULT_CSS
+
+
+def test_check_configuration_verdict_uses_error_color() -> None:
+    assert '#capture-report-verdict.check_configuration' in CaptureReportScreen.DEFAULT_CSS
 
 
 def test_sequence_rate_uses_only_frames_in_the_checked_segments() -> None:

@@ -77,7 +77,7 @@ def test_session_finishes_with_saved_report(tmp_path: Path) -> None:
         messages = session.poll()
 
     finished = next(message for message in messages if isinstance(message, CaptureFinished))
-    assert finished.report.report_path.read_text(encoding='utf-8').startswith('BLE Log Capture Report')
+    assert finished.report.report_path.read_text(encoding='utf-8').startswith('BLE Log Recording Report')
     assert session.report is finished.report
 
 

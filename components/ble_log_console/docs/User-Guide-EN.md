@@ -141,11 +141,30 @@ First, choose the language used for warnings and the quality report, then select
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
-To end a capture, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit. Large captures may be split into multiple `part` files.
+To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit. Large recordings may be split into multiple `part` files.
 
-> Note: End capture with **Stop & Review**, `q`, or `Ctrl+C`. While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
+> Note: End recording with **Stop & Review**, `q`, or `Ctrl+C`. While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
 
 On Linux, UART and SPI Bridge may show different port name formats. Select a device from the current mode's list.
+
+### 4.3 How to Tell Whether a Recording Is Valid
+
+During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received and saved by the PC. `Frames` is the number of valid log frames recognized by the tool.
+
+- **Normal:** Both `RX` and `Frames` keep increasing, which means the tool is receiving and recognizing logs normally.
+- **No data received:** `RX` remains 0. The tool shows a warning every 10 seconds. Check the port, cable, and firmware logging configuration.
+- **Received data cannot be decoded:** `RX` increases, but `Frames` remains 0 or stops increasing for 10 seconds. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
+
+> During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
+
+End the recording with **Stop & Review** and wait for `FINALIZING` to finish. **Always check the recording quality report before sending logs.** The tool shows one of four conclusions:
+
+- `READY FOR ANALYSIS`: The data was saved successfully and can be decoded. It is ready to submit for analysis.
+- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted to our technical support.
+- `CHECK CONFIGURATION`: No valid log frames were recorded. **Do not submit these files.** Check the transport mode, port, UART baud rate, wiring, and firmware logging configuration, then record again.
+- `RECORD AGAIN RECOMMENDED`: Valid log frames were recorded, but the data could not be saved correctly or the detected loss rate was high. **Do not submit these files directly.** Resolve the save or transport problem and record again. If this happens repeatedly, contact technical support for assessment.
+
+Only files marked `READY FOR ANALYSIS` or `SAVED WITH WARNINGS` should be submitted directly. If either of the other conclusions appears repeatedly, contact technical support first and provide the matching `report.txt` and `.bin` files when requested for troubleshooting.
 
 ## 5. User Interface and Log Files
 
@@ -163,17 +182,7 @@ The status bar shows the connection state, amount of data received by the PC, cu
 
 The tool supports adaptive window resizing. When the window is small, some status information may not fit on screen. Enlarge the window or scroll to view the remaining information.
 
-### 5.2 Normal Status Description
-
-As shown above, `Frames` is the number of valid log frames recognized by the tool. `RX` is the amount of data received and saved by the PC.
-
-**Normal status:** If both `RX` and `Frames` keep increasing, the tool is receiving and recognizing logs normally. If `RX` increases but `Frames` does not increase for a long time, first check the transport mode, UART baud rate, firmware configuration, and wiring.
-
-> If the connection is normal but the indicators above are abnormal, check whether the `BLE Log` module is enabled properly and whether the wiring is fully correct.
-
-> Note: During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
-
-### 5.3 Log File Save Rules
+### 5.2 Log File Save Rules
 
 Recording files are saved to the log directory selected at startup. If the save path is not changed, they are saved to the `logs` directory under the current directory. File names are generated from the start time:
 
@@ -194,16 +203,6 @@ ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
 After the program exits, it prints the actual save paths in the terminal. Large recordings are automatically split into multiple files. If another recording starts within the same second, a numeric suffix is added so existing files are not overwritten.
-
-### 5.4 Capture Quality Report
-
-After recording stops, the tool shows one of three conclusions:
-
-- `READY FOR ANALYSIS`: The data was saved successfully and can be decoded. It is ready to submit for analysis.
-- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted to our technical support.
-- `RECAPTURE RECOMMENDED`: The recording did not contain enough usable data, the data could not be saved correctly, or the detected loss rate was high. Check the connection, mode, port, baud rate, and firmware configuration, then record again. If this happens repeatedly, contact technical support for assessment.
-
-The report screen shows the captured frame count, data size, and file locations. For further troubleshooting, provide both the generated `report.txt` and `.bin` files to technical support.
 
 ## 6. Further Information
 
@@ -289,4 +288,4 @@ The report separately states whether the raw data was saved completely and how m
 
 The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. When firmware segment statistics are available, overall quality statistics use only complete segments. If continuity cannot be determined, it is shown as unverified.
 
-Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another capture is needed.
+Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another recording is needed.
