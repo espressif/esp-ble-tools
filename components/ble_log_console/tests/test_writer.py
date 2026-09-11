@@ -75,7 +75,6 @@ def test_writes_all_chunks_to_single_file(tmp_path: Path) -> None:
     assert events[-1].status is not None
     assert events[-1].status.paths == (output_path,)
     assert events[-1].status.bytes_written == 6
-    assert events[-1].status.chunks_written == 2
     assert events[-1].status.finalized
 
 

@@ -1,5 +1,5 @@
 # BLE Log Console 快速使用指南
-版本：v1.0.4
+版本：v1.0.5
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
@@ -20,11 +20,9 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 设备连接示意图：
 
-
 <p align="center">
   <img src="./figure/uart-connection.png" alt="BLE UART设备连接" style="width: 70%; max-width: 900px;">
 </p>
-
 
 ### 2.1 固件配置
 
@@ -41,7 +39,6 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 > - 如果 UART0 已被其他功能占用，请根据实际硬件连接调整 `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT`，避免影响原有功能。
 > - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` 是 UART 输出 BLE Log 使用的波特率，电脑端 `ble_log_console` 选择的波特率必须与该值一致。
 
-
 ### 2.2 在 PC 端启动应用
 
 - Windows 使用说明见 [Windows 系统](#411-windows-系统)。
@@ -54,7 +51,6 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 ```text
 ESP 设备  ->  BLE Log SPI USB Bridge  ->  电脑
 ```
-
 
 <p align="center">
   <img src="./figure/spi-bridge-connection.png" alt="BLE SPI Log 设备连接" style="width: 70%; max-width: 900px;">
@@ -92,7 +88,6 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 > - 如果两个设备的 GND 未正确连接，可能导致数据接收异常。
 > - `CONFIG_BLE_LOG_ENABLED` 是 BLE Log 总开关，未开启时电脑端不会收到 BLE Log 数据。
 
-
 ### 3.2 在 PC 端启动应用
 
 - Windows 使用说明见 [Windows 系统](#411-windows-系统)。
@@ -106,23 +101,22 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 
 #### 4.1.1 Windows 系统
 
-Windows 下使用 `ble_log_console_windows_v1.0.3.exe`。推荐直接双击图标启动。
+Windows 下使用 `ble_log_console_windows_v1.0.5.exe`。推荐直接双击图标启动。
 
 > 注意：本工具包现支持 `Windows 10` 及以上版本。
 
-
 #### 4.1.2 Linux 系统
 
-Linux 下使用 `ble_log_console_ubuntu_v1.0.4`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+Linux 下使用 `ble_log_console_ubuntu_v1.0.5`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.4
+chmod +x ./ble_log_console_ubuntu_v1.0.5
 ```
 
 如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.4
+sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
 该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
@@ -130,7 +124,7 @@ sudo ./ble_log_console_ubuntu_v1.0.4
 随后执行以下命令即可启动本程序：
 
 ```bash
-./ble_log_console_ubuntu_v1.0.4
+./ble_log_console_ubuntu_v1.0.5
 ```
 
 > 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
@@ -143,20 +137,37 @@ sudo ./ble_log_console_ubuntu_v1.0.4
   <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 60%; max-width: 900px;">
 </p>
 
-&emsp;首先选择传输模式：若通过串口接收日志，选择 UART；若通过 SPI Bridge 设备接收日志，选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
+&emsp;首先选择长文本使用的语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
 
 &emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 
-&emsp;停止采集后，按 `q` 或 `Ctrl+C` 即可退出应用。日志会自动保存在指定目录下。较大的采集文件可能会被拆分为多个 `part` 文件，退出时会汇总显示已保存的文件。
+&emsp;需要结束录制时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，再等待质量检查完成，最长等待 20 秒，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。较大的录制文件可能会被拆分为多个 `part` 文件。
 
-&emsp;固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到本工具。工具会实时显示这些日志，并自动将其单独保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件，无需额外操作。具体保存规则见 [日志文件保存规则](#53-日志文件保存规则)。
+> 注意：结束录制时请使用 **Stop & Review**、`q` 或 `Ctrl+C`。界面显示 `FINALIZING`（正在保存）时请耐心等待。若直接关闭终端窗口，最后的数据和质量报告可能无法保存完整。
 
-> 注意：结束采集时请优先使用 `q` 或 `Ctrl+C` 正常退出应用。若直接关闭终端窗口，进程可能被系统强制终止，最后的数据写入流程可能无法完成。
+### 4.3 如何判断录制是否有效
 
+录制过程中先看界面底部的 `RX` 和 `Frames`：`RX` 表示电脑已收到并保存的数据量，`Frames` 表示工具已识别出的有效日志帧数。
 
-&emsp;需要注意的是，在 Linux 环境下，SPI 模式与 UART 模式的可用端口名称格式不同，这是由两种传输模式的端口命名规则所致，不影响正常使用。
+- **正常：** `RX` 和 `Frames` 持续增加，说明工具正在正常接收和识别日志。
 
+- **没有收到数据：** `RX` 为 0。工具会每 10 秒警告一次，请检查端口、线缆和固件日志配置。
 
+- **收到的数据无法解析：** `RX` 增加，但 `Frames` 持续为 0 或连续 10 秒不再增加。工具会每 10 秒警告一次。此时请停止录制，并检查传输模式、UART 波特率、固件配置和接线，不要继续无效录制。
+
+> 高流量下界面更新可能暂时变慢，但工具仍会优先保存数据；如果保存失败，界面会直接提示错误。
+
+需要结束录制时使用 **Stop & Review**，并等待 `FINALIZING` 完成。**提交日志前必须查看录制质量报告**，工具会给出以下四种结论：
+
+- 可用于分析：数据已正常保存并且能够解析，可以直接提交分析。
+
+- 已保存，但存在警告：数据已经保存，但录制过程中可能存在中断、丢失或无法确认的情况。文件仍可提交技术支持用于分析。
+
+- 检查配置：本次没有录到任何有效日志帧。**请勿提交本次文件**；检查传输模式、端口、UART 波特率、接线和固件日志配置，确认无误后重新录制。
+
+- 建议重新录制：本次录到了有效日志帧，但数据未能正常保存，或检测到的丢失比例较高。**请勿直接提交本次文件**；排除保存或传输问题后重新录制。如果反复出现，可以联系技术支持进行评估。
+
+只有“可用于分析”或“已保存，但存在警告”的文件可以直接提交。若另外两种结论反复出现，请先联系技术支持，并按要求提供对应的 `report.txt` 和 `.bin` 文件用于排查。
 
 ## 5. 使用界面与日志文件
 
@@ -168,25 +179,15 @@ sudo ./ble_log_console_ubuntu_v1.0.4
   <img src="./figure/log-screen.png" alt="BLE Log Console 日志界面" style="width: 70%; max-width: 900px;">
 </p>
 
-日志区域会实时显示解析出的 BLE Log、工具提示和告警信息。
+日志区域会实时显示设备转发的串口日志、运行提示和警告。
 
-&emsp;状态栏会显示当前连接状态、已捕获原始数据量、当前速度、峰值速度、帧率和固件上报的丢帧统计。
+&emsp;状态栏会显示当前连接状态、电脑已收到的数据量、当前速度、峰值速度和帧率。是否存在数据异常，以结束录制后的质量报告为准。
 
 &emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能显示不全，可放大窗口或通过滚动查看其余信息。
 
-### 5.2 正常状态说明
+### 5.2 日志文件保存规则
 
-&emsp;如上图所示，红色箭头处的 `frames` 统计表示当前已解析出的 `BLE log frame` 数量。左侧的 `RX` 表示已捕获并保存的原始数据量；当 `RX` 达到一定数据量时，会出现蓝色箭头处的提示。
-
-&emsp;**正常状态：** 使用过程中，若红色箭头处的 `frames` 数量**持续增加**，传输速度**不为 0**，且出现蓝色箭头处的**大小提示**，说明工具正在正常运行。
-
-> 如果连接正常，但上述指标存在异常，请检查 `BLE Log` 模块是否正常开启，或者连线是否完全正确。
-
-> 注意：出现高实时流量提示，表示实时解析或界面显示可能暂时落后于原始数据采集，并不代表原始数据保存异常。原始数据会先写入 `.bin` 文件再进行解析；若原始数据写入路径跟不上，工具会明确报告 raw writer 或 reader backpressure 错误。
-
-### 5.3 日志文件保存规则
-
-捕获文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间戳生成：
+录制文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间生成：
 
 ```text
 ble_log_YYYYMMDD_HHMMSS.bin
@@ -198,179 +199,28 @@ ble_log_YYYYMMDD_HHMMSS.bin
 ble_log_YYYYMMDD_HHMMSS_console.log
 ```
 
-程序退出后会在终端打印实际保存路径。较大的采集文件可能会被拆分为多个 `part` 文件。
+安全结束录制后还会生成对应的质量报告：
 
-### 5.4 常用快捷键
-
-&emsp;以下是在应用运行中常用的一些快捷键，可用于查看统计信息、复位设备、退出应用等。
-
-| 按键 | 功能 |
-| --- | --- |
-| `q` | 退出 |
-| `Ctrl+C` | 退出 |
-| `c` | 清空日志区域 |
-| `s` | 切换自动滚动 |
-| `d` | 查看接收日志统计信息 |
-| `m` | 查看缓冲区利用率 |
-| `h` | 显示快捷键帮助 |
-| `r` | 复位目标设备；SPI Bridge 模式下不支持 |
-
-
-
-## 6. 源码启动
-
-本工具也提供源码，有本地调试、临时修改或功能验证需求的用户，可参考本章说明从源码运行。
-
-### 6.1 源码获取
-
-&emsp;源码位于 BLE Log Console 源码目录下。使用前请先进入该目录。
-
-```bash
-cd <ble_log_console 源码目录>
+```text
+ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
-&emsp;源码目录中主要包含以下文件：
+程序退出后会在终端打印实际保存路径。较大的录制会自动分成多个文件。同一秒内再次录制时，文件名会自动增加序号，不会覆盖已有文件。
 
-| 文件或目录 | 说明 |
-| --- | --- |
-| `console.py` | 应用入口 |
-| `install.sh` | Linux 源码环境安装脚本 |
-| `run.sh` | Linux 源码启动脚本 |
-| `install.bat` | Windows 源码环境安装脚本 |
-| `run.bat` | Windows 源码启动脚本 |
-| `src/` | 工具源码 |
-| `tests/` | 单元测试 |
-| `logs/` | 默认日志保存目录，运行后自动创建 |
+## 6. 更多说明
 
-> 注意：
-> - 普通用户推荐优先使用打包好的可执行程序。
-> - 源码启动主要用于本地调试、临时修改工具逻辑或验证新功能。
+更多快捷键可按 `h` 查看。源码使用方法、工具命令行参数见[仓库 README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md)。
 
-
-### 6.2 源码使用
-
-&emsp;源码启动方式与打包程序基本一致。本工具基于 Python，并使用 `uv` 管理依赖。首次使用时请先运行安装脚本准备本地环境，之后通过启动脚本运行 `console.py`。
-
-#### 6.2.1 Windows 系统
-
-&emsp;在 Windows 下进入源码目录，首次使用时先准备环境：
-
-```bat
-.\install.bat
-```
-
-随后执行：
-
-```bat
-.\run.bat
-```
-
-&emsp;不带参数运行时会打开交互界面，可在界面中选择传输模式、端口、波特率和日志保存目录。
-
-&emsp;也可以直接通过命令行参数启动指定模式：
-
-```bat
-.\run.bat --mode uart --port COM3 --baudrate 3000000
-.\run.bat --mode spi --port <PORT>
-```
-
-
-#### 6.2.2 Linux 系统
-
-&emsp;在 Linux 下进入源码目录，首次使用时先准备环境：
-
-```bash
-./install.sh
-```
-
-随后执行：
-
-```bash
-./run.sh
-```
-
-&emsp;如果脚本没有执行权限，请先执行：
-
-```bash
-chmod +x ./install.sh ./run.sh
-```
-
-&emsp;命令行启动示例如下：
-
-```bash
-./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
-./run.sh --mode spi --port <PORT>
-```
-
-
-#### 6.2.3 直接运行 console.py
-
-&emsp;若已手动准备好所需的 Python 环境，可以直接运行 `console.py`：
-
-```bash
-cd <ble_log_console 源码目录>
-python console.py
-```
-
-&emsp;也可以在普通 Python 环境中安装依赖后运行：
-
-```bash
-python -m pip install .
-python console.py
-```
-
-&emsp;常用命令如下：
-
-```bash
-python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
-python console.py --mode spi --port <PORT>
-```
-
-> 注意：
-> - 直接运行 `console.py` 需要确保所有 Python 依赖已经安装。
-> - 如果只是正常使用工具，推荐先运行一次 `install.sh` 或 `install.bat`，之后使用 `run.sh` 或 `run.bat`。
-
-## 附录：常用命令
-
-&emsp;本节补充说明工具包的命令行用法。常用命令如下：
-
-| 操作 | Linux | Windows |
-| --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu_v1.0.4 --help` | `ble_log_console_windows_v1.0.3.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu_v1.0.4 ports` | `ble_log_console_windows_v1.0.3.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.4` | `ble_log_console_windows_v1.0.3.exe` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.3.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.4 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.3.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.4 ls` | `ble_log_console_windows_v1.0.3.exe ls` |
-
-### 命令行参数
-
-| 参数 | 缩写 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `--mode` | `-m` | `uart` | 传输模式：`uart` 或 `spi` |
-| `--port` | `-p` | 可选 | 传输端点。省略时打开交互界面 |
-| `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
-| `--log-dir` | `-d` | `./logs` | 捕获文件保存目录 |
-| `--debug` | 无 | 关闭 | 显示额外的解析、流量和固件状态调试事件 |
-
-子命令：
-
-| 命令 | 说明 |
-| --- | --- |
-| `ports` | 列出 UART 和 SPI Bridge 端点，可用 `--mode` 过滤 |
-| `ls` | 列出指定目录中的 `ble_log_*.bin` 捕获文件 |
-
-`--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。
-
-## 附录：常见问题
+## 附录：故障排查与注意事项
 
 快速查找：
 
 * [端口列表里看不到设备](#faq-no-port)
 * [程序启动但没有日志](#faq-no-logs)
-* [串口监视器日志为什么会出现在工具里，并保存在哪里](#faq-console-log)
+* [串口监视器日志的显示与保存](#faq-console-log)
 * [源码环境安装失败](#faq-source-setup)
-* [ESP32P4 Bridge 固件版本如何确认](#faq-esp32p4-version)
+* [ESP32P4 Bridge 固件版本确认](#faq-esp32p4-version)
+* [质量报告显示“无法确认”或检查未完成](#faq-quality-check)
 
 <a id="faq-no-port"></a>
 
@@ -382,7 +232,7 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.4`，并在执行后拔插过设备。
+- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.5`，并在执行后拔插过设备。
 
 <a id="faq-no-logs"></a>
 
@@ -403,11 +253,9 @@ python console.py --mode spi --port <PORT>
 
 固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件。
 
-从 v1.0.4 开始，每组这类 console log 的首行会显示电脑本地接收时间，例如 `[15:14:54.367]`；对应 `_console.log` 文件使用包含日期和时区的完整格式。后续没有重复时间戳的行仍属于同一组日志。该时间由工具在电脑收到数据时添加，不是固件运行时间。
+每组 console log 的第一行会显示电脑收到该组日志的时间，例如 `[15:14:54.367]`；后续没有时间戳的行仍属于同一组日志。这个时间不是设备的运行时间。
 
-`_console.log` 会移除 ANSI/ESC 等显示控制字符并统一换行，原始 `.bin` 数据不会因此改变。
-
-
+`_console.log` 会自动清理颜色等显示控制字符并统一换行，不会改变原始 `.bin` 文件。
 
 <a id="faq-source-setup"></a>
 
@@ -434,3 +282,13 @@ idf.py -p <PORT> monitor
 如果已错过启动日志，可按下开发板复位键，版本信息会在 ESP32P4 重新启动后再次打印。
 
 > 注意：查看版本时，ESP32P4 的串口不能同时被 `ble_log_console` 的 UART 模式或其他串口工具占用。
+
+<a id="faq-quality-check"></a>
+
+### 质量报告显示“无法确认”，或检查未完成，文件还能用吗？
+
+报告会分别说明原始数据是否完整保存，以及自动质量检查覆盖了多少数据。如果检查未能在 20 秒内完成，原始数据仍会保留；帧数和丢失检查只代表已经解析的部分，整份录制的连续性会显示为“无法确认”。
+
+详细报告会逐段列出接收帧数、固件写入失败帧数和序列号检查结果，并标明开头或结尾不完整的段。收到固件分段统计时，总体质量统计只使用完整段；无法确定连续性时显示“无法确认”。
+
+请保留原始 `.bin` 文件及对应的 `_report.txt`；有分片时请一并提供全部分片，由技术支持结合报告评估是否需要重新录制。

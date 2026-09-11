@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 
+
 def _load_rendering_module():
     path = Path(__file__).resolve().parents[1] / 'src' / 'frontend' / 'rendering.py'
     spec = importlib.util.spec_from_file_location('rendering_under_test', path)

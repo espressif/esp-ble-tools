@@ -54,6 +54,32 @@ class TestFlush:
         assert result['version'] == 3
 
 
+class TestFinalStat:
+    def test_decode_all_source_entries(self) -> None:
+        entries = b''.join(
+            (
+                struct.pack('<BIIII', 1, 100, 2, 4096, 128),
+                struct.pack('<BIIII', 5, 200, 0, 8192, 0),
+            )
+        )
+        payload = _make_internal_payload(os_ts=4321, int_src=6, sub_payload=bytes([2]) + entries)
+
+        result = decode_internal_frame(payload)
+
+        assert result is not None
+        assert result['int_src'] == InternalSource.FINAL_STAT
+        assert result['os_ts_ms'] == 4321
+        assert result['entries'][0].source_code == 1
+        assert result['entries'][0].written_bytes_cnt == 4096
+        assert result['entries'][0].failed_bytes_cnt == 128
+        assert result['entries'][1].source_code == 5
+
+    def test_rejects_truncated_entries(self) -> None:
+        payload = _make_internal_payload(os_ts=4321, int_src=6, sub_payload=b'\x01\x05')
+
+        assert decode_internal_frame(payload) is None
+
+
 class TestTs:
     def test_ts_ignored(self) -> None:
         sub = struct.pack('<BIII', 1, 100, 200, 300)  # io_level, lc_ts, esp_ts, os_ts

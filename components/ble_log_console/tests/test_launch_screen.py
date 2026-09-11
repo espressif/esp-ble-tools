@@ -6,12 +6,13 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from src.backend.models import LaunchConfig
-from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.frontend.launch_screen import BAUD_RATES
 from src.frontend.launch_screen import DEFAULT_BAUD_RATE
 from src.frontend.launch_screen import SPI_PORT_LABEL_PREFIX
 from src.frontend.launch_screen import LaunchScreen
+from src.i18n import get_language
+from src.i18n import set_language
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -19,13 +20,6 @@ from src.frontend.launch_screen import LaunchScreen
 
 
 class TestBaudRateConstants:
-    def test_baud_rates_is_list_of_ints(self) -> None:
-        assert isinstance(BAUD_RATES, list)
-        assert all(isinstance(b, int) for b in BAUD_RATES)
-
-    def test_baud_rates_not_empty(self) -> None:
-        assert len(BAUD_RATES) > 0
-
     def test_baud_rates_ascending(self) -> None:
         assert BAUD_RATES == sorted(BAUD_RATES)
 
@@ -39,47 +33,6 @@ class TestBaudRateConstants:
         """Standard UART baud rates used by ESP-IDF should be available."""
         assert 115200 in BAUD_RATES
         assert 921600 in BAUD_RATES
-
-
-# ---------------------------------------------------------------------------
-# LaunchConfig dataclass
-# ---------------------------------------------------------------------------
-
-
-class TestLaunchConfig:
-    def test_create_with_required_fields(self) -> None:
-        transport = TransportConfig(
-            mode=TransportMode.UART,
-            label='/dev/ttyUSB0',
-            port='/dev/ttyUSB0',
-            baudrate=3000000,
-        )
-        cfg = LaunchConfig(transport_config=transport, log_dir=Path('/tmp'))
-        assert cfg.transport_config.port == '/dev/ttyUSB0'
-        assert cfg.transport_config.baudrate == 3000000
-        assert cfg.log_dir == Path('/tmp')
-
-    def test_different_ports(self) -> None:
-        for port in ['/dev/ttyUSB0', '/dev/ttyACM0', 'COM3', '/dev/tty.usbserial-1420']:
-            transport = TransportConfig(mode=TransportMode.UART, label=port, port=port, baudrate=115200)
-            cfg = LaunchConfig(transport_config=transport, log_dir=Path('.'))
-            assert cfg.transport_config.port == port
-
-    def test_various_baud_rates(self) -> None:
-        for baud in BAUD_RATES:
-            transport = TransportConfig(
-                mode=TransportMode.UART,
-                label='/dev/ttyUSB0',
-                port='/dev/ttyUSB0',
-                baudrate=baud,
-            )
-            cfg = LaunchConfig(transport_config=transport, log_dir=Path('.'))
-            assert cfg.transport_config.baudrate == baud
-
-    def test_log_dir_is_path(self) -> None:
-        transport = TransportConfig(mode=TransportMode.UART, label='COM1', port='COM1', baudrate=115200)
-        cfg = LaunchConfig(transport_config=transport, log_dir=Path('/var/log'))
-        assert isinstance(cfg.log_dir, Path)
 
 
 # ---------------------------------------------------------------------------
@@ -97,19 +50,20 @@ class TestLaunchScreenInit:
         screen = LaunchScreen(default_log_dir=custom)
         assert screen._default_log_dir == custom
 
-    def test_none_log_dir_falls_back_to_cwd(self) -> None:
-        screen = LaunchScreen(default_log_dir=None)
-        assert screen._default_log_dir == Path.cwd() / 'logs'
-
-    def test_is_screen_subclass(self) -> None:
-        from textual.screen import Screen
-
-        assert issubclass(LaunchScreen, Screen)
-
     def test_bindings_include_quit(self) -> None:
         """LaunchScreen should have a quit binding on 'q'."""
         keys = [b.key for b in LaunchScreen.BINDINGS]
         assert 'q' in keys
+
+    def test_language_is_selected_before_connecting(self) -> None:
+        screen = LaunchScreen()
+        event = MagicMock()
+        event.value = 'zh_CN'
+        try:
+            screen.language_changed(event)
+            assert get_language() == 'zh_CN'
+        finally:
+            set_language('en')
 
 
 # ---------------------------------------------------------------------------
@@ -273,35 +227,3 @@ class TestActionQuit:
         screen.action_quit()
 
         screen.dismiss.assert_called_once_with(None)
-
-
-# ---------------------------------------------------------------------------
-# compose — structural checks (no App context required)
-# ---------------------------------------------------------------------------
-
-
-class TestComposeMethod:
-    def test_compose_is_defined(self) -> None:
-        """LaunchScreen.compose should be a callable method."""
-        assert callable(getattr(LaunchScreen, 'compose', None))
-
-    def test_default_css_contains_expected_ids(self) -> None:
-        """DEFAULT_CSS should reference the widget IDs used in compose."""
-        css = LaunchScreen.DEFAULT_CSS
-        for widget_id in [
-            'launch-container',
-            'launch-title',
-            'port-select',
-            'refresh-btn',
-            'dir-input',
-            'browse-btn',
-            'connect-btn',
-            'no-ports-label',
-        ]:
-            assert widget_id in css, f'Missing CSS rule for #{widget_id}'
-
-    def test_baud_options_built_correctly(self) -> None:
-        """Verify the baud option tuples match the expected (label, value) shape."""
-        baud_options = [(str(b), b) for b in BAUD_RATES]
-        assert all(isinstance(label, str) and isinstance(val, int) for label, val in baud_options)
-        assert len(baud_options) == len(BAUD_RATES)

@@ -19,7 +19,7 @@ from src.frontend.rendering import table_safe_box
 from src.frontend.rendering import terminal_border_style
 
 _SHORTCUTS = [
-    ('q', 'Quit'),
+    ('q', 'Stop & review; exit from report'),
     ('c', 'Clear log'),
     ('s', 'Toggle auto-scroll'),
     ('d', 'Frame statistics'),

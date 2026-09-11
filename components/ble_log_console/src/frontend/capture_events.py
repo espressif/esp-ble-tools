@@ -19,13 +19,10 @@ from textual.message import Message
 from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.aggregator import AggregatorUpdate
-from src.backend.pipeline.controller import CapturePipelineResult
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES
 from src.backend.io.writer import WriterEvent
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.analysis.worker import ParserStatus
-from src.backend.models import BackendStopped
-from src.backend.models import FrameLossDetected
 from src.backend.models import InternalFrameDecoded
 from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
@@ -33,23 +30,16 @@ from src.backend.models import UserNotice
 from src.backend.models import format_bytes
 from src.frontend.rendering import normalize_console_text
 from src.frontend.rendering import strip_ansi_sequences
+from src.i18n import tr
 
 REDIR_LINE_BUFFER_LIMIT = 16 * 1024
 REDIR_UI_BATCH_LINE_LIMIT = 128
 CONSOLE_LOG_FLUSH_INTERVAL_SEC = 1.0
 NO_DATA_WARNING_SEC = 10.0
-NO_DATA_WARNING_COOLDOWN_SEC = 60.0
+NO_DATA_WARNING_COOLDOWN_SEC = 10.0
 NO_FRAME_WARNING_SEC = 10.0
-NO_FRAME_WARNING_COOLDOWN_SEC = 60.0
-CAPTURE_NOTICE_THRESHOLDS = (
-    100 * 1024,
-    500 * 1024,
-    1 * 1024 * 1024,
-    10 * 1024 * 1024,
-    50 * 1024 * 1024,
-    100 * 1024 * 1024,
-)
-CAPTURE_NOTICE_STEP = 100 * 1024 * 1024
+NO_FRAME_WARNING_COOLDOWN_SEC = 10.0
+CAPTURE_NOTICE_INTERVAL_SEC = 10.0
 
 TextFileFactory = Callable[[Path], IO[str]]
 Clock = Callable[[], float]
@@ -87,13 +77,6 @@ def _flush_and_close_text_file(file_obj: IO[str]) -> None:
             pass
     finally:
         file_obj.close()
-
-
-def _next_capture_notice_threshold(current: int) -> int:
-    for threshold in CAPTURE_NOTICE_THRESHOLDS:
-        if current < threshold:
-            return threshold
-    return current + CAPTURE_NOTICE_STEP
 
 
 def _normalize_console_log_text(text: str) -> str:
@@ -142,11 +125,13 @@ class CaptureEventPresenter:
         self._last_console_flush_at = now
         self._last_data_at = now
         self._last_frame_at = now
-        self._last_idle_warning_at = 0.0
-        self._last_frame_warning_at = 0.0
+        self._last_idle_warning_at = now - NO_DATA_WARNING_COOLDOWN_SEC
+        self._last_frame_warning_at = now - NO_FRAME_WARNING_COOLDOWN_SEC
+        self._last_capture_notice_at = now
+        self._last_noticed_captured_bytes = 0
+        self._last_noticed_regular_frames = 0
         self._last_captured_bytes = 0
-        self._last_parser_frames = 0
-        self._next_capture_notice = CAPTURE_NOTICE_THRESHOLDS[0]
+        self._last_regular_frames = 0
 
     @property
     def state(self) -> CaptureEventState:
@@ -183,25 +168,11 @@ class CaptureEventPresenter:
             messages.extend(self.handle_event(event))
         return tuple(messages)
 
-    def handle_result(self, result: CapturePipelineResult) -> tuple[Message, ...]:
-        """Translate final pipeline result and close UI-owned sinks."""
+    def finish(self) -> None:
+        """Close UI-owned sinks and mark the transport disconnected."""
 
         self.close()
         self._disconnected = True
-        if result.completed:
-            return (BackendStopped('Capture completed'),)
-
-        errors = [
-            result.reader_error,
-            result.writer_error,
-            result.parser_error,
-            result.aggregator_error,
-        ]
-        reason = '; '.join(error for error in errors if error) or 'Capture stopped before completion'
-        return (
-            UserNotice(f'Capture failed: {reason}', level='warning'),
-            BackendStopped(reason),
-        )
 
     def close(self) -> None:
         """Flush and close UI-owned output files."""
@@ -225,14 +196,17 @@ class CaptureEventPresenter:
                 list(event.buf_util_snapshots),
             )
         ]
+        if self._redir_line_buf:
+            self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
+            self._redir_line_buf = ''
 
         if event.captured_bytes > self._last_captured_bytes:
             self._last_data_at = now
-        if event.parser_frames > self._last_parser_frames:
+        if event.regular_frames > self._last_regular_frames:
             self._last_frame_at = now
 
         self._last_captured_bytes = event.captured_bytes
-        self._last_parser_frames = event.parser_frames
+        self._last_regular_frames = event.regular_frames
 
         if not self._debug:
             if (
@@ -242,7 +216,7 @@ class CaptureEventPresenter:
             ):
                 messages.append(
                     UserNotice(
-                        'No data received for 10s. Check transport mode, port, cable, and firmware logging.',
+                        tr('No data received for 10s. Check transport mode, port, cable, and firmware logging.'),
                         level='warning',
                     )
                 )
@@ -255,20 +229,31 @@ class CaptureEventPresenter:
             ):
                 messages.append(
                     UserNotice(
-                        'Data is arriving, but no BLE log frames were decoded for 10s. '
-                        'Check transport mode, wiring, and firmware log configuration.',
+                        tr(
+                            'No valid BLE Log frames were decoded for 10s. '
+                            'Check transport mode, wiring, and firmware log configuration.'
+                        ),
                         level='warning',
                     )
                 )
                 self._last_frame_warning_at = now
 
-            while event.captured_bytes >= self._next_capture_notice:
+            if (
+                now - self._last_capture_notice_at >= CAPTURE_NOTICE_INTERVAL_SEC
+                and event.regular_frames > 0
+                and (
+                    event.captured_bytes > self._last_noticed_captured_bytes
+                    or event.regular_frames > self._last_noticed_regular_frames
+                )
+            ):
                 messages.append(
                     UserNotice(
-                        f'Have captured {format_bytes(event.captured_bytes)}, {event.parser_frames} frames'
+                        f'Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames'
                     )
                 )
-                self._next_capture_notice = _next_capture_notice_threshold(self._next_capture_notice)
+                self._last_capture_notice_at = now
+                self._last_noticed_captured_bytes = event.captured_bytes
+                self._last_noticed_regular_frames = event.regular_frames
 
         return tuple(messages)
 
@@ -276,16 +261,6 @@ class CaptureEventPresenter:
         messages: list[Message] = []
         for internal in event.internal_frames:
             messages.append(InternalFrameDecoded(internal.int_src, internal.decoded))
-        for loss in event.frame_losses:
-            messages.append(
-                FrameLossDetected(
-                    loss.source_name,
-                    loss.loss_type,
-                    loss.lost_frames,
-                    loss.lost_bytes,
-                    sn_range=loss.sn_range,
-                )
-            )
         for redir in event.redir_events:
             messages.extend(self._write_redir_text(redir.text, redir.received_at_ms))
         return tuple(messages)
@@ -297,9 +272,9 @@ class CaptureEventPresenter:
         if event.kind == 'opened' and event.status is not None and event.status.paths:
             return (LogLine(f'Saving to {event.status.paths[-1]}'),)
         if event.kind == 'rotated' and event.status is not None and event.status.paths:
-            return (UserNotice(f'Capture file rotated to {event.status.paths[-1]}'),)
+            return (UserNotice(f'Recording file rotated to {event.status.paths[-1]}'),)
         if event.kind == 'error':
-            return (UserNotice(f'Writer error: {event.message}', level='warning'),)
+            return (UserNotice(tr('Writer error: {message}', message=event.message), level='warning'),)
         return ()
 
     def _handle_reader_event(self, event: ReaderProcessEvent) -> tuple[Message, ...]:
@@ -308,36 +283,40 @@ class CaptureEventPresenter:
         if event.kind == 'parse_backlog':
             return (
                 UserNotice(
-                    event.message
-                    or 'Realtime parser fell behind; raw capture continues, live stats may be incomplete.',
+                    tr(
+                        event.message
+                        or 'Realtime parser fell behind; raw recording continues, live stats may be incomplete.'
+                    ),
                     level='warning',
                 ),
             )
         if event.kind == 'parse_backlog_summary' and event.parse_dropped_chunks:
             return (
                 UserNotice(
-                    'Realtime parser skipped '
-                    f'{event.parse_dropped_chunks} chunks ({format_bytes(event.parse_dropped_bytes)}); '
-                    'raw capture saved them, live stats are incomplete.',
+                    tr(
+                        'Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.',
+                        chunks=event.parse_dropped_chunks,
+                        bytes=format_bytes(event.parse_dropped_bytes),
+                    ),
                     level='warning',
                 ),
             )
         if event.kind in {'reset_done', 'reset_unsupported'}:
             return (UserNotice(event.message),)
         if event.kind == 'reset_error':
-            return (UserNotice(f'Reset failed: {event.message}', level='warning'),)
+            return (UserNotice(tr('Reset failed: {message}', message=event.message), level='warning'),)
         if event.kind == 'error':
-            return (UserNotice(f'Reader error: {event.message}', level='warning'),)
+            return (UserNotice(tr('Reader error: {message}', message=event.message), level='warning'),)
         return ()
 
     def _handle_parser_status(self, event: ParserStatus) -> tuple[Message, ...]:
         if event.kind == 'error':
-            return (UserNotice(f'Parser error: {event.message}', level='warning'),)
+            return (UserNotice(tr('Parser error: {message}', message=event.message), level='warning'),)
         return ()
 
     def _handle_aggregator_status(self, event: AggregatorProcessEvent) -> tuple[Message, ...]:
         if event.kind == 'error':
-            return (UserNotice(f'Aggregator error: {event.message}', level='warning'),)
+            return (UserNotice(tr('Aggregator error: {message}', message=event.message), level='warning'),)
         return ()
 
     def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:

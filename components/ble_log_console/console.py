@@ -193,8 +193,10 @@ def cli(
         debug=debug,
     )
     app.run()
-    _echo_saved_paths('Capture', app.saved_capture_paths)
+    _echo_saved_paths('Recording', app.saved_capture_paths)
     _echo_saved_paths('Console log', app.saved_console_log_paths)
+    if app.saved_report_path is not None:
+        _echo_saved_paths('Recording report', [app.saved_report_path])
 
 
 @cli.command(name='ports')
@@ -240,15 +242,15 @@ def list_ports(mode: str | None) -> None:
     help='Directory to list. Default: current directory.',
 )
 def list_files(log_dir: str | None) -> None:
-    """List saved binary capture files."""
+    """List saved binary recording files."""
     search_dir = Path(log_dir) if log_dir else Path.cwd()
 
     files = sorted(search_dir.glob('ble_log_*.bin'), key=lambda f: f.stat().st_mtime, reverse=True)
     if not files:
-        click.echo(f'No captures found in {search_dir}')
+        click.echo(f'No recordings found in {search_dir}')
         return
 
-    click.echo(f'Captures in {search_dir}:\n')
+    click.echo(f'Recordings in {search_dir}:\n')
     for f in files:
         size = f.stat().st_size
         mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')

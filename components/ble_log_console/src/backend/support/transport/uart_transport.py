@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 
 import serial
@@ -24,7 +25,10 @@ UART_BLOCK_SIZE = 50 * 1024
 
 def list_serial_ports() -> list[str]:
     ports = serial.tools.list_ports.comports()
-    return [port.device for port in ports]
+    devices = [port.device for port in ports]
+    if sys.platform.startswith('linux'):
+        return [device for device in devices if device.startswith(('/dev/ttyUSB', '/dev/ttyACM'))]
+    return devices
 
 
 def validate_uart_port(port: str) -> str | None:

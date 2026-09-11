@@ -9,6 +9,7 @@ from typing import NamedTuple
 from typing import TypeAlias
 
 from src.backend.models import EnhStatResult
+from src.backend.models import FinalStatEntry
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
 from src.backend.models import SourceCode
@@ -37,6 +38,14 @@ class EnhStatEvent(NamedTuple):
     stat: EnhStatResult
 
 
+class FinalStatEvent(NamedTuple):
+    """Terminal counters for one firmware flush interval."""
+
+    frame_size: int
+    os_ts_ms: int
+    entries: tuple[FinalStatEntry, ...]
+
+
 class RedirEvent(NamedTuple):
     """Metadata and text for a parsed REDIR frame."""
 
@@ -54,7 +63,7 @@ class ReceivedChunk(NamedTuple):
     received_at_ms: int
 
 
-BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | RedirEvent
+BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent
 
 
 class ParseChunkResult(NamedTuple):

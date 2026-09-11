@@ -11,6 +11,8 @@ import struct
 
 from src.backend.models import BufUtilResult
 from src.backend.models import EnhStatResult
+from src.backend.models import FinalStatEntry
+from src.backend.models import FinalStatResult
 from src.backend.models import InfoResult
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
@@ -26,6 +28,10 @@ _ENH_STAT_STRUCT = struct.Struct('<BBIIII')
 
 # ble_log_buf_util_t: [1B int_src_code][1B lbm_id][1B trans_cnt][1B inflight_peak]
 _BUF_UTIL_STRUCT = struct.Struct('<BBBB')
+
+# ble_log_final_stat_t: [1B int_src_code][1B source_count][source_count * entry]
+_FINAL_STAT_HEAD_STRUCT = struct.Struct('<BB')
+_FINAL_STAT_ENTRY_STRUCT = struct.Struct('<BIIII')
 
 
 def decode_internal_frame(payload: bytes) -> InternalDecoderResult | None:
@@ -91,6 +97,23 @@ def decode_internal_frame(payload: bytes) -> InternalDecoderResult | None:
             index=index,
             trans_cnt=trans_cnt,
             inflight_peak=inflight_peak,
+            os_ts_ms=os_ts_ms,
+        )
+
+    if int_src == InternalSource.FINAL_STAT:
+        if len(sub_payload) < _FINAL_STAT_HEAD_STRUCT.size:
+            return None
+        _, source_count = _FINAL_STAT_HEAD_STRUCT.unpack_from(sub_payload)
+        expected_size = _FINAL_STAT_HEAD_STRUCT.size + source_count * _FINAL_STAT_ENTRY_STRUCT.size
+        if len(sub_payload) < expected_size:
+            return None
+        entries = tuple(
+            FinalStatEntry(*_FINAL_STAT_ENTRY_STRUCT.unpack_from(sub_payload, offset))
+            for offset in range(_FINAL_STAT_HEAD_STRUCT.size, expected_size, _FINAL_STAT_ENTRY_STRUCT.size)
+        )
+        return FinalStatResult(
+            int_src=int_src,
+            entries=entries,
             os_ts_ms=os_ts_ms,
         )
 

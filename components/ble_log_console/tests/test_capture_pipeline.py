@@ -7,7 +7,9 @@ from pathlib import Path
 from queue import Queue
 from threading import Event
 from typing import IO
+from unittest.mock import MagicMock
 
+from src.backend.analysis.worker import ParserStatus
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.pipeline.controller import run_capture_pipeline_inprocess
@@ -26,6 +28,24 @@ from src.backend.support.transport import TransportStatus
 
 from tests.helpers import build_frame
 from tests.helpers import xor_checksum
+
+
+def test_capture_retains_only_latest_snapshot_and_keeps_errors() -> None:
+    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    pipeline = CapturePipeline(config, WriterConfig(Path('capture.bin')))
+    pipeline._ui_queue = Queue()
+    error = ParserStatus(kind='error', message='parser failed')
+    pipeline._ui_queue.put(error)
+    latest = None
+    for index in range(30):
+        latest = AggregatorSnapshot(FrameStats(), (), (), index, index, index, 0)
+        pipeline._ui_queue.put(latest)
+        pipeline.drain_events()
+
+    result = _result_from_events(pipeline._result_events)
+    assert len(pipeline._result_events) == 2
+    assert result.final_snapshot is latest
+    assert result.parser_error == 'parser failed'
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
@@ -173,6 +193,24 @@ def test_pipeline_aggregates_parser_events_and_raw_bytes(tmp_path: Path) -> None
     assert output_path.read_bytes() == frames
 
 
+def test_pipeline_final_snapshot_seals_sequence_gaps(tmp_path: Path) -> None:
+    stop_event = Event()
+    payload = b'\x00\x00\x00\x00data'
+    frames = _make_frame(payload, BleLogSource.HOST, 0) + _make_frame(payload, BleLogSource.HOST, 2)
+    output_path = tmp_path / 'ble_log.bin'
+
+    result = run_capture_pipeline_inprocess(
+        FakeReader([frames], stop_event),
+        WriterConfig(output_path),
+        stop_requested=stop_event,
+    )
+
+    assert result.final_snapshot is not None
+    source = result.final_snapshot.sequence.sources[0]
+    assert source.observed_frames == 2
+    assert source.missing_frames == 1
+
+
 def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     status = WriterStatus(
@@ -233,6 +271,21 @@ def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> No
 
     assert [type(event) for event in events] == [AggregatorUpdate, WriterEvent]
     assert pipeline._result_events == [events[1]]  # type: ignore[attr-defined]
+
+
+def test_abort_analysis_stops_process_and_records_incomplete_check(tmp_path: Path) -> None:
+    pipeline = CapturePipeline(
+        TransportConfig(mode=TransportMode.UART, label='fake', port='fake'),
+        WriterConfig(tmp_path / 'capture.bin'),
+    )
+    process = MagicMock()
+    process.is_alive.side_effect = (True, False)
+    pipeline._analysis_process = process  # type: ignore[attr-defined]
+
+    pipeline.abort_analysis('quality check timed out')
+
+    process.terminate.assert_called_once_with()
+    assert pipeline._result_events[-1] == ParserStatus(kind='error', message='quality check timed out')  # type: ignore[attr-defined]
 
 
 def test_writer_error_marks_pipeline_incomplete(tmp_path: Path) -> None:

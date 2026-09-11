@@ -57,6 +57,9 @@ class CapturePipelineResult:
     parse_dropped_chunks: int = 0
     parse_dropped_bytes: int = 0
     parser_lag_bytes: int = 0
+    writer_finalized: bool = False
+    aggregator_finalized: bool = False
+    final_snapshot: AggregatorSnapshot | None = None
 
 
 def _drain_events(ui_queue: Any) -> list[Any]:
@@ -100,6 +103,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
     parse_dropped_bytes = 0
     writer_finalized = False
     aggregator_finalized = False
+    final_snapshot: AggregatorSnapshot | None = None
 
     for event in events:
         if isinstance(event, ReaderProcessEvent):
@@ -123,6 +127,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
             if event.kind == 'error' and parser_error is None:
                 parser_error = event.message
         elif isinstance(event, AggregatorSnapshot):
+            final_snapshot = event
             parser_raw_bytes = event.parser_raw_bytes
             parser_frames = event.parser_frames
             parser_carried_bytes = event.parser_carried_bytes
@@ -156,6 +161,9 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         parse_dropped_chunks=parse_dropped_chunks,
         parse_dropped_bytes=parse_dropped_bytes,
         parser_lag_bytes=parser_lag_bytes,
+        writer_finalized=writer_finalized,
+        aggregator_finalized=aggregator_finalized,
+        final_snapshot=final_snapshot,
     )
 
 
@@ -239,7 +247,7 @@ class CapturePipeline:
 
     def start(self) -> None:
         if self._io_process is not None or self._analysis_process is not None:
-            raise RuntimeError('capture pipeline is already started')
+            raise RuntimeError('recording pipeline is already started')
 
         self._parse_queue = self._ctx.Queue(maxsize=self._parse_queue_size)
         self._raw_stats_queue = self._ctx.Queue()
@@ -287,7 +295,7 @@ class CapturePipeline:
 
     def reset_target(self) -> None:
         if self._command_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
         self._command_queue.put(ReaderCommand(kind='reset_target'))
 
     def is_alive(self) -> bool:
@@ -296,18 +304,41 @@ class CapturePipeline:
             for process in (self._io_process, self._analysis_process)
         )
 
+    def io_is_alive(self) -> bool:
+        return self._io_process is not None and self._io_process.is_alive()
+
+    def analysis_is_alive(self) -> bool:
+        return self._analysis_process is not None and self._analysis_process.is_alive()
+
+    def abort_analysis(self, message: str) -> None:
+        """Stop a live quality check after raw capture has safely finished."""
+
+        process = self._analysis_process
+        if process is not None and process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(1.0)
+        self._result_events.append(ParserStatus(kind='error', message=message))
+
     def drain_events(self) -> list[Any]:
         """Drain events for UI consumption without losing final result state."""
 
         if self._ui_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
         events = _drain_events(self._ui_queue)
         self._result_events.extend(_events_for_result(events))
+        snapshots = [event for event in self._result_events if isinstance(event, AggregatorSnapshot)]
+        if snapshots:
+            latest = snapshots[-1]
+            self._result_events = [event for event in self._result_events if not isinstance(event, AggregatorSnapshot)]
+            self._result_events.append(latest)
         return events
 
     def wait_with_events(self, timeout: float | None = None) -> tuple[list[Any], CapturePipelineResult]:
         if self._io_process is None or self._analysis_process is None or self._ui_queue is None:
-            raise RuntimeError('capture pipeline is not started')
+            raise RuntimeError('recording pipeline is not started')
 
         self._io_process.join(timeout)
         if self._io_process.is_alive():
@@ -323,7 +354,7 @@ class CapturePipeline:
                 events,
                 CapturePipelineResult(
                     raw_paths=result.raw_paths,
-                    reader_error=result.reader_error or 'capture pipeline did not stop before timeout',
+                    reader_error=result.reader_error or 'recording pipeline did not stop before timeout',
                     writer_error=result.writer_error,
                     parser_error=result.parser_error,
                     aggregator_error=result.aggregator_error,
@@ -336,6 +367,9 @@ class CapturePipeline:
                     parse_dropped_chunks=result.parse_dropped_chunks,
                     parse_dropped_bytes=result.parse_dropped_bytes,
                     parser_lag_bytes=result.parser_lag_bytes,
+                    writer_finalized=result.writer_finalized,
+                    aggregator_finalized=result.aggregator_finalized,
+                    final_snapshot=result.final_snapshot,
                 ),
             )
         return events, result

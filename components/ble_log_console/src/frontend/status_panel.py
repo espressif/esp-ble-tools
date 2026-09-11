@@ -56,10 +56,15 @@ class StatusPanel(Widget):
 
     stats: reactive[FrameStats] = reactive(FrameStats)
     disconnected: reactive[bool] = reactive(False)
+    finalizing: reactive[bool] = reactive(False)
 
     def render(self) -> Text:
         s = self.stats
         width = self.size.width
+        if self.finalizing:
+            return Text.from_markup(
+                '[bold yellow]FINALIZING[/bold yellow]\nSaving data and completing quality check (up to 20s)'
+            )
         if self.disconnected:
             if width < COMPACT_STATUS_WIDTH:
                 line1 = _compact_customer_state_markup(s, self.disconnected)
@@ -70,15 +75,10 @@ class StatusPanel(Widget):
             return Text.from_markup('\n'.join((line1, line2)))
 
         t = s.transport
-        loss = s.loss
-        loss_style = 'red' if loss.total_frames > 0 else 'yellow'
 
         if width < COMPACT_STATUS_WIDTH:
             line1 = f'{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}'
-            line2 = (
-                f'{_format_speed(t.rx_bits_per_sec)} | '
-                f'[{loss_style}]Lost {loss.total_frames}[/{loss_style}]'
-            )
+            line2 = _format_speed(t.rx_bits_per_sec)
         elif width < MEDIUM_STATUS_WIDTH:
             line1 = (
                 f'Status: {_customer_state_markup(s, self.disconnected)} | '
@@ -87,8 +87,7 @@ class StatusPanel(Widget):
             line2 = (
                 f'RX: {format_bytes(t.rx_bytes)}  '
                 f'Frames: {t.rx_frames}  '
-                f'Speed: {_format_speed(t.rx_bits_per_sec)}  '
-                f'[{loss_style}]Lost: {loss.total_frames}[/{loss_style}]'
+                f'Speed: {_format_speed(t.rx_bits_per_sec)}'
             )
         else:
             line1 = (
@@ -100,8 +99,7 @@ class StatusPanel(Widget):
                 f'Frames: {t.rx_frames}  '
                 f'Speed: {_format_speed(t.rx_bits_per_sec)}  '
                 f'Max: {_format_speed(t.max_rx_bits_per_sec)}  '
-                f'Rate: {t.fps:.0f} fps  '
-                f'[{loss_style}]Lost: {loss.total_frames} frames, {format_bytes(loss.total_bytes)}[/{loss_style}]'
+                f'Rate: {t.fps:.0f} fps'
             )
 
         return Text.from_markup('\n'.join((line1, line2)))

@@ -15,7 +15,7 @@ if ! command -v uv >/dev/null 2>&1 || [ ! -d "$SCRIPT_DIR/.venv" ]; then
 fi
 
 echo "Building executable ..."
-uv run --no-sync python build_exe.py "$@"
+uv run python build_exe.py "$@"
 
 if [ ! -f "dist/artifact_name.txt" ]; then
     echo "ERROR: Build produced no artifact metadata." >&2

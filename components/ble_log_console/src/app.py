@@ -14,14 +14,20 @@ from typing import Iterator
 from typing import cast
 from typing import TextIO
 
+from textual import on
 from textual.app import App
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import Center
+from textual.containers import Horizontal
 from textual.message import Message
+from textual.widgets import Button
 
 from src.backend.models import BackendStopped
 from src.backend.models import BufUtilEntry
-from src.backend.models import FrameLossDetected
+from src.backend.models import CaptureFinished
+from src.backend.models import CaptureReport
+from src.backend.models import FrameStats
 from src.backend.models import FunnelSnapshot
 from src.backend.models import InfoResult
 from src.backend.models import InternalFrameDecoded
@@ -33,12 +39,14 @@ from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.models import UserNotice
 from src.frontend.capture_session import CaptureSession
+from src.frontend.capture_report import CaptureReportScreen
 from src.frontend.launch_screen import LaunchScreen
 from src.frontend.log_view import LogView
 from src.frontend.shortcut_screen import ShortcutScreen
 from src.frontend.stats_screen import BufUtilScreen
 from src.frontend.stats_screen import StatsScreen
 from src.frontend.status_panel import StatusPanel
+from src.i18n import tr
 
 PIPELINE_POLL_INTERVAL_SEC = 0.05
 
@@ -96,6 +104,19 @@ def _spawn_stderr_with_real_fileno() -> Iterator[None]:
         sys.stderr = stream  # type: ignore[assignment]
 
 
+def unique_capture_path(log_dir: Path, now: datetime | None = None) -> Path:
+    """Return a timestamped capture path without overwriting an earlier run."""
+
+    timestamp = (now or datetime.now()).strftime('%Y%m%d_%H%M%S')
+    base = log_dir / f'ble_log_{timestamp}.bin'
+    candidate = base
+    index = 2
+    while any(log_dir.glob(f'{candidate.stem}*')):
+        candidate = base.with_name(f'{base.stem}_{index:03d}{base.suffix}')
+        index += 1
+    return candidate
+
+
 class BLELogApp(App):
     """BLE Log Console UI using the process-based capture pipeline."""
 
@@ -103,10 +124,19 @@ class BLELogApp(App):
     Screen {
         layout: vertical;
     }
+
+    #capture-controls {
+        height: 3;
+        align: center middle;
+    }
+
+    #stop-review {
+        min-width: 22;
+    }
     """
 
     BINDINGS = [
-        Binding('q', 'quit', 'Quit'),
+        Binding('q', 'quit', 'Stop & Review'),
         Binding('Q', 'quit', show=False),
         Binding('ctrl+c', 'quit', show=False, priority=True),
         Binding('c', 'clear_log', 'Clear'),
@@ -139,20 +169,26 @@ class BLELogApp(App):
         self._log_dir = log_dir or Path.cwd() / 'logs'
         self._output_path: Path | None = None
         self._capture_start_time = 0.0
-        self._exit_after_backend_stop = False
+        self._finalizing = False
         self._capture_session: CaptureSession | None = None
+        self._capture_report: CaptureReport | None = None
         self._saved_capture_path: Path | None = None
         self._saved_capture_paths: list[Path] = []
         self._saved_console_log_path: Path | None = None
         self._saved_console_log_paths: list[Path] = []
+        self._saved_report_path: Path | None = None
         self._funnel_snapshots: list[FunnelSnapshot] = []
         self._buf_util_snapshots: list[BufUtilEntry] = []
 
     def compose(self) -> ComposeResult:
         yield LogView()
+        with Center():
+            with Horizontal(id='capture-controls'):
+                yield Button('Stop & Review', variant='warning', id='stop-review', disabled=True)
         yield StatusPanel()
 
     def on_mount(self) -> None:
+        self.set_interval(PIPELINE_POLL_INTERVAL_SEC, self._poll_pipeline)
         if self._transport_config is not None:
             self._resolve_output_path()
             self._start_capture()
@@ -183,6 +219,10 @@ class BLELogApp(App):
     def saved_console_log_paths(self) -> list[Path]:
         return list(self._saved_console_log_paths)
 
+    @property
+    def saved_report_path(self) -> Path | None:
+        return self._saved_report_path
+
     def _on_launch_result(self, config: LaunchConfig | None) -> None:
         if config is None:
             self.exit()
@@ -194,13 +234,14 @@ class BLELogApp(App):
 
     def _resolve_output_path(self) -> None:
         self._log_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self._output_path = self._log_dir / f'ble_log_{ts}.bin'
+        self._output_path = unique_capture_path(self._log_dir)
         self._saved_capture_path = None
         self._saved_capture_paths = []
         self._saved_console_log_path = None
         self._saved_console_log_paths = []
-        self._exit_after_backend_stop = False
+        self._saved_report_path = None
+        self._capture_report = None
+        self._finalizing = False
         self._capture_session = None
 
     def _start_capture(self) -> None:
@@ -209,6 +250,14 @@ class BLELogApp(App):
             return
 
         self._capture_start_time = time.perf_counter()
+        self.query_one(LogView).clear()
+        panel = self.query_one(StatusPanel)
+        panel.stats = FrameStats()
+        panel.disconnected = False
+        panel.finalizing = False
+        stop_button = self.query_one('#stop-review', Button)
+        stop_button.disabled = False
+        stop_button.label = 'Stop & Review'
         self._capture_session = CaptureSession(
             self._transport_config,
             self._output_path,
@@ -219,8 +268,6 @@ class BLELogApp(App):
         self._publish_view_messages(start_messages)
         if self._capture_session.finished:
             return
-
-        self.set_interval(PIPELINE_POLL_INTERVAL_SEC, self._poll_pipeline)
 
     def _poll_pipeline(self) -> None:
         capture_session = self._capture_session
@@ -241,6 +288,13 @@ class BLELogApp(App):
         self._saved_capture_paths = self._capture_session.saved_capture_paths
         self._saved_console_log_path = self._capture_session.saved_console_log_path
         self._saved_console_log_paths = self._capture_session.saved_console_log_paths
+        if self._capture_session.report is not None:
+            self._capture_report = self._capture_session.report
+            self._saved_report_path = (
+                self._capture_session.report.report_path
+                if self._capture_session.report.report_write_error is None
+                else None
+            )
 
     # --- Message handlers ---
 
@@ -256,10 +310,10 @@ class BLELogApp(App):
         if msg.int_src == InternalSource.INIT_DONE:
             info = cast(InfoResult, msg.payload)
             log_view = self.query_one(LogView)
-            log_view.write_info(f'BLE Log v{info["version"]} initialized - statistics reset')
+            log_view.write_info(f'BLE Log v{info["version"]} initialized - starting a new SN segment')
         elif msg.int_src == InternalSource.FLUSH:
             log_view = self.query_one(LogView)
-            log_view.write_info('Firmware flush - SN counters reset')
+            log_view.write_info('Firmware flush detected')
 
     def on_log_line(self, msg: LogLine) -> None:
         self.query_one(LogView).write_ascii(msg.text)
@@ -271,19 +325,27 @@ class BLELogApp(App):
         else:
             log_view.write_info(msg.text)
 
-    def on_frame_loss_detected(self, msg: FrameLossDetected) -> None:
-        log_view = self.query_one(LogView)
-        log_view.write_warning(
-            f'Frame loss [{msg.source_name}] ({msg.loss_type.value}): {msg.lost_frames} frames, {msg.lost_bytes} bytes'
-        )
-
     def on_backend_stopped(self, msg: BackendStopped) -> None:
         log_view = self.query_one(LogView)
-        log_view.write_warning(f'Backend stopped: {msg.reason}')
+        log_view.write_warning(tr('Backend stopped: {message}', message=msg.reason))
         panel = self.query_one(StatusPanel)
         panel.disconnected = True
-        if self._exit_after_backend_stop:
-            self.exit()
+        panel.finalizing = False
+
+    def on_capture_finished(self, msg: CaptureFinished) -> None:
+        self._sync_capture_state()
+        self._capture_report = msg.report
+        self._saved_report_path = msg.report.report_path if msg.report.report_write_error is None else None
+        self._finalizing = False
+        panel = self.query_one(StatusPanel)
+        panel.disconnected = True
+        panel.finalizing = False
+        stop_button = self.query_one('#stop-review', Button)
+        stop_button.disabled = True
+        stop_button.label = 'Recording Finished'
+        if isinstance(self.screen, (StatsScreen, BufUtilScreen, ShortcutScreen)):
+            self.pop_screen()
+        self.push_screen(CaptureReportScreen(msg.report), callback=self._on_report_result)
 
     # --- Actions ---
 
@@ -306,8 +368,12 @@ class BLELogApp(App):
     def action_reset_chip(self) -> None:
         capture_session = self._capture_session
         if capture_session is None or not capture_session.reset_target():
-            self.query_one(LogView).write_warning('Reset is not available because capture is not running')
+            self.query_one(LogView).write_warning(tr('Reset is not available because recording is not running'))
             return
+
+    @on(Button.Pressed, '#stop-review')
+    def stop_and_review(self) -> None:
+        self._stop_and_review()
 
     def action_quit(self) -> None:
         capture_session = self._capture_session
@@ -315,6 +381,25 @@ class BLELogApp(App):
             self.exit()
             return
 
-        self._exit_after_backend_stop = True
+        self._stop_and_review()
+
+    def _stop_and_review(self) -> None:
+        capture_session = self._capture_session
+        if capture_session is None or capture_session.finished or self._finalizing:
+            return
+        self._finalizing = True
+        self.query_one(StatusPanel).finalizing = True
+        stop_button = self.query_one('#stop-review', Button)
+        stop_button.disabled = True
+        stop_button.label = 'Finalizing...'
         capture_session.stop()
-        self.post_message(UserNotice('Finishing capture: saving remaining transport data before exit.'))
+        self.post_message(
+            UserNotice(tr('Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.'))
+        )
+
+    def _on_report_result(self, action: str | None) -> None:
+        if action != 'again':
+            self.exit()
+            return
+        self._resolve_output_path()
+        self._start_capture()
