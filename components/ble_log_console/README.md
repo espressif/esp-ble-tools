@@ -21,11 +21,20 @@ Download the latest stable tool package from GitHub Release:
 
 [BLE Log Console stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
-## User Guide
+## Guides
 
-We recommend reading the user guide before first use.
+| Guide | What it covers | Languages |
+| --- | --- | --- |
+| BLE Log Configuration Guide | Transport selection, sdkconfig, wiring, capture verification, and required deliverables. | [English](./docs/Config-Guide-EN.md) / [中文](./docs/Config-Guide-CN.md) |
+| Console User Guide | Tool setup, connection, recording, quality reports, and troubleshooting. | [English](./docs/Console-User-Guide-EN.md) / [中文](./docs/Console-User-Guide-CN.md) |
 
-[User Guide](./docs/User-Guide-EN.md) | [中文用户指南](./docs/User-Guide-CN.md)
+Start with the Configuration Guide if the hardware and firmware setup has not been determined. If questions remain after reading it, contact technical support. If the setup is ready, go directly to the Console User Guide.
+
+### Collect Setup Information with AI
+
+The [BLE Log intake skill](./docs/skills/ble-log-intake/SKILL.md) provides a questionnaire and a workflow for mapping confirmed information to configuration settings. With an AI tool that can read local files, provide the file path and your existing materials, for example:
+
+> Read `components/ble_log_console/docs/skills/ble-log-intake/SKILL.md`. Use my sdkconfig and board information to fill in the intake questionnaire and list what still needs confirmation.
 
 ## Quick Start
 
@@ -50,7 +59,7 @@ If you use SPI Bridge on Linux for the first time, run the tool once with `sudo`
 sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
-Logs are saved to the selected directory. For wiring, firmware configuration, and basic operation, see the [User Guide](./docs/User-Guide-EN.md).
+Logs are saved to the selected directory. For wiring, firmware configuration, and basic operation, see the [User Guide](./docs/Console-User-Guide-EN.md).
 
 ## Run from Source
 
@@ -211,4 +220,4 @@ The following shortcuts are commonly used while the application is running. They
 
 ## Troubleshooting
 
-For connection issues, log display, quality check limitations, source environment setup, and Bridge version checks, see [Troubleshooting at the end of the user guide](./docs/User-Guide-EN.md#faq-no-port).
+For connection issues, log display, quality check limitations, source environment setup, and Bridge version checks, see [Troubleshooting at the end of the user guide](./docs/Console-User-Guide-EN.md#faq-no-port).

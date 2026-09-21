@@ -1,11 +1,16 @@
-# BLE Log Console 快速使用指南
+# BLE Log Console 使用指南
 版本：v1.0.5
+
+[中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
+
+> 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
 
- **首次使用前，请先下载最新稳定版 BLE Log Console 工具包：**
->[BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+**首次使用前，请先下载最新稳定版 BLE Log Console 工具包：**
+
+> [BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
 ## 1. 准备工作
 
@@ -21,7 +26,7 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 设备连接示意图：
 
 <p align="center">
-  <img src="./figure/uart-connection.png" alt="BLE UART设备连接" style="width: 70%; max-width: 900px;">
+  <img src="./figure/uart-connection.png" alt="BLE UART 设备连接" style="width: 70%; max-width: 900px;">
 </p>
 
 ### 2.1 固件配置
@@ -34,10 +39,11 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 - 确认 UART TX 已连接到电脑端串口 RX。
 - 编译并烧录固件。
 
-> 注意：
+> 配置说明：
 > - `CONFIG_BLE_LOG_PRPH_UART_DMA_TX_IO_NUM` 设置 **UART TX 信号对应的 GPIO**，默认值为 `0`。
-> - 如果 UART0 已被其他功能占用，请根据实际硬件连接调整 `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT`，避免影响原有功能。
-> - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` 是 UART 输出 BLE Log 使用的波特率，电脑端 `ble_log_console` 选择的波特率必须与该值一致。
+> - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` 指定 BLE Log 的输出串口。固件启用串口日志转发后，普通 console log 也会由工具接收，具体说明见 [Console Log 的显示与保存](#console-log-files)。
+> - 如果 UART0 已被其他功能占用（如指令下发），请根据实际硬件连接调整 UART 端口 `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT`，避免影响原有功能。
+> - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` 是 UART 输出 BLE Log 使用的波特率，推荐使用较高波特率。配置前请确认电脑端串口支持该波特率，并确保 `ble_log_console` 选择的波特率与该值一致。
 
 ### 2.2 在 PC 端启动应用
 
@@ -58,7 +64,7 @@ ESP 设备  ->  BLE Log SPI USB Bridge  ->  电脑
 
 **如何获取 Bridge 设备？**
 
-Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目前由我们的产品 `ESP32P4` 实现支持。你可以通过以下两种方式获取 Bridge 设备：
+Bridge 设备用于将**目标设备产生的 BLE SPI Log** 转发到 PC，目前可使用 `ESP32P4` 开发板实现。你可以通过以下两种方式获取 Bridge 设备：
 
 * 自行烧录：如果你有一块 `ESP32P4` 开发板，可通过 USB 串口连接开发板，并在 [Bridge 固件烧录](https://espressif.github.io/esp-launchpad/?flashConfigURL=https://dl.espressif.com/ble/ble_log/spi_bridge_bin/launchpad.toml&crossDomain=true) 页面自行烧录固件，即可作为 Bridge 设备使用。
 
@@ -66,7 +72,7 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 
 > 注意：
 > * Bridge 设备是额外的转接设备，不能与产生 BLE Log 的设备为同一台设备。
-> * 如果上述烧录方法不顺利，可前往 [Bridge 固件手动下载](https://github.com/espressif/esp-ble-tools/releases/download/ble_log_bridge_stable/ble_log_bridge_esp32p4.bin)自行下载固件进行烧录。
+> * 如果无法通过上述页面完成烧录，可前往 [Bridge 固件手动下载](https://github.com/espressif/esp-ble-tools/releases/download/ble_log_bridge_stable/ble_log_bridge_esp32p4.bin) 自行下载并烧录固件。
 
 ### 3.1 固件配置
 
@@ -93,7 +99,7 @@ Bridge 设备用于将**你的设备产生的 BLE SPI Log** 转发到 PC，目�
 - Windows 使用说明见 [Windows 系统](#411-windows-系统)。
 - Linux 使用说明见 [Linux 系统](#412-linux-系统)。
 
-## 4. 首次运行与启动
+## 4. 首次运行与录制
 
 ### 4.1 获取工具
 
@@ -129,7 +135,9 @@ sudo ./ble_log_console_ubuntu_v1.0.5
 
 > 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
 
-### 4.2 应用指南
+### 4.2 开始录制
+
+#### 4.2.1 选择模式和端口
 
 启动应用后会显示如下界面：
 
@@ -137,15 +145,17 @@ sudo ./ble_log_console_ubuntu_v1.0.5
   <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 60%; max-width: 900px;">
 </p>
 
-&emsp;首先选择长文本使用的语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
+&emsp;首先选择警告和质量报告等长文本的显示语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
 
 &emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 
-&emsp;需要结束录制时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，再等待质量检查完成，最长等待 20 秒，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。较大的录制文件可能会被拆分为多个 `part` 文件。
+#### 4.2.2 确认日志正在正常接收
 
-> 注意：结束录制时请使用 **Stop & Review**、`q` 或 `Ctrl+C`。界面显示 `FINALIZING`（正在保存）时请耐心等待。若直接关闭终端窗口，最后的数据和质量报告可能无法保存完整。
+录制界面如下图所示：
 
-### 4.3 如何判断录制是否有效
+<p align="center">
+  <img src="./figure/log-screen.png" alt="BLE Log Console 日志界面" style="width: 70%; max-width: 900px;">
+</p>
 
 录制过程中先看界面底部的 `RX` 和 `Frames`：`RX` 表示电脑已收到并保存的数据量，`Frames` 表示工具已识别出的有效日志帧数。
 
@@ -157,7 +167,25 @@ sudo ./ble_log_console_ubuntu_v1.0.5
 
 > 高流量下界面更新可能暂时变慢，但工具仍会优先保存数据；如果保存失败，界面会直接提示错误。
 
-需要结束录制时使用 **Stop & Review**，并等待 `FINALIZING` 完成。**提交日志前必须查看录制质量报告**，工具会给出以下四种结论：
+<a id="console-log-files"></a>
+
+#### 4.2.3 查看 Console Log
+
+固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 一起发送到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录；只有实际收到普通串口日志时才会生成 `_console.log` 文件。
+
+每组 console log 的第一行会附带电脑接收时间，例如 `[15:14:54.367]`。保存时会清理颜色等终端控制字符并统一换行，但不会修改原始 `.bin` 文件。
+
+### 4.3 结束录制并检查结果
+
+#### 4.3.1 Stop & Review
+
+需要结束录制时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，再等待质量检查完成，最长等待 20 秒，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。
+
+> 注意：界面显示 `FINALIZING`（正在保存）时请耐心等待。若直接关闭终端窗口，最后的数据和质量报告可能无法保存完整。
+
+#### 4.3.2 查看质量报告
+
+**提交日志前必须查看录制质量报告。** 工具会给出以下四种结论：
 
 - 可用于分析：数据已正常保存并且能够解析，可以直接提交分析。
 
@@ -169,58 +197,117 @@ sudo ./ble_log_console_ubuntu_v1.0.5
 
 只有“可用于分析”或“已保存，但存在警告”的文件可以直接提交。若另外两种结论反复出现，请先联系技术支持，并按要求提供对应的 `report.txt` 和 `.bin` 文件用于排查。
 
-## 5. 使用界面与日志文件
-
-### 5.1 界面说明
-
-启动后，界面主要包含日志区域和状态栏，如下图所示。
-
-<p align="center">
-  <img src="./figure/log-screen.png" alt="BLE Log Console 日志界面" style="width: 70%; max-width: 900px;">
-</p>
-
-日志区域会实时显示设备转发的串口日志、运行提示和警告。
-
-&emsp;状态栏会显示当前连接状态、电脑已收到的数据量、当前速度、峰值速度和帧率。是否存在数据异常，以结束录制后的质量报告为准。
-
-&emsp;工具支持自适应窗口大小。窗口较小时，部分状态信息可能显示不全，可放大窗口或通过滚动查看其余信息。
-
-### 5.2 日志文件保存规则
+#### 4.3.3 找到并提交录制文件
 
 录制文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间生成：
 
 ```text
 ble_log_YYYYMMDD_HHMMSS.bin
-```
-
-如果固件启用了串口日志转发，原本输出到 UART0（串口监视器）的普通 console log 还会额外保存为：
-
-```text
 ble_log_YYYYMMDD_HHMMSS_console.log
-```
-
-安全结束录制后还会生成对应的质量报告：
-
-```text
 ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
-程序退出后会在终端打印实际保存路径。较大的录制会自动分成多个文件。同一秒内再次录制时，文件名会自动增加序号，不会覆盖已有文件。
+- `.bin` 是收到的原始 BLE Log 数据，也是后续问题分析的主要文件。
+- `_report.txt` 用于说明本次录制是否有效。
+- `_console.log` 是可直接查看的普通串口日志，只有实际收到此类日志时才会生成，不能替代 `.bin` 文件。
+
+提交问题时，请提供同名的 `.bin` 和 `_report.txt`；如果生成了 `_console.log`，也请一并提供。程序退出后会在终端打印实际保存路径。较大的录制会自动拆分为多个 `part` 文件，同一秒内再次录制时会自动增加序号，不会覆盖已有文件。
+
+## 5. 源码启动
+
+需要本地调试、临时修改或验证新功能时，可以从源码运行 BLE Log Console。普通使用仍推荐下载打包好的可执行程序。
+
+### 5.1 准备源码
+
+进入 BLE Log Console 源码目录：
+
+```bash
+cd <ble_log_console 源码目录>
+```
+
+源码运行需要 Python 3.11 或更高版本，并使用 `uv` 管理环境和依赖。安装脚本会自动准备 `uv` 和项目虚拟环境。
+
+### 5.2 Windows
+
+首次使用时运行：
+
+```bat
+.\install.bat
+```
+
+安装完成后启动工具：
+
+```bat
+.\run.bat
+```
+
+也可以通过参数直接选择录制方式：
+
+```bat
+.\run.bat --mode uart --port COM3 --baudrate 3000000
+.\run.bat --mode spi --port <PORT>
+```
+
+### 5.3 Linux
+
+首次使用时运行：
+
+```bash
+chmod +x ./install.sh ./run.sh
+./install.sh
+```
+
+安装完成后启动工具：
+
+```bash
+./run.sh
+```
+
+也可以通过参数直接选择录制方式：
+
+```bash
+./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
+./run.sh --mode spi --port <PORT>
+```
+
+### 5.4 直接运行 console.py
+
+如果已经手动准备好 Python 3.11 及全部依赖，可以直接运行：
+
+```bash
+python console.py
+```
+
+常用命令如下：
+
+```bash
+python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
+python console.py --mode spi --port <PORT>
+```
+
+如果安装或启动失败，请参见[源码环境安装失败](#faq-source-setup)。
 
 ## 6. 更多说明
 
-更多快捷键可按 `h` 查看。源码使用方法、工具命令行参数见[仓库 README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md)。
+更多快捷键可按 `h` 查看。完整的工具命令行参数见[仓库 README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md)。
 
 ## 附录：故障排查与注意事项
 
 快速查找：
 
+* [无法确定配置或接线方案](#faq-configuration)
 * [端口列表里看不到设备](#faq-no-port)
 * [程序启动但没有日志](#faq-no-logs)
 * [串口监视器日志的显示与保存](#faq-console-log)
 * [源码环境安装失败](#faq-source-setup)
 * [ESP32P4 Bridge 固件版本确认](#faq-esp32p4-version)
 * [质量报告显示“无法确认”或检查未完成](#faq-quality-check)
+
+<a id="faq-configuration"></a>
+
+### 无法确定配置或接线方案
+
+请先参照 [BLE Log 配置指南](Config-Guide-CN.md) 确认接入条件。如果接口被占用、无法接线或仍不能确定可行配置，可将现有 sdkconfig 和相关硬件信息提供给技术支持，协助评估。
 
 <a id="faq-no-port"></a>
 
@@ -251,11 +338,7 @@ ble_log_YYYYMMDD_HHMMSS_report.txt
 
 ### 串口监视器日志为什么会出现在工具里，并保存在哪里？
 
-固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 数据一起转发到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录下的 `ble_log_YYYYMMDD_HHMMSS_console.log` 文件。
-
-每组 console log 的第一行会显示电脑收到该组日志的时间，例如 `[15:14:54.367]`；后续没有时间戳的行仍属于同一组日志。这个时间不是设备的运行时间。
-
-`_console.log` 会自动清理颜色等显示控制字符并统一换行，不会改变原始 `.bin` 文件。
+请参见 [Console Log 的显示与保存](#console-log-files)。
 
 <a id="faq-source-setup"></a>
 

@@ -23,8 +23,8 @@ VERSION_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)$')
 DOCUMENT_FILES = (
     PROJECT_DIR / 'README.md',
     PROJECT_DIR / 'README_CN.md',
-    PROJECT_DIR / 'docs' / 'User-Guide-CN.md',
-    PROJECT_DIR / 'docs' / 'User-Guide-EN.md',
+    PROJECT_DIR / 'docs' / 'Console-User-Guide-CN.md',
+    PROJECT_DIR / 'docs' / 'Console-User-Guide-EN.md',
 )
 PROJECT_FILE = PROJECT_DIR / 'pyproject.toml'
 DOCUMENT_VERSION_RE = re.compile(
