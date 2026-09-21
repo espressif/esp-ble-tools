@@ -1,5 +1,9 @@
-# BLE Log Console Quick Start Guide
+# BLE Log Console User Guide
 Version: v1.0.5
+
+[中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
+
+> If the transport, sdkconfig, or wiring has not been determined, start with the [BLE Log Configuration Guide](Config-Guide-EN.md). This guide covers connecting and operating the Console tool and recording logs.
 
 ## Introduction
 

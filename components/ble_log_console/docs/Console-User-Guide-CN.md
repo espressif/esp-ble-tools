@@ -1,5 +1,9 @@
-# BLE Log Console 快速使用指南
+# BLE Log Console 使用指南
 版本：v1.0.5
+
+[中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
+
+> 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。本文介绍 Console 工具的连接、录制和操作。
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。

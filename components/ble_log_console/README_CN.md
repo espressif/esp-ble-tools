@@ -15,11 +15,14 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 [BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
-## 用户手册
+## 使用文档
 
-推荐首次使用前先阅读用户手册。
+| 文档 | 主要内容 | 语言 |
+| --- | --- | --- |
+| BLE Log 配置指南 | 传输方式选择、sdkconfig、接线、采集验证和交付清单。 | [中文](./docs/Config-Guide-CN.md) / [English](./docs/Config-Guide-EN.md) |
+| Console 使用指南 | 工具准备、连接、录制、质量报告和故障排查。 | [中文](./docs/Console-User-Guide-CN.md) / [English](./docs/Console-User-Guide-EN.md) |
 
-[中文用户指南](./docs/User-Guide-CN.md) | [User Guide](./docs/User-Guide-EN.md)
+尚未确定硬件和固件配置时，先阅读配置指南；配置已就绪时，可直接阅读 Console 使用指南。
 
 ## 快速使用
 
@@ -44,7 +47,7 @@ Linux 下首次使用 SPI Bridge 时，请先用 `sudo` 运行一次工具，然
 sudo ./ble_log_console_ubuntu_v1.0.5
 ```
 
-日志会保存到选择的目录。接线方式、固件配置和基本操作请查看 [中文用户指南](./docs/User-Guide-CN.md)。
+日志会保存到选择的目录。接线方式、固件配置和基本操作请查看 [中文用户指南](./docs/Console-User-Guide-CN.md)。
 
 ## 源码启动
 
@@ -208,4 +211,4 @@ python console.py --mode spi --port <PORT>
 
 ## 故障排查
 
-连接异常、日志显示、质量检查限制、源码环境安装和 Bridge 版本确认见[用户指南末尾的故障排查](./docs/User-Guide-CN.md#faq-no-port)。
+连接异常、日志显示、质量检查限制、源码环境安装和 Bridge 版本确认见[用户指南末尾的故障排查](./docs/Console-User-Guide-CN.md#faq-no-port)。
