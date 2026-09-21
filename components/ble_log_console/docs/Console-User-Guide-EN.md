@@ -3,7 +3,7 @@ Version: v1.0.5
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
-> If the transport, sdkconfig, or wiring has not been determined, start with the [BLE Log Configuration Guide](Config-Guide-EN.md). This guide covers connecting and operating the Console tool and recording logs.
+> If the transport, sdkconfig, or wiring has not been determined, start with the [BLE Log Configuration Guide](Config-Guide-EN.md).
 
 ## Introduction
 
@@ -291,12 +291,19 @@ Press `h` for more shortcuts. For the complete command-line reference, see the [
 
 Quick links:
 
+* [Configuration or wiring is unclear](#faq-configuration)
 * [Device not shown in the port list](#faq-no-port)
 * [Program starts but no logs appear](#faq-no-logs)
 * [Serial-monitor log display and saving](#faq-console-log)
 * [Source environment setup fails](#faq-source-setup)
 * [Confirming ESP32P4 Bridge firmware version](#faq-esp32p4-version)
 * [Quality report is unverified or the check is incomplete](#faq-quality-check)
+
+<a id="faq-configuration"></a>
+
+### How do I determine a suitable configuration and wiring setup?
+
+Start with the [BLE Log Configuration Guide](Config-Guide-EN.md) to check the connection requirements. If the interfaces are already in use, wiring is not possible, or a suitable configuration is still unclear, provide your existing sdkconfig and relevant hardware information to technical support for assessment.
 
 <a id="faq-no-port"></a>
 

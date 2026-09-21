@@ -28,7 +28,13 @@ Download the latest stable tool package from GitHub Release:
 | BLE Log Configuration Guide | Transport selection, sdkconfig, wiring, capture verification, and required deliverables. | [English](./docs/Config-Guide-EN.md) / [中文](./docs/Config-Guide-CN.md) |
 | Console User Guide | Tool setup, connection, recording, quality reports, and troubleshooting. | [English](./docs/Console-User-Guide-EN.md) / [中文](./docs/Console-User-Guide-CN.md) |
 
-Start with the Configuration Guide if the hardware and firmware setup has not been determined. If the setup is ready, go directly to the Console User Guide.
+Start with the Configuration Guide if the hardware and firmware setup has not been determined. If questions remain after reading it, contact technical support. If the setup is ready, go directly to the Console User Guide.
+
+### Collect Setup Information with AI
+
+The [BLE Log intake skill](./docs/skills/ble-log-intake/SKILL.md) provides a questionnaire and a workflow for mapping confirmed information to configuration settings. With an AI tool that can read local files, provide the file path and your existing materials, for example:
+
+> Read `components/ble_log_console/docs/skills/ble-log-intake/SKILL.md`. Use my sdkconfig and board information to fill in the intake questionnaire and list what still needs confirmation.
 
 ## Quick Start
 

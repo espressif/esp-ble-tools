@@ -22,7 +22,13 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 | BLE Log 配置指南 | 传输方式选择、sdkconfig、接线、采集验证和交付清单。 | [中文](./docs/Config-Guide-CN.md) / [English](./docs/Config-Guide-EN.md) |
 | Console 使用指南 | 工具准备、连接、录制、质量报告和故障排查。 | [中文](./docs/Console-User-Guide-CN.md) / [English](./docs/Console-User-Guide-EN.md) |
 
-尚未确定硬件和固件配置时，先阅读配置指南；配置已就绪时，可直接阅读 Console 使用指南。
+尚未确定硬件和固件配置时，先阅读配置指南；阅读后仍有疑问，可联系技术支持。配置已就绪时，可直接阅读 Console 使用指南。
+
+### 使用 AI 辅助整理接入信息
+
+[BLE Log 接入 skill](./docs/skills/ble-log-intake/SKILL.md) 提供问卷和配置映射流程。使用能读取本地文件的 AI 工具时，可以提供该文件路径和已有材料，例如：
+
+> 请读取 `components/ble_log_console/docs/skills/ble-log-intake/SKILL.md`，根据我提供的 sdkconfig 和板卡信息回填接入问卷，列出还需要确认的内容。
 
 ## 快速使用
 

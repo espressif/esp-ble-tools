@@ -3,7 +3,7 @@
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
-> 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。本文介绍 Console 工具的连接、录制和操作。
+> 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。
 
 ## 简介
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
@@ -295,12 +295,19 @@ python console.py --mode spi --port <PORT>
 
 快速查找：
 
+* [无法确定配置或接线方案](#faq-configuration)
 * [端口列表里看不到设备](#faq-no-port)
 * [程序启动但没有日志](#faq-no-logs)
 * [串口监视器日志的显示与保存](#faq-console-log)
 * [源码环境安装失败](#faq-source-setup)
 * [ESP32P4 Bridge 固件版本确认](#faq-esp32p4-version)
 * [质量报告显示“无法确认”或检查未完成](#faq-quality-check)
+
+<a id="faq-configuration"></a>
+
+### 无法确定配置或接线方案
+
+请先参照 [BLE Log 配置指南](Config-Guide-CN.md) 确认接入条件。如果接口被占用、无法接线或仍不能确定可行配置，可将现有 sdkconfig 和相关硬件信息提供给技术支持，协助评估。
 
 <a id="faq-no-port"></a>
 
