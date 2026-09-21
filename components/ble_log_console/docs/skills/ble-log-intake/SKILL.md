@@ -1,103 +1,103 @@
 ---
 name: ble-log-intake
-description: 整理 BLE Log 接入问卷，明确需要补充的硬件与工程信息，并映射为 SPI 或 UART 的 sdkconfig、接线和验证方案。适用于接入咨询、串口波特率评估和采集交付核对，不负责日志根因分析。
+description: Prepare BLE Log intake questionnaires, identify missing hardware and project information, and map confirmed answers to SPI or UART sdkconfig, wiring, and capture verification. Use for setup consultations, UART baud rate assessment, and delivery checks, not log root-cause analysis.
 ---
 
-# BLE Log 接入助手
+# BLE Log Intake Assistant
 
-根据已有材料整理一份可直接填写、转交的接入问卷，再将确认的信息映射为待试录验证的配置。默认使用中文，问法简短，填写说明交代所需信息及用途。
+Turn available information into a questionnaire that can be filled in and handed over, then map confirmed answers to a configuration for trial recording. Use English by default, or the user's requested language. Keep questions short and explain what each answer is used for.
 
-## 先读取依据
+## Read the Basis First
 
-开始接入判断前，读取 [BLE Log 配置指南](../../Config-Guide-CN.md)。该文件维护配置表、接线和交付要求，本 skill 维护信息收集与映射流程。
+Before assessing a setup, read the [BLE Log Configuration Guide](../../Config-Guide-EN.md). The guide owns configuration tables, wiring, and delivery requirements; this skill owns information collection and mapping.
 
-若 skill 被单独复制，先在当前工程查找 `components/ble_log_console/docs/Config-Guide-CN.md`；仍找不到时，请用户提供指南或对应仓库路径。材料不足时可以整理缺口，但不能声称配置已核对。脚本位于本 skill 的 `scripts/` 下。
+If the skill was copied separately, look for `components/ble_log_console/docs/Config-Guide-EN.md` in the current project. If unavailable, ask for the guide or its repository location. You may list missing information, but cannot claim the configuration has been checked without its supporting material. Scripts are in this skill's `scripts/` directory.
 
-整理已有 sdkconfig、芯片和 SDK 版本、板卡接线、外设用途、接收工具及复现场景。已提供的信息直接复用；芯片支持和配置依赖优先查对应工程的 Kconfig 与实现，不让客户回答可以内部确认的问题。客户分支与指南不一致时，说明差异并以该分支代码核对配置，不套用其他版本的值。
+Collect existing sdkconfig, chip and SDK versions, board wiring, peripheral usage, receiver tools, and reproduction details. Reuse supplied information. Check chip support and configuration dependencies against the project's Kconfig and implementation instead of asking customers questions that can be answered internally. If the customer's branch differs from the guide, explain the differences and verify settings against that branch.
 
-## 沿当前分支收集信息
+## Follow the Feasible Transport
 
-优先 SPI，其次复用现有日志串口，再考虑外接 USB 转串口。每次只推进当前可行分支；已知 SPI 无法接线时直接进入 UART，SPI 可行时不追加 UART 问卷。
+Prefer SPI, then reuse an existing logging UART, then consider an external USB-to-UART adapter. Advance only the currently feasible branch. If SPI cannot be wired, proceed directly to UART; if SPI is feasible, do not add a UART questionnaire.
 
-| 判断 | 本轮需要的信息 | 对应结果 |
+| Decision | Information needed now | Result |
 | --- | --- | --- |
-| SPI 能否实施 | 是否方便接三根信号线和 GND，是否可准备 Bridge | 能否继续 SPI；SPI 空闲不等于方便接线。 |
-| SPI 资源和 GPIO | 已有 SPI 外设、三个可用 GPIO 及板上接线位置 | 输出方式、MOSI／CLK／CS 配置及 Bridge 接线。信息不明时，只补相关原理图或初始化代码。 |
-| UART 能否复用 | 串口用途、UART 编号、TX 接线、板载或外接转串口 | 端口和 TX 配置；仅打印普通日志不视为业务冲突。 |
-| UART 速率候选 | 转串口芯片／工具型号，或下述探测脚本的完整输出 | 候选波特率及证据强度，之后仍需试录。 |
+| Can SPI be implemented? | Whether three signal wires and GND can be connected and a Bridge can be prepared. | Whether SPI assessment can continue; an unused SPI controller does not establish wiring access. |
+| SPI resources and GPIOs | Existing SPI peripherals, three available GPIOs, and physical connection points. | Output mode, MOSI/CLK/CS settings, and Bridge wiring. Request only the relevant schematic or initialization code if unclear. |
+| Can UART be reused? | UART usage, UART number, TX wiring, and onboard or external converter. | Port and TX settings; ordinary logging alone is not an application conflict. |
+| UART baud rate candidates | Converter/tool model, or complete output from the probe script below. | Candidate rates and strength of evidence; a trial recording is still required. |
 
-未在代码中找到占用不能证明资源空闲。现有 sdkconfig 的端口和 GPIO 是配置值，不是板上接线已确认的证据；UART 和 GPIO 无占用，也不等于 TX 已接到此次探测的接收器。无法新增接线时，必须确认已有连接可复用。原生 USB 接口不等于 USB 转串口。已有外设调整只有在不影响问题复现时才构成可行方案。
+Absence of a resource conflict in inspected code does not prove availability. Port and GPIO values in sdkconfig do not confirm physical wiring. An available UART and GPIO do not prove that TX connects to the receiver being probed. If extra wiring is impossible, confirm that the existing connection can be reused. Native USB is not a USB-to-UART converter. Changing existing peripherals is feasible only if the problem remains reproducible.
 
-对缺口给出具体材料和用途，例如“确认 TX 接到哪个 GPIO，用于填写 UART TX 配置”。每份材料只收集一次，不能为表内多个配置项重复提问。未知信息保留待确认；已确认冲突无法解决时，整理限制交由技术支持评估，不让客户遍历参数组合。
+For each gap, name the specific material and its purpose, such as confirming the TX GPIO to fill in the UART TX setting. Collect each item once even if it supports several settings. Keep unknowns pending confirmation. If a confirmed conflict cannot be resolved, summarize the constraints for technical support instead of asking the customer to try parameter combinations.
 
-## 整理完整问卷
+## Prepare the Complete Questionnaire
 
-生成或更新问卷时，读取 [接入信息问卷模板](references/intake-questionnaire.md)。模板包括项目资料、接入方式、SPI、UART、试录和交付信息，是问卷字段的统一来源。
+When creating or updating a questionnaire, read the [intake questionnaire template](references/intake-questionnaire.md). It is the source of questionnaire fields for project information, transport selection, SPI, UART, trial recording, and delivery.
 
-- 输出一份当前场景下完整的问卷，不只返回零散的追问。已有材料回填到“答复／材料”栏，并注明文件名或确认来源；尚未确认的事实保留“待确认”。
-- 模板中的空白项代表尚未填写，不能预设为“无占用”“支持”或“已通过”。项目资料可从 sdkconfig 和已有对话提取，不重复索取。
-- SPI、UART 仅展开当前需要的分支。其他分支保留标题并写明“不适用”及原因；方案未定时先完成接入方式判断，不提前要求两个接口的全部资料。用户明确需要通用空白表时，提供全部分支。
-- 试录和交付部分保留在问卷末尾，未到该阶段时标“采集后补充”。特殊场景部分仅在出现对应条件时展开，其他情况标“不适用”。
-- 问卷前用一小段列出“本轮还缺什么”；问卷内保留完整的已知背景，便于转交后仍能看懂。问题对应的用途写在相邻说明中，不另造一份重复问卷。
-- 芯片能力、Kconfig 依赖和字段映射由 AI 查证，在问卷后给出结论；客户负责补充实际硬件和使用条件，不负责选择技术参数。
+- Produce a complete questionnaire for the current scenario, rather than isolated follow-up questions. Fill the response column with known information and its filename or confirmation source; mark unconfirmed facts as “Pending confirmation”.
+- Blank fields mean unanswered, not “unused”, “supported”, or “passed”. Extract project information from sdkconfig and the conversation without requesting it again.
+- Expand only the needed SPI or UART branch. Retain other branch headings with “Not applicable” and a reason. If the transport is undecided, resolve feasibility before requesting every field for both interfaces. Include all branches when the user explicitly requests a generic blank form.
+- Retain trial recording and delivery sections at the end, marked “After capture” until that stage. Expand special scenarios only when their conditions apply; otherwise mark them “Not applicable”.
+- Precede the questionnaire with a short list of information still needed this round. Preserve known context for handover and explain each question's purpose alongside it without creating a duplicate questionnaire.
+- Verify chip capabilities, Kconfig dependencies, and field mapping yourself, then state conclusions after the questionnaire. Customers supply physical hardware and operating conditions; they need not select technical parameters.
 
-## UART 波特率：两种材料任选其一
+## UART Baud Rates: Either Evidence Source Is Enough
 
-型号明确时，查芯片／工具厂商资料及当前驱动条件；资料只用于形成候选值。型号不明或现场更方便运行脚本时，提供 [probe_uart_baudrates.py](scripts/probe_uart_baudrates.py)，让客户在实际采集电脑和转串口设备上运行。已有可用探测结果时，不把型号追加成必答项；出现异常或结果不足时再按需补充。
+When the model is known, check manufacturer documentation and current driver conditions to identify candidate rates. If the model is unknown or running a script is easier, provide [probe_uart_baudrates.py](scripts/probe_uart_baudrates.py) for the actual capture PC and adapter. Do not additionally require the model when usable probe results already exist; request more information only for errors or insufficient evidence.
 
-发给客户的运行说明应包含：
+Customer instructions must include:
 
-- 关闭占用该端口的串口监视器和 BLE Log Console，确认实际端口名。
-- 脚本不收发业务数据，但打开端口可能引起 DTR／RTS 变化，使部分板卡复位；适合在可暂停业务时运行。AI 不因接入咨询自动操作连接的硬件。
-- 脚本需要 Python 和 `pyserial`，端口必须显式指定。以下命令在脚本所在目录执行，依赖已安装时跳过安装步骤。
+- Close serial monitors and BLE Log Console using the port, and confirm the actual port name.
+- The script does not transmit or receive application data, but opening the port may change DTR/RTS and reset some boards. Run it when the application can be interrupted. A setup consultation does not authorize the AI to operate connected hardware.
+- Python and `pyserial` are required, and the port must be specified explicitly. Run these commands from the script directory; skip installation if the dependency is already available.
 
-Windows：
+Windows:
 
 ```powershell
 py -m pip install pyserial
 py probe_uart_baudrates.py COM3 > uart_baudrates.txt 2>&1
 ```
 
-Linux：
+Linux:
 
 ```bash
 python3 -m pip install pyserial
 python3 probe_uart_baudrates.py /dev/ttyUSB0 > uart_baudrates.txt 2>&1
 ```
 
-若系统要求虚拟环境，使用现有 Python 环境或虚拟环境安装依赖，不绕过系统包管理限制。客户返回完整 `uart_baudrates.txt`，包括错误信息。COM3 和 `/dev/ttyUSB0` 是示例端口。
+If the system requires a virtual environment, install into an existing Python environment or a virtual environment instead of bypassing package management restrictions. Request the complete `uart_baudrates.txt`, including errors. COM3 and `/dev/ttyUSB0` are example ports.
 
-解释结果时遵守以下边界：
+Interpret results within these limits:
 
-| 结果 | 可得结论 | 下一步 |
+| Result | Supported conclusion | Next step |
 | --- | --- | --- |
-| `ACCEPTED` | 驱动接受打开和配置请求；`Property` 是 pySerial 配置属性，不是实际线速测量。 | 优先评估指南推荐的 3000000；被接受也仅为待试录候选，不自动选择最高值。 |
-| `FAIL` | 本次设置或打开失败，错误可能来自速率、端口占用、权限或设备状态。 | 根据完整错误判断；全部失败不能解释为芯片不支持所有速率。 |
-| 低速被接受、3000000 失败 | 存在较低速候选，尚未证明业务日志可稳定采集。 | 结合错误及日志量选择候选，固件与电脑端设置一致后试录。 |
+| `ACCEPTED` | The driver accepted the open/configuration request. `Property` is a pySerial setting, not a measurement of the physical baud rate. | First assess the guide's recommended 3000000. An accepted rate remains a trial candidate; do not automatically choose the highest rate. |
+| `FAIL` | Opening or configuring failed; possible causes include baud rate, port contention, permissions, or device state. | Inspect the complete error. Failure at every rate does not establish that the chip supports none of them. |
+| Lower rates accepted, 3000000 failed | Lower-rate candidates exist, but stable application log capture is unproven. | Select a candidate using the error and log volume, match firmware and PC settings, then make a trial recording. |
 
-脚本没有传输测试，不能证明吞吐、误码率或日志完整性，也不能证明 GPIO 与固件端口正确。依据为 [pySerial API](https://pyserial.readthedocs.io/en/latest/pyserial_api.html)；最终结论来自指南中的采集验证。
+The script performs no transfer test and cannot establish throughput, error rate, log completeness, or correct GPIO and firmware port selection. See the [pySerial API](https://pyserial.readthedocs.io/en/latest/pyserial_api.html); final confirmation comes from the guide's capture verification.
 
-## 把材料映射为配置
+## Map Information to Configuration
 
-信息足够后，使用指南中对应方案的固定配置，将已确认的板级信息映射到 GPIO、UART 端口和速率。输出基于现有工程的最小 sdkconfig 差异，不覆盖业务配置；传输选择必须唯一。每个填写值标明来源，缺失值留在待确认表中，不能用默认 GPIO、UART0 或猜测值补齐可复制的配置块。
+Once information is sufficient, use the guide's fixed settings for the chosen transport and map confirmed board details to GPIOs, UART port, and baud rate. Produce the minimum sdkconfig changes against the existing project, preserving application settings and selecting exactly one transport. Cite the source of each value. Keep missing values in a pending table rather than filling copyable configuration blocks with default GPIOs, UART0, or guesses.
 
-状态区分为“信息待补齐”“配置已形成，待试录”“已验证”。确认构建实际生效的配置与接线匹配、试录质量及业务表现后，才使用“已验证”。普通串口日志的转发条件、文件是否生成，以指南和对应实现为准。
+Distinguish “Information incomplete”, “Configured, pending trial”, and “Verified”. Use “Verified” only after checking the effective build configuration against wiring, trial recording quality, and application behavior. Follow the guide and implementation for ordinary serial log forwarding and file generation conditions.
 
-Buffer、日志级别和来源开关按指南处理。特殊负载、内存限制、丢失或缺少诊断日志时，仅补充会影响判断的负载与报告信息，交由技术支持评估，不自动扩大缓冲或关闭定位所需日志。
+Follow the guide for buffers, log levels, and source switches. For unusual load, memory limits, loss, or missing diagnostic logs, collect only relevant load and report details for technical support. Do not automatically enlarge buffers or disable logs needed for diagnosis.
 
-## 输出形式
+## Output
 
-信息不足时：
+When information is incomplete:
 
-1. **当前结论：** 候选方案、状态和本轮缺失材料。
-2. **接入信息问卷：** 基于模板回填已知信息，标明待确认、待采集和不适用项；可直接复制或保存为 Markdown 文件转交。AI 只起草，不代发。
-3. **配置影响：** 说明尚未确认的信息阻塞哪些配置；仅在需要脚本时附对应系统的运行说明。
+1. **Current conclusion:** Candidate transport, status, and information needed this round.
+2. **Intake questionnaire:** Fill the template with known information and mark pending, after-capture, and inapplicable fields. Make it ready to copy or save as Markdown for handover. Draft only; do not send it on the user's behalf.
+3. **Configuration impact:** Explain which missing facts block which settings. Include OS-specific script instructions only when the script is needed.
 
-信息足够时：
+When information is sufficient:
 
-1. 方案与状态，以及已回填的完整问卷。
-2. 配置映射表：`配置项 | 设置值 | 依据／来源 | 确认状态`；包括方案固定项与板级变量，再给出最小配置差异。
-3. 接线表：`目标板信号 | GPIO／端口 | 接收设备引脚／接口 | 确认状态`；包含 GND，UART 补充电脑端口和波特率。
-4. 试录步骤与交付表：`文件／目录 | 是否需要 | 实际位置／文件名 | 当前状态`。要求以指南为准，特别确认 database 与烧录固件来自同一次构建；仅看目录名不能证明匹配。
+1. Transport and status, plus the completed questionnaire.
+2. Configuration mapping: `Setting | Value | Evidence/source | Confirmation status`, covering fixed settings and board variables, followed by the minimum configuration diff.
+3. Wiring table: `Target signal | GPIO/port | Receiver pin/interface | Confirmation status`, including GND and, for UART, the PC port and baud rate.
+4. Trial steps and delivery table: `File/directory | Required when | Likely location | Actual path/filename | Status`. Use the guide's delivery requirements and the template's location hints. Distinguish suggested locations from verified paths: recordings default to `<tool-start-directory>/logs/` unless another save directory was selected; the database usually lives under the firmware build directory; sdkconfig usually lives at the firmware project root. Resolve custom locations from the actual capture/build settings. Confirm that the database and flashed firmware come from the same build; directory names alone do not prove a match.
 
-用户只问工具含义时直接解释相关部分。已有问卷时继续回填同一份，保留确认来源，不重新索取已知信息。
+For questions about a tool's meaning, explain only the relevant part. Continue filling an existing questionnaire, retaining evidence sources and avoiding repeated requests.

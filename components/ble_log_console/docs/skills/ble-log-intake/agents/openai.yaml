@@ -1,4 +1,4 @@
 interface:
-  display_name: "BLE Log 接入助手"
-  short_description: "整理完整的 BLE Log 接入问卷，将已有材料映射为配置、接线和交付清单"
-  default_prompt: "使用 $ble-log-intake，根据已有材料回填完整接入问卷，标明还缺哪些信息；信息足够时给出配置映射、接线和交付清单。"
+  display_name: "BLE Log Intake Assistant"
+  short_description: "Map BLE Log intake to configuration, wiring, and delivery"
+  default_prompt: "Use $ble-log-intake to fill in a complete intake questionnaire from available information, identify gaps, and provide configuration mapping, wiring, and a delivery checklist with likely file locations when enough information is available."

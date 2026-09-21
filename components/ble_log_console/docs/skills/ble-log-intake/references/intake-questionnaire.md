@@ -1,96 +1,99 @@
-# BLE Log 接入信息问卷
+# BLE Log Intake Questionnaire
 
-这份问卷用于确定日志输出方式、sdkconfig 和接线，并记录后续采集结果。整理问卷时，已有信息可直接回填；不确定的内容标为“待确认”，不适用的部分注明原因。
+Use this questionnaire to determine the log transport, sdkconfig, and wiring, and to record capture results. Fill in known information, mark uncertain facts as “Pending confirmation”, and explain why any section is not applicable.
 
-> **收到问卷后，本轮只需补充“待确认”的内容。** 试录和交付信息在采集后补充，无需一次填完；尚未采集时，这两部分标为“采集后补充”。
+> **For this round, supply only information marked “Pending confirmation”.** Trial and delivery details can be completed after capture; mark them “After capture” until then.
 
-| 当前情况 | 内容 |
+| Current situation | Details |
 | --- | --- |
-| 接入方式 | 待确定 / SPI / UART |
-| 当前状态 | 信息待补齐 / 配置已形成，待试录 / 已验证 |
-| 本轮还缺的材料 | 待填写 |
+| Transport | Undecided / SPI / UART |
+| Status | Information incomplete / Configured, pending trial / Verified |
+| Information still needed this round | To be filled in |
 
-## 1. 已有项目资料
+## 1. Existing Project Information
 
-已有工程或沟通记录中能找到的信息可直接填入，不必重复提供。
+Reuse information available in the project or previous communication.
 
-| 信息项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 芯片与板卡 | 芯片型号、板卡或产品版本；用于核对可用外设及实际接线。 | 待填写 |
-| SDK 版本 | 分支、commit 或使用的发布版本；有 BLE Log 相关补丁时注明。用于核对配置项与实现。 | 待填写 |
-| 当前 sdkconfig | 本次工程实际使用的文件及构建配置来源；用于生成最小配置差异。 | 待填写 |
-| 待定位的问题 | 现象、复现操作、出现频率，以及是否涉及启动、重启、休眠等阶段；用于确定采集窗口。 | 待填写 |
+| Chip and board | Chip model and board/product revision; used to check peripherals and physical wiring. | To be filled in |
+| SDK version | Branch, commit, or release, including BLE Log patches; used to check settings and implementation. | To be filled in |
+| Current sdkconfig | The file and configuration sources actually used by this build; used to generate the minimum configuration diff. | To be filled in |
+| Problem to investigate | Symptoms, reproduction steps, frequency, and relevant startup, restart, or sleep stages; used to determine the capture window. | To be filled in |
 
-## 2. 接入方式
+## 2. Transport Selection
 
-优先考虑 SPI。SPI 不具备实施条件时，才需要评估 UART。
+Prefer SPI. Assess UART when SPI cannot be implemented.
 
-| 确认项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 是否方便接 SPI 信号线 | 需要三根信号线和 GND。若不方便，注明是接口不可达、需要焊线、不能拆机，还是不清楚接线位置；用于判断能否实施。 | 待填写 |
-| 是否有 Bridge | 已有 SPI USB Bridge、可用的独立 ESP32P4 开发板、可准备设备或本次无法准备；用于判断接收设备是否具备。 | 待填写 |
-| 选择 UART 的原因（仅 UART） | 例如无法额外接线、SPI 资源冲突或没有 Bridge；用于记录方案选择依据。 | 待填写 |
+| SPI wiring access | Three signal wires and GND are needed. If impractical, state whether connectors are inaccessible, soldering or disassembly is needed, disassembly is prohibited, or connection points are unknown. | To be filled in |
+| Bridge availability | Existing SPI USB Bridge, available separate ESP32P4 development board, equipment that can be prepared, or unavailable; used to assess receiver readiness. | To be filled in |
+| Reason for UART (UART only) | For example, extra wiring is impossible, SPI resources conflict, or no Bridge is available; records the selection rationale. | To be filled in |
 
-## 3. SPI 信息（仅 SPI 方案）
+## 3. SPI Information (SPI Only)
 
-三个 GPIO 共用一份接线信息。未选 SPI 时，本节为“不适用”。
+Use one wiring record for all three GPIOs. Mark this section “Not applicable” when SPI is not selected.
 
-| 确认项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 现有 SPI 外设 | 是否已使用 SPI，连接了哪些设备；不清楚时提供相关原理图或初始化代码，由技术支持核对是否冲突。 | 待填写 |
-| 外设能否调整（有冲突时） | 是否可以暂时停用或调整，调整后原问题能否复现；用于判断能否释放资源。 | 待填写 |
-| MOSI GPIO 与位置 | GPIO 编号、板上接口或测试点；映射到 MOSI 配置，连接配套 Bridge IO 4。 | 待填写 |
-| CLK GPIO 与位置 | GPIO 编号、板上接口或测试点；映射到 SCLK 配置，连接配套 Bridge IO 5。 | 待填写 |
-| CS GPIO 与位置 | GPIO 编号、板上接口或测试点；映射到 CS 配置，连接配套 Bridge IO 6。 | 待填写 |
-| GND 位置 | 目标板与 Bridge 的共地连接位置；用于补全接线表。 | 待填写 |
-| GPIO 可用依据 | 对应原理图、硬件确认或接线资料；空闲与能实际接出都需明确，sdkconfig 数值本身不代表接线已确认。 | 待填写 |
-| Bridge 状态 | 板卡型号、配套固件版本及是否已烧录；用于确认接线定义和接收条件。 | 待填写 |
+| Existing SPI peripherals | Whether SPI is used and which devices it connects to. If unknown, provide the relevant schematic or initialization code for technical support to check conflicts. | To be filled in |
+| Peripheral changes (if conflicting) | Whether peripherals can be temporarily disabled or changed while keeping the original problem reproducible; determines whether resources can be freed. | To be filled in |
+| MOSI GPIO and location | GPIO number and connector/test point; maps to MOSI configuration and matching Bridge IO 4. | To be filled in |
+| CLK GPIO and location | GPIO number and connector/test point; maps to SCLK configuration and matching Bridge IO 5. | To be filled in |
+| CS GPIO and location | GPIO number and connector/test point; maps to CS configuration and matching Bridge IO 6. | To be filled in |
+| GND location | Common-ground connection points on the target and Bridge; completes the wiring table. | To be filled in |
+| GPIO availability evidence | Schematic, hardware confirmation, or wiring documentation showing both availability and physical access. sdkconfig values alone do not confirm wiring. | To be filled in |
+| Bridge status | Board model, matching firmware version, and whether it has been flashed; confirms pin definitions and receiver readiness. | To be filled in |
 
-## 4. UART 信息（仅 UART 方案）
+## 4. UART Information (UART Only)
 
-优先复用板载 USB 转串口。波特率依据可以是型号资料，也可以是探测结果，两者任选一种。未选 UART 时，本节为“不适用”。
+Prefer an onboard USB-to-UART converter. Either model documentation or probe results can support baud rate selection. Mark this section “Not applicable” when UART is not selected.
 
-| 确认项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 串口用途 | 仅打印日志、空闲，或还用于 AT、命令输入、外设／工装通信；用于判断能否复用。 | 待填写 |
-| UART 编号 | 实际用于输出日志的 UART 编号；映射到端口配置，与 GPIO 编号不同。 | 待填写 |
-| TX GPIO 与接线 | 实际 TX GPIO，以及是否已经连接到本次使用的 USB 转串口 RX；映射到 TX 配置。可附相关原理图或硬件确认。 | 待填写 |
-| GND 连接 | 外接时注明共地位置；板载时注明已有连接。 | 待填写 |
-| 接收工具与电脑端口 | 板载或外接 USB 转串口、实际 USB 接口、电脑端口名（如 COM3）；用于避免接错设备。原生 USB 不等同于 USB 转串口。 | 待填写 |
-| 波特率依据（二选一） | 具体芯片／工具型号及资料，或实际采集电脑运行探测脚本的完整输出（含错误）。型号不清楚可附照片。 | 待填写 |
-| 采集电脑系统 | Windows／Linux 及版本；用于提供适用的脚本命令和处理驱动问题。 | 待填写 |
-| 串口能否调整（有冲突时） | 能否暂停原用途，以及是否影响问题复现；有冲突且无法释放时不能直接改成日志输出。 | 待填写 |
+| UART usage | Logging only, unused, or also used for AT commands, command input, peripheral/fixture communication; determines whether it can be reused. | To be filled in |
+| UART number | UART actually used for log output; maps to the port setting and is distinct from the GPIO number. | To be filled in |
+| TX GPIO and wiring | Actual TX GPIO and whether it connects to the RX of the converter used for this capture; maps to TX configuration. Include a relevant schematic or hardware confirmation if available. | To be filled in |
+| GND connection | Common-ground location for an external adapter, or confirmation of the onboard connection. | To be filled in |
+| Receiver and PC port | Onboard/external converter, actual USB connector, and PC port name such as COM3; avoids selecting the wrong device. Native USB is not a USB-to-UART converter. | To be filled in |
+| Baud rate evidence (either source) | Exact chip/tool model and documentation, or complete probe output including errors from the actual capture PC. A photo may help identify an unknown model. | To be filled in |
+| Capture PC operating system | Windows/Linux and version; used to provide suitable commands and investigate driver issues. | To be filled in |
+| UART changes (if conflicting) | Whether its existing role can be paused without affecting reproduction. A conflicting UART that cannot be freed cannot simply be switched to logging. | To be filled in |
 
-> 探测脚本的 `ACCEPTED` 仅表示驱动接受请求，不代表实际传输稳定，也不代表应选择最高速率。最终速率还需经过试录确认。
+> `ACCEPTED` from the probe only means the driver accepted the request. It proves neither stable transfer nor that the highest rate should be chosen. Verify the final rate with a trial recording.
 
-## 5. 特殊场景（按需补充）
+## 5. Special Scenarios (As Needed)
 
-本节用于决定是否需要技术支持评估 buffer、日志级别或资源调整，不要求使用者自行选择参数。一般场景可以标“不适用”；出现日志丢失、内存不足、业务变化或明确的额外诊断需求时再补充。
+Use this section when technical support needs to assess buffers, log levels, or resource changes; customers need not choose parameters themselves. Mark it “Not applicable” for ordinary cases. Complete it for log loss, insufficient memory, changed application behavior, or specific additional diagnostic needs.
 
-| 信息项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 问题发生时的负载 | 连接数、数据吞吐、并发业务、普通日志量；仅提供与异常相关的信息。 | 待填写 |
-| 已有定制配置 | 已修改的 buffer、日志级别或来源，以及修改原因；sdkconfig 中已有的值可直接提取。 | 待填写 |
-| 资源或采集异常 | 内存情况、初始化错误、丢失报告或所缺的诊断日志；用于确定是否调整及调整方向。 | 待填写 |
+| Load when the problem occurs | Connection count, throughput, concurrent activity, and ordinary log volume; provide only relevant details. | To be filled in |
+| Existing custom settings | Changed buffers, log levels, or sources, with reasons; extract values already present in sdkconfig. | To be filled in |
+| Resource or capture problems | Memory status, initialization errors, loss reports, or missing diagnostic logs; used to determine whether and how settings should change. | To be filled in |
 
-## 6. 试录结果（采集后补充）
+## 6. Trial Recording Results (After Capture)
 
-| 确认项 | 填写说明与用途 | 答复／材料 |
+| Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| 实际生效配置 | 本次构建使用的 sdkconfig、固件版本；用于核对是否已应用目标配置并烧录。 | 采集后补充 |
-| 工具设置 | BLE Log Console 版本、SPI／UART 模式、接收端口，UART 还包括波特率；用于核对两端一致。 | 采集后补充 |
-| 接收情况 | RX 和 Frames 是否持续增加；用于区分未收到数据与无法解析。 | 采集后补充 |
-| 业务与复现表现 | 原有业务是否正常、问题是否出现、时间和操作；用于判断日志是否改变问题现场。 | 采集后补充 |
-| 质量报告 | 完整 `_report.txt` 及对应录制文件；用于判断采集质量，而非只凭界面有数据判断成功。 | 采集后补充 |
+| Effective configuration | sdkconfig and firmware version used for this build; confirms that the intended configuration was applied and flashed. | After capture |
+| Tool settings | BLE Log Console version, SPI/UART mode, receiver port, and UART baud rate where applicable; checks that both ends agree. | After capture |
+| Reception | Whether RX and Frames keep increasing; distinguishes no input from parsing failure. | After capture |
+| Application and reproduction | Whether normal operation continues, whether the problem occurred, its time, and actions taken; assesses whether logging changed the conditions. | After capture |
+| Quality report | Complete `_report.txt` and matching recording files; assesses capture quality beyond visible incoming data. | After capture |
 
-## 7. 最终交付（采集后补充）
+## 7. Final Delivery (After Capture)
 
-| 文件／信息 | 何时需要 | 实际位置／文件名与状态 |
-| --- | --- | --- |
-| 原始 `.bin` | UART、SPI 都需要；包含同次录制的全部分片。 | 采集后补充 |
-| `_report.txt` | UART、SPI 都需要，与 `.bin` 对应。 | 采集后补充 |
-| `_console.log` | 生成时提供；当前 SPI 不生成，UART 收到重定向普通日志时才生成。 | 采集后补充 |
-| `ble_log_database/` 整个目录 | 有压缩日志时需要；默认在工程的 `build/ble_log/ble_log_database/`。 | 采集后补充 |
-| 数据库与固件对应关系 | 数据库必须来自实际烧录固件的同一次构建；注明保存来源，不能仅以目录名判断匹配。 | 采集后补充 |
-| sdkconfig、接线及版本记录 | 包含实际配置、目标板接线、SDK／工具／Bridge 版本（适用时），可引用前面已填内容。 | 采集后补充 |
-| 问题发生时间和操作 | 用于在日志中定位问题，可引用试录或正式采集记录。 | 采集后补充 |
+Locations below are search hints, not confirmation that files exist. Record the actual paths used for this capture and build. Relative build paths are relative to the firmware project; the tool's startup directory may be elsewhere.
+
+| File/information | Required when | Likely location / how to find it | Actual path/filename and status |
+| --- | --- | --- | --- |
+| Raw `ble_log_*.bin` | UART and SPI; include every part of the same recording. | Save directory selected at recording start; defaults to `<tool-start-directory>/logs/`. The tool prints actual paths on exit. | After capture |
+| `ble_log_*_report.txt` | UART and SPI; must match the `.bin`. | Same recording directory as the `.bin`. | After capture |
+| `ble_log_*_console.log` | Include if generated; currently absent for SPI and generated for UART only when redirected ordinary logs are received. | Same recording directory as the `.bin`; it may legitimately be absent. | After capture |
+| Entire `ble_log_database/` directory | Required for compressed logs. | Usually `<firmware-project>/build/ble_log/ble_log_database/`; for a custom build directory, `<build-directory>/ble_log/ble_log_database/`. If customized, read `log_config.db_path` in `<build-directory>/ble_log/module_info.yml` and resolve it relative to the build directory. This is a firmware build artifact, not a recording-directory output. | After capture |
+| Database/firmware match | Database must come from the same build as the flashed firmware. | Record the original build or archived artifact location and firmware identity. A directory name alone cannot establish a match; a rebuild after source/configuration changes is not a substitute. | After capture |
+| sdkconfig | Actual configuration of the captured firmware. | Usually `<firmware-project>/sdkconfig`; if the build overrides `SDKCONFIG`, use that path from the build invocation or `<build-directory>/CMakeCache.txt`. Defaults files alone do not establish the effective configuration. | After capture |
+| Wiring and version record | Actual target wiring and SDK/tool/Bridge versions where applicable. | Reuse this questionnaire and existing project/support records. No automatically generated directory is assumed; state where the completed record is saved. | After capture |
+| Problem time and actions | Needed to locate the problem in the logs. | Trial/full-capture notes or this questionnaire; record the saved note's path or include the details here. | After capture |
