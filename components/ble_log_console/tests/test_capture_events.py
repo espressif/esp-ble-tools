@@ -160,8 +160,8 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
 
-    first = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('hello ', 1000),)))
-    second = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('world\npartial', 2000),)))
+    first = presenter.handle_event(AggregatorUpdate(console_events=(_redir('hello ', 1000),)))
+    second = presenter.handle_event(AggregatorUpdate(console_events=(_redir('world\npartial', 2000),)))
 
     assert first == ()
     assert len(second) == 1
@@ -177,8 +177,8 @@ def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
 
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('\x1b[0;', 1000),)))
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('32mgreen\x1b[0m\r\nnext\rline\t\x01', 2000),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir('\x1b[0;', 1000),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir('32mgreen\x1b[0m\r\nnext\rline\t\x01', 2000),)))
     presenter.close()
 
     stamp = _timestamp(2000).encode()
@@ -191,7 +191,7 @@ def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
 
-    messages = presenter.handle_event(AggregatorUpdate(redir_events=(_redir('one\ntwo\nthree\n', 2000),)))
+    messages = presenter.handle_event(AggregatorUpdate(console_events=(_redir('one\ntwo\nthree\n', 2000),)))
 
     assert len(messages) == 1
     assert isinstance(messages[0], LogLine)
@@ -200,7 +200,7 @@ def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
 
 def test_redir_text_without_newline_is_shown_on_next_snapshot(tmp_path: Path) -> None:
     presenter = CaptureEventPresenter(tmp_path / 'ble_log.bin')
-    assert presenter.handle_event(AggregatorUpdate(redir_events=(_redir('prompt> ', 2000),))) == ()
+    assert presenter.handle_event(AggregatorUpdate(console_events=(_redir('prompt> ', 2000),))) == ()
 
     messages = presenter.handle_event(
         AggregatorSnapshot(
@@ -222,8 +222,8 @@ def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path, console_part_max_bytes=3)
 
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('abc\n'),)))
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('de\n'),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir('abc\n'),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir('de\n'),)))
     presenter.close()
 
     assert console_log_part_path(output_path, 1).read_text().endswith('abc\n')
@@ -344,7 +344,7 @@ def test_reader_opened_becomes_connected_notice(tmp_path: Path) -> None:
 def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) -> None:
     output_path = tmp_path / 'ble_log.bin'
     presenter = CaptureEventPresenter(output_path)
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir('hello\n'),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir('hello\n'),)))
 
     presenter.finish()
 

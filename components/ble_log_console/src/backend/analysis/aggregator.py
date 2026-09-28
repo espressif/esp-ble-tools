@@ -16,6 +16,7 @@ from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.analysis.parser_events import UndecodedEvent
 from src.backend.models import BufUtilEntry
 from src.backend.models import BufUtilResult
 from src.backend.models import CaptureSegmentSummary
@@ -44,7 +45,7 @@ class AggregatorUpdate:
     """Incremental output produced after consuming parser events."""
 
     frames_seen: int = 0
-    redir_events: tuple[RedirEvent, ...] = ()
+    console_events: tuple[RedirEvent | UndecodedEvent, ...] = ()
     internal_frames: tuple[InternalFrameUpdate, ...] = ()
 
 
@@ -145,7 +146,7 @@ class CaptureAggregator:
         regular_frame_count = 0
         per_source_frames: dict[int, int] = {}
         per_source_bytes: dict[int, int] = {}
-        redir_events: list[RedirEvent] = []
+        console_events: list[RedirEvent | UndecodedEvent] = []
         internal_frames: list[InternalFrameUpdate] = []
         stats = self._stats
 
@@ -159,7 +160,9 @@ class CaptureAggregator:
 
         for event in events:
             event_type = type(event)
-            if event_type in (RedirEvent, FrameEvent):
+            if event_type is UndecodedEvent:
+                console_events.append(event)
+            elif event_type in (RedirEvent, FrameEvent):
                 frame_size = event.frame_size
                 regular_frame_count += 1
                 src_code = event.source_code
@@ -171,7 +174,7 @@ class CaptureAggregator:
                     per_source_bytes[src_code] = per_source_bytes.get(src_code, 0) + frame_size
                     stats.record_frame_sn(src_code, frame_sn)
                 if event_type is RedirEvent:
-                    redir_events.append(event)
+                    console_events.append(event)
             elif event_type is EnhStatEvent:
                 flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
@@ -193,7 +196,7 @@ class CaptureAggregator:
         flush_regular_frames()
         return AggregatorUpdate(
             frames_seen=self._stats.frame_count - frame_count_before,
-            redir_events=tuple(redir_events),
+            console_events=tuple(console_events),
             internal_frames=tuple(internal_frames),
         )
 

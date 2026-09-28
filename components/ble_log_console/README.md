@@ -203,6 +203,12 @@ Subcommands:
 
 `--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.
 
+## UART console text
+
+In UART mode, bytes that cannot be decoded as BLE Log frames are also shown in the log area and saved to `_console.log`, between `Undecoded data` boundaries (translated for the selected language). Only printable ASCII is kept; line endings are normalized and tabs become spaces. Spans with no retained characters produce no markers. Pending partial frames wait for more data; any remaining undecoded tail is handled when recording stops.
+
+This text does not count as BLE Log frames or affect sequence-number statistics. The raw `.bin` recording preserves all received bytes. SPI Bridge mode does not display undecoded bytes.
+
 ## Shortcuts
 
 The following shortcuts are commonly used while the application is running. They can be used to view statistics, reset the device, exit the application, and more.

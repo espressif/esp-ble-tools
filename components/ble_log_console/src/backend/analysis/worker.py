@@ -69,11 +69,12 @@ def run_parser_loop(
     output_queue: Any,
     *,
     checksum_mode: ChecksumMode | None = None,
+    emit_undecoded: bool = False,
 ) -> None:
     """Parse raw chunks from parse_queue until a None sentinel is received."""
 
     try:
-        parser = BleLogParser(checksum_mode=checksum_mode)
+        parser = BleLogParser(checksum_mode=checksum_mode, emit_undecoded=emit_undecoded)
         while True:
             item = parse_queue.get()
             if item is None:
@@ -137,7 +138,7 @@ def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
         return None
     return AggregatorUpdate(
         frames_seen=sum(update.frames_seen for update in updates),
-        redir_events=tuple(event for update in updates for event in update.redir_events),
+        console_events=tuple(event for update in updates for event in update.console_events),
         internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
     )
 
@@ -176,6 +177,8 @@ def _handle_parser_item(
     if isinstance(item, ParseSummary):
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
+        if item.events:
+            _put_analysis_event(ui_queue, aggregator.consume_events(item.events))
         aggregator.consume_parser_summary(item)
         return True, True
     if isinstance(item, ParserStatus):
@@ -328,6 +331,7 @@ def run_analysis_loop(
     bitrate: TransportBitrate | None = None,
     checksum_mode: ChecksumMode | None = None,
     analysis_queue_size: int = ANALYSIS_QUEUE_SIZE,
+    emit_undecoded: bool = False,
 ) -> None:
     """Run parser and aggregator in one process, connected by a thread queue."""
 
@@ -338,6 +342,7 @@ def run_analysis_loop(
         args=(parse_queue, analysis_queue),
         kwargs={
             'checksum_mode': checksum_mode,
+            'emit_undecoded': emit_undecoded,
         },
         daemon=True,
     )
@@ -360,6 +365,7 @@ def run_analysis_process(
     ui_queue: Any,
     bitrate: TransportBitrate | None = None,
     checksum_mode: ChecksumMode | None = None,
+    emit_undecoded: bool = False,
 ) -> None:
     """Process entrypoint for combined BLE log analysis."""
 
@@ -369,4 +375,5 @@ def run_analysis_process(
         ui_queue,
         bitrate=bitrate,
         checksum_mode=checksum_mode,
+        emit_undecoded=emit_undecoded,
     )

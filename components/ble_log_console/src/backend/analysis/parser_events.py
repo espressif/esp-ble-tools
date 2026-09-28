@@ -63,7 +63,15 @@ class ReceivedChunk(NamedTuple):
     received_at_ms: int
 
 
-BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent
+class UndecodedEvent(NamedTuple):
+    """Filtered text skipped by the frame decoder, or the end of that span."""
+
+    text: str
+    received_at_ms: int
+    end: bool = False
+
+
+BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent | UndecodedEvent
 
 
 class ParseChunkResult(NamedTuple):
@@ -90,3 +98,4 @@ class ParseSummary(NamedTuple):
     raw_bytes: int
     parsed_frames: int
     carried_bytes: int
+    events: tuple[UndecodedEvent, ...] = ()

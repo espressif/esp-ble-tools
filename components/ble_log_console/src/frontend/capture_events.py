@@ -28,6 +28,7 @@ from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
 from src.backend.models import UserNotice
 from src.backend.models import format_bytes
+from src.backend.analysis.parser_events import UndecodedEvent
 from src.frontend.rendering import normalize_console_text
 from src.frontend.rendering import strip_ansi_sequences
 from src.i18n import tr
@@ -120,6 +121,8 @@ class CaptureEventPresenter:
         self._console_line_received_at_ms = 0
         self._console_timestamp_pending = False
         self._redir_line_buf = ''
+        self._undecoded_active = False
+        self._undecoded_previous_cr = False
         self._disconnected = False
         now = self._clock()
         self._last_console_flush_at = now
@@ -168,15 +171,21 @@ class CaptureEventPresenter:
             messages.extend(self.handle_event(event))
         return tuple(messages)
 
-    def finish(self) -> None:
-        """Close UI-owned sinks and mark the transport disconnected."""
+    def finish(self) -> tuple[Message, ...]:
+        """Close text spans and sinks, returning final UI lines."""
 
+        messages = self._end_undecoded(self._console_line_received_at_ms)
+        if self._redir_line_buf:
+            self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
+            self._redir_line_buf = ''
         self.close()
         self._disconnected = True
+        return tuple(messages)
 
     def close(self) -> None:
         """Flush and close UI-owned output files."""
 
+        self._end_undecoded(self._console_line_received_at_ms)
         if self._console_log_file is None:
             return
         if self._console_line_buf.endswith('\r'):
@@ -261,8 +270,11 @@ class CaptureEventPresenter:
         messages: list[Message] = []
         for internal in event.internal_frames:
             messages.append(InternalFrameDecoded(internal.int_src, internal.decoded))
-        for redir in event.redir_events:
-            messages.extend(self._write_redir_text(redir.text, redir.received_at_ms))
+        for text_event in event.console_events:
+            if isinstance(text_event, UndecodedEvent):
+                messages.extend(self._write_undecoded(text_event))
+            else:
+                messages.extend(self._write_redir_text(text_event.text, text_event.received_at_ms))
         return tuple(messages)
 
     def _handle_writer_event(self, event: WriterEvent) -> tuple[Message, ...]:
@@ -318,6 +330,40 @@ class CaptureEventPresenter:
         if event.kind == 'error':
             return (UserNotice(tr('Aggregator error: {message}', message=event.message), level='warning'),)
         return ()
+
+    def _separate_console_line(self, received_at_ms: int) -> list[Message]:
+        if self._console_line_buf or self._console_line_prefixed or self._redir_line_buf:
+            return self._write_redir_text('\n', received_at_ms)
+        return []
+
+    def _end_undecoded(self, received_at_ms: int) -> list[Message]:
+        if not self._undecoded_active:
+            return []
+        messages = self._separate_console_line(received_at_ms)
+        messages.extend(self._write_redir_text(tr('--- End of undecoded data ---') + '\n', received_at_ms))
+        self._undecoded_active = False
+        self._undecoded_previous_cr = False
+        return messages
+
+    def _write_undecoded(self, event: UndecodedEvent) -> list[Message]:
+        if event.end:
+            return self._end_undecoded(event.received_at_ms)
+        text = event.text
+        if not text:
+            return []
+        messages: list[Message] = []
+        if not self._undecoded_active:
+            messages.extend(self._separate_console_line(event.received_at_ms))
+            messages.extend(self._write_redir_text(tr('--- Undecoded data ---') + '\n', event.received_at_ms))
+            self._undecoded_active = True
+        # Normalize CR/LF across chunks before the shared UI and file path.
+        previous_cr = self._undecoded_previous_cr
+        self._undecoded_previous_cr = text.endswith('\r')
+        if previous_cr and text.startswith('\n'):
+            text = text[1:]
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        messages.extend(self._write_redir_text(text, event.received_at_ms))
+        return messages
 
     def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
         messages: list[Message] = []

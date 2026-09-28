@@ -12,6 +12,8 @@ ENGLISH = 'en'
 CHINESE = 'zh_CN'
 
 _ZH_CN = {
+    '--- Undecoded data ---': '--- 未解码成功数据 ---',
+    '--- End of undecoded data ---': '--- 未解码成功数据结束 ---',
     'BLE Log Recording Report': 'BLE Log 录制质量报告',
     'READY FOR ANALYSIS': '可用于分析',
     'SAVED WITH WARNINGS': '已保存，但存在警告',

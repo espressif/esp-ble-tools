@@ -21,6 +21,7 @@ from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.analysis.parser_events import UndecodedEvent
 from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import MAX_FRAME_SIZE
 from src.backend.models import BleLogSource
@@ -39,6 +40,9 @@ DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
 # would treat oversized payload lengths as valid frame candidates. 2058 keeps
 # the historical 2048-byte payload sanity bound from the hand-written parser.
 MAX_DECODER_FRAME_SIZE = FRAME_OVERHEAD + MAX_FRAME_SIZE
+
+_ASCII_TABLE = bytes.maketrans(b'\t', b' ')
+_NON_ASCII = bytes(byte for byte in range(256) if byte not in (9, 10, 13) and not 32 <= byte <= 126)
 
 # The decoder's checksum covers the whole frame (header + payload), which
 # matches ChecksumScope.FULL. HEADER_ONLY checksums were probed by the legacy
@@ -89,23 +93,52 @@ def parse_ble_log_chunk(
 class BleLogParser:
     """Stateful streaming parser holding a persistent esp-blfd FrameDecoder."""
 
-    def __init__(self, checksum_mode: ChecksumMode | None = None) -> None:
+    def __init__(self, checksum_mode: ChecksumMode | None = None, *, emit_undecoded: bool = False) -> None:
         self._decoder = _decoder_for_mode(checksum_mode)
+        self._emit_undecoded = emit_undecoded
+        self._pending = b''
+        self._undecoded_open = False
+        self._last_received_at_ms = 0
+
+    def _undecoded_events(self, data: bytes, received_at_ms: int, *, end: bool = False) -> list[UndecodedEvent]:
+        events: list[UndecodedEvent] = []
+        text = data.translate(_ASCII_TABLE, _NON_ASCII).decode('ascii')
+        if text:
+            self._undecoded_open = True
+            events.append(UndecodedEvent(text, received_at_ms))
+        if end and self._undecoded_open:
+            events.append(UndecodedEvent('', received_at_ms, end=True))
+            self._undecoded_open = False
+        return events
 
     def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
-        buffered_before = self._decoder.stats.buffered_bytes
+        self._last_received_at_ms = received_at_ms
+        before = self._decoder.stats
+        buffered_before = before.buffered_bytes
         frames = self._decoder.feed(chunk)
         buffered_after = self._decoder.stats.buffered_bytes
+        consumed = buffered_before + len(chunk) - buffered_after
+        data = self._pending + chunk if self._emit_undecoded else b''
+        base_offset = before.bytes_received - buffered_before
+        cursor = 0
         events: list[BleLogEvent] = []
         for frame in frames:
+            if self._emit_undecoded:
+                start = frame.offset - base_offset
+                events.extend(self._undecoded_events(data[cursor:start], received_at_ms, end=True))
+                cursor = start + frame.size
             _append_frame_event(frame, events, received_at_ms)
+        if self._emit_undecoded:
+            events.extend(self._undecoded_events(data[cursor:consumed], received_at_ms))
+            # Mirror only the decoder's unresolved tail; never expose a pending frame.
+            self._pending = data[consumed:]
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
-            consumed=buffered_before + len(chunk) - buffered_after,
+            consumed=consumed,
             carried_bytes=buffered_after,
             events=tuple(events),
         )
@@ -114,10 +147,13 @@ class BleLogParser:
         """Return final parser totals without reparsing raw data."""
 
         stats = self._decoder.finish()
+        events = self._undecoded_events(self._pending, self._last_received_at_ms, end=True)
+        self._pending = b''
         return ParseSummary(
             raw_bytes=stats.bytes_received,
             parsed_frames=stats.frames_decoded,
             carried_bytes=stats.trailing_bytes,
+            events=tuple(events),
         )
 
 

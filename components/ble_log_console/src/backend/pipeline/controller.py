@@ -29,6 +29,7 @@ from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
 from src.backend.io.reader import ReaderCommand
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.models import TransportConfig
+from src.backend.models import TransportMode
 from src.backend.models import ChecksumMode
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import create_transport_reader
@@ -193,6 +194,7 @@ def run_capture_pipeline_inprocess(
         kwargs={
             'bitrate': reader.bitrate_config,
             'checksum_mode': parser_checksum_mode,
+            'emit_undecoded': reader.status().mode is TransportMode.UART,
         },
     )
     io_thread = threading.Thread(
@@ -266,6 +268,7 @@ class CapturePipeline:
                 self._ui_queue,
                 bitrate,
                 self._parser_checksum_mode,
+                self._transport_config.mode is TransportMode.UART,
             ),
         )
         self._io_process = self._ctx.Process(
