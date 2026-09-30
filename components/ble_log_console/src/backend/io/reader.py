@@ -14,11 +14,11 @@ from typing import Callable
 from typing import Protocol
 
 from src.backend.analysis.parser_events import ReceivedChunk
-from src.backend.support.transport import TransportReader
-from src.backend.support.transport import TransportStatus
 from src.backend.io.writer import Clock
 from src.backend.io.writer import WriterEvent
 from src.backend.io.writer import WriterStatus
+from src.backend.support.transport import TransportReader
+from src.backend.support.transport import TransportStatus
 
 QUEUE_PUT_TIMEOUT_SEC = 5.0
 RAW_STATS_INTERVAL_SEC = 0.25
@@ -48,25 +48,20 @@ class ReaderCommand:
 
 
 class StopSignal(Protocol):
-    def is_set(self) -> bool:
-        ...
+    def is_set(self) -> bool: ...
 
 
 class WriterSink(Protocol):
     emits_events: bool
 
     @property
-    def paths(self) -> tuple[Any, ...]:
-        ...
+    def paths(self) -> tuple[Any, ...]: ...
 
-    def status(self) -> WriterStatus:
-        ...
+    def status(self) -> WriterStatus: ...
 
-    def write(self, block: bytes, *, timeout: float | None = None) -> None:
-        ...
+    def write(self, block: bytes, *, timeout: float | None = None) -> None: ...
 
-    def finalize(self) -> None:
-        ...
+    def finalize(self) -> None: ...
 
 
 def _put_event(ui_queue: Any, event: ReaderProcessEvent | WriterEvent) -> None:
@@ -273,10 +268,7 @@ def run_reader_loop(
         if not _put_parse(parse_queue, ReceivedChunk(block, received_at_ms)):
             record_parse_drop(
                 block,
-                (
-                    'Realtime parser fell behind; raw recording continues, '
-                    'live stats may be incomplete.'
-                ),
+                ('Realtime parser fell behind; raw recording continues, live stats may be incomplete.'),
             )
         return True
 

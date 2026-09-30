@@ -12,21 +12,21 @@ Usage:
     python console.py ls                     # list saved files
 """
 
-from datetime import datetime
 import multiprocessing
 import os
-from pathlib import Path
 import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import click
-from src.backend.models import format_bytes
 from src.backend.models import TransportMode
-from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID
-from src.backend.support.transport.spi_usb_bridge_transport import VENDOR_ID
+from src.backend.models import format_bytes
 from src.backend.support.transport.registry import get_transport_provider
 from src.backend.support.transport.registry import list_transport_modes
 from src.backend.support.transport.registry import list_transport_port_options
+from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID
+from src.backend.support.transport.spi_usb_bridge_transport import VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
 
 MODE_CHOICES = ('uart', 'spi')

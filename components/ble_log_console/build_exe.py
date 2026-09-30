@@ -10,10 +10,10 @@ Usage:
 """
 
 import argparse
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 APP_NAME = 'ble_log_console'
 PROJECT_DIR = Path(__file__).parent

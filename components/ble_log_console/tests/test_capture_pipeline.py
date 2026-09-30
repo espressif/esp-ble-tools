@@ -9,21 +9,21 @@ from threading import Event
 from typing import IO
 from unittest.mock import MagicMock
 
-from src.backend.analysis.worker import ParserStatus
-from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.pipeline.controller import run_capture_pipeline_inprocess
-from src.backend.pipeline.controller import CapturePipeline
-from src.backend.pipeline.controller import _result_from_events
+from src.backend.analysis.aggregator import AggregatorUpdate
+from src.backend.analysis.worker import ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import WriterConfig
 from src.backend.io.writer import WriterEvent
 from src.backend.io.writer import WriterStatus
 from src.backend.models import BleLogSource
 from src.backend.models import FrameStats
-from src.backend.models import TransportConfig
 from src.backend.models import TransportBitrate
+from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
+from src.backend.pipeline.controller import CapturePipeline
+from src.backend.pipeline.controller import _result_from_events
+from src.backend.pipeline.controller import run_capture_pipeline_inprocess
 from src.backend.support.transport import TransportStatus
 
 from tests.helpers import build_frame

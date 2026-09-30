@@ -3,8 +3,8 @@ from datetime import datetime
 from pathlib import Path
 
 from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.models import CaptureVerdict
 from src.backend.models import CaptureSegmentSummary
+from src.backend.models import CaptureVerdict
 from src.backend.models import FirmwareLossSummary
 from src.backend.models import FrameStats
 from src.backend.models import SequenceSourceSummary
@@ -12,10 +12,10 @@ from src.backend.models import SequenceSummary
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.pipeline.controller import CapturePipelineResult
+from src.frontend.capture_report import CaptureReportScreen
 from src.frontend.capture_report import build_capture_report
 from src.frontend.capture_report import format_capture_report
 from src.frontend.capture_report import format_capture_summary
-from src.frontend.capture_report import CaptureReportScreen
 
 
 def _result(
@@ -200,8 +200,7 @@ def test_no_decoded_regular_frames_recommends_recapture() -> None:
     assert '结论：检查配置' in format_capture_report(report, language='zh_CN')
     assert (
         'No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log '
-        'configuration, then record again.'
-        in format_capture_summary(report)
+        'configuration, then record again.' in format_capture_summary(report)
     )
     assert '没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。' in (
         format_capture_summary(report, language='zh_CN')

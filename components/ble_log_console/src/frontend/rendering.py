@@ -5,10 +5,9 @@
 
 from __future__ import annotations
 
-import re
 import os
+import re
 import sys
-
 
 ANSI_ESCAPE_RE = re.compile(r'\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])')
 SGR_ANSI_RE = re.compile(r'\x1b\[[0-9;:]*m')

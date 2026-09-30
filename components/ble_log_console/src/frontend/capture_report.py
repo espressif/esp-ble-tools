@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import os
+from datetime import datetime
 from pathlib import Path
 
 from textual import on
@@ -58,10 +58,7 @@ def build_capture_report(
     firmware_written_bytes = snapshot.capture_firmware_written_bytes if snapshot is not None else 0
     firmware_lost_bytes = snapshot.capture_firmware_lost_bytes if snapshot is not None else 0
     raw_complete = bool(
-        result.raw_bytes > 0
-        and result.raw_paths
-        and result.writer_error is None
-        and result.writer_finalized
+        result.raw_bytes > 0 and result.raw_paths and result.writer_error is None and result.writer_finalized
     )
     parser_complete = bool(
         snapshot is not None
@@ -126,7 +123,9 @@ def build_capture_report(
                 f'{firmware_lost_frames} frame(s), {format_bytes(firmware_loss_observed_bytes)}.'
             )
         if result.parser_error or result.aggregator_error:
-            warnings.append('The raw recording was saved, but live verification failed; retain the raw files for support.')
+            warnings.append(
+                'The raw recording was saved, but live verification failed; retain the raw files for support.'
+            )
 
         threshold_reasons: list[str] = []
         if firmware_write_loss_rate is not None and firmware_write_loss_rate > _QUALITY_RECAPTURE_THRESHOLD:
@@ -213,7 +212,9 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
     percent = min(report.parser_raw_bytes / report.raw_bytes, 1.0) if report.raw_bytes else 0.0
     left, right = ('（', '）') if language == 'zh_CN' else ('(', ')')
     space = '' if language == 'zh_CN' else ' '
-    return f'{format_bytes(report.parser_raw_bytes)} / {format_bytes(report.raw_bytes)}{space}{left}{percent:.1%}{right}'
+    return (
+        f'{format_bytes(report.parser_raw_bytes)} / {format_bytes(report.raw_bytes)}{space}{left}{percent:.1%}{right}'
+    )
 
 
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
@@ -254,8 +255,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
             '',
             f'{tr("Automated quality check", language=language)}{scope_space}'
             f'{scope_left}{tr(parser_scope, language=language)}{scope_right}{separator.rstrip()}',
-            f'  {tr("Parser coverage summary", language=language)}{separator}'
-            f'{_coverage_text(report, language)}',
+            f'  {tr("Parser coverage summary", language=language)}{separator}{_coverage_text(report, language)}',
             f'  {tr("Regular BLE Log frames" if report.parser_complete else "Frames found in parsed portion", language=language)}'
             f'{separator}{report.regular_frames}',
             f'  {tr("Possible sequence loss" if report.parser_complete else "Full-recording sequence continuity", language=language)}'
@@ -320,10 +320,12 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     else:
         lines.append(f'  {tr("No FINAL_STAT segments were decoded.", language=language)}')
 
-    lines.extend([
-        '',
-        f'{tr("Sequence continuity", language=language)}{separator.rstrip()}',
-    ])
+    lines.extend(
+        [
+            '',
+            f'{tr("Sequence continuity", language=language)}{separator.rstrip()}',
+        ]
+    )
     if report.sequence.sources:
         if language == 'zh_CN':
             for source in report.sequence.sources:
@@ -358,13 +360,17 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     else:
         lines.append(f'  {tr("No regular source frames were available for sequence verification.", language=language)}')
 
-    lines.extend(('', f'{tr("Firmware buffer loss observed during this recording", language=language)}{separator.rstrip()}'))
+    lines.extend(
+        ('', f'{tr("Firmware buffer loss observed during this recording", language=language)}{separator.rstrip()}')
+    )
     if report.firmware_loss:
         for loss in report.firmware_loss:
             if language == 'zh_CN':
                 lines.append(f'  {resolve_source_name(loss.source)}：{loss.frames} 帧，{format_bytes(loss.bytes)}')
             else:
-                lines.append(f'  {resolve_source_name(loss.source)}: {loss.frames} frame(s), {format_bytes(loss.bytes)}')
+                lines.append(
+                    f'  {resolve_source_name(loss.source)}: {loss.frames} frame(s), {format_bytes(loss.bytes)}'
+                )
     else:
         lines.append(f'  {tr("None observed after baseline.", language=language)}')
 
@@ -378,9 +384,11 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         lines.append(f'  {field("Report", report.report_path)}')
     if report.errors:
         lines.extend(
-            ('', f'{tr("Errors", language=language)}{separator.rstrip()}', *(
-                f'  - {_localized_error(error, language)}' for error in report.errors
-            ))
+            (
+                '',
+                f'{tr("Errors", language=language)}{separator.rstrip()}',
+                *(f'  - {_localized_error(error, language)}' for error in report.errors),
+            )
         )
     lines.append('')
     return '\n'.join(lines)
@@ -413,14 +421,9 @@ def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
 
     if language == 'zh_CN':
         firmware = (
-            f'固件写入失败 {segment.firmware_lost_frames} 帧'
-            if segment.final_stat_seen
-            else '无 FINAL_STAT 固件统计'
+            f'固件写入失败 {segment.firmware_lost_frames} 帧' if segment.final_stat_seen else '无 FINAL_STAT 固件统计'
         )
-        return (
-            f'  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；'
-            f'{firmware}；SN {sequence_text}'
-        )
+        return f'  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；{firmware}；SN {sequence_text}'
 
     firmware = (
         f'firmware failed {segment.firmware_lost_frames} frame(s)'
@@ -514,8 +517,7 @@ class CaptureReportScreen(ModalScreen[str]):
         separator = '：' if language == 'zh_CN' else ': '
         with Vertical(id='capture-report-container'):
             yield Static(
-                f'{tr("Verdict", language=language)}{separator}'
-                f'{tr(self.report.verdict.value, language=language)}',
+                f'{tr("Verdict", language=language)}{separator}{tr(self.report.verdict.value, language=language)}',
                 id='capture-report-verdict',
                 classes=self.report.verdict.name.lower(),
             )

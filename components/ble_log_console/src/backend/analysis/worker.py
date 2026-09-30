@@ -100,10 +100,7 @@ def run_parser_loop(
                 total_bytes += len(next_item.data)
 
             if chunks:
-                batches = [
-                    parser.feed(chunk.data, received_at_ms=chunk.received_at_ms)
-                    for chunk in chunks
-                ]
+                batches = [parser.feed(chunk.data, received_at_ms=chunk.received_at_ms) for chunk in chunks]
                 _put_parser_event(
                     output_queue,
                     ParseBatch(

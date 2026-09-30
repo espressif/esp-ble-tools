@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
-from typing import cast
 from typing import TextIO
+from typing import cast
 
 from textual import on
 from textual.app import App
@@ -38,8 +38,8 @@ from src.backend.models import StatsUpdated
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.models import UserNotice
-from src.frontend.capture_session import CaptureSession
 from src.frontend.capture_report import CaptureReportScreen
+from src.frontend.capture_session import CaptureSession
 from src.frontend.launch_screen import LaunchScreen
 from src.frontend.log_view import LogView
 from src.frontend.shortcut_screen import ShortcutScreen

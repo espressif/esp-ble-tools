@@ -13,23 +13,23 @@ from queue import Empty
 from queue import Queue
 from typing import Any
 
+from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.analysis.parser_events import ReceivedChunk
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.worker import ParserStatus
 from src.backend.analysis.worker import run_analysis_loop
 from src.backend.analysis.worker import run_analysis_process
-from src.backend.analysis.worker import AggregatorProcessEvent
-from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
+from src.backend.io.reader import ReaderCommand
+from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.worker import run_io_loop
 from src.backend.io.worker import run_io_process
 from src.backend.io.writer import Clock
 from src.backend.io.writer import FileFactory
 from src.backend.io.writer import WriterConfig
 from src.backend.io.writer import WriterEvent
-from src.backend.analysis.worker import ParserStatus
-from src.backend.analysis.parser_events import ReceivedChunk
-from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
-from src.backend.io.reader import ReaderCommand
-from src.backend.io.reader import ReaderProcessEvent
-from src.backend.models import TransportConfig
 from src.backend.models import ChecksumMode
+from src.backend.models import TransportConfig
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import create_transport_reader
 
@@ -299,10 +299,7 @@ class CapturePipeline:
         self._command_queue.put(ReaderCommand(kind='reset_target'))
 
     def is_alive(self) -> bool:
-        return any(
-            process is not None and process.is_alive()
-            for process in (self._io_process, self._analysis_process)
-        )
+        return any(process is not None and process.is_alive() for process in (self._io_process, self._analysis_process))
 
     def io_is_alive(self) -> bool:
         return self._io_process is not None and self._io_process.is_alive()

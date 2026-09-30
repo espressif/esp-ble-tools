@@ -13,7 +13,6 @@ _SRC_HOST = 5
 _SRC_LL_TASK = 2
 
 
-
 def _snap(
     src: int,
     produced: tuple[int, int] = (0, 0),
@@ -67,6 +66,7 @@ class TestFormatThroughput:
         bps = 2.5 * 1024 * 1024
         assert format_throughput(bps) == '2.50 MB/s'
 
+
 class TestBuildFirmwareTable:
     def test_empty_returns_no_rows(self) -> None:
         table = _build_firmware_table([])
@@ -114,6 +114,7 @@ class TestBuildConsoleTable:
         snap = _snap(_SRC_HOST, tp_fps=850.0, peak_frames=12)
         table = _build_console_table([snap])
         assert table.row_count == 1
+
 
 class TestPerSourceRxBytes:
     def test_single_frame(self) -> None:

@@ -52,7 +52,8 @@ def _mode_select_value(mode: TransportMode) -> str:
 class LaunchScreen(Screen[LaunchConfig | None]):
     """Interactive setup screen for BLE Log Console."""
 
-    DEFAULT_CSS = """
+    DEFAULT_CSS = (
+        """
     LaunchScreen {
         align: center middle;
     }
@@ -125,15 +126,19 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     }
     __WINDOWS_SAFE_WIDGET_CSS__
     __LAUNCH_WIDTH_STABLE_CSS__
-    """.replace('__BORDER_STYLE__', terminal_border_style()).replace(
-        '__LAUNCH_CONTROL_CSS__',
-        launch_control_css(),
-    ).replace(
-        '__WINDOWS_SAFE_WIDGET_CSS__',
-        launch_screen_safe_css(),
-    ).replace(
-        '__LAUNCH_WIDTH_STABLE_CSS__',
-        launch_width_stable_css(),
+    """.replace('__BORDER_STYLE__', terminal_border_style())
+        .replace(
+            '__LAUNCH_CONTROL_CSS__',
+            launch_control_css(),
+        )
+        .replace(
+            '__WINDOWS_SAFE_WIDGET_CSS__',
+            launch_screen_safe_css(),
+        )
+        .replace(
+            '__LAUNCH_WIDTH_STABLE_CSS__',
+            launch_width_stable_css(),
+        )
     )
 
     BINDINGS = [
@@ -145,7 +150,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     def __init__(self, default_log_dir: Path | None = None) -> None:
         super().__init__()
         self._mode = DEFAULT_TRANSPORT_MODE
-        self._default_log_dir = default_log_dir or Path.cwd()/ "logs"
+        self._default_log_dir = default_log_dir or Path.cwd() / 'logs'
 
     def compose(self) -> ComposeResult:
         mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
@@ -241,8 +246,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     def _display_port_options(self, port_options: list[tuple[str, str]]) -> list[tuple[str, str]]:
         if self._mode is TransportMode.SPI_USB_BRIDGE:
             return [
-                (self._truncate_port_label(f'{SPI_PORT_LABEL_PREFIX}  {value}'), value)
-                for _, value in port_options
+                (self._truncate_port_label(f'{SPI_PORT_LABEL_PREFIX}  {value}'), value) for _, value in port_options
             ]
         return [(self._truncate_port_label(label), value) for label, value in port_options]
 
@@ -256,8 +260,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         try:
             return TransportMode(value_text)
         except ValueError:
-            self.notify(f"Unsupported transport mode: {value_text}'\n"
-                        "Please select the right mode.")
+            self.notify(f"Unsupported transport mode: {value_text}'\nPlease select the right mode.")
             return None
 
     @on(Button.Pressed, '#browse-btn')

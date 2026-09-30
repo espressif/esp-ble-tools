@@ -16,13 +16,13 @@ from typing import Any
 
 from textual.message import Message
 
-from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.aggregator import AggregatorUpdate
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.worker import ParserStatus
+from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES
 from src.backend.io.writer import WriterEvent
-from src.backend.io.reader import ReaderProcessEvent
-from src.backend.analysis.worker import ParserStatus
 from src.backend.models import InternalFrameDecoded
 from src.backend.models import LogLine
 from src.backend.models import StatsUpdated
@@ -247,9 +247,7 @@ class CaptureEventPresenter:
                 )
             ):
                 messages.append(
-                    UserNotice(
-                        f'Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames'
-                    )
+                    UserNotice(f'Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames')
                 )
                 self._last_capture_notice_at = now
                 self._last_noticed_captured_bytes = event.captured_bytes
@@ -335,9 +333,7 @@ class CaptureEventPresenter:
             line_end = min(index for index in (cr, lf) if index >= 0) if cr >= 0 or lf >= 0 else -1
             if line_end < 0 or (line_end == len(self._console_line_buf) - 1 and cr == line_end):
                 break
-            separator_size = (
-                2 if cr == line_end and self._console_line_buf[line_end : line_end + 2] == '\r\n' else 1
-            )
+            separator_size = 2 if cr == line_end and self._console_line_buf[line_end : line_end + 2] == '\r\n' else 1
             line = self._console_line_buf[:line_end]
             self._console_line_buf = self._console_line_buf[line_end + separator_size :]
             self._write_console_line(line, received_at_ms, complete=True)

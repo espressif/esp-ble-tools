@@ -3,8 +3,8 @@
 
 """Transport-layer metrics: RX bytes, throughput, and frame rate."""
 
-from src.backend.models import TransportSnapshot
 from src.backend.models import TransportBitrate
+from src.backend.models import TransportSnapshot
 
 
 class TransportMetrics:
@@ -39,9 +39,7 @@ class TransportMetrics:
         rx_delta = self._rx_bytes - self._rx_bytes_snapshot
         frame_delta = self._frame_count - self._frame_count_snapshot
 
-        rx_bits_per_sec = (
-            self._bitrate.payload_bytes_to_wire_bits(rx_delta) / elapsed_sec if elapsed_sec > 0 else 0.0
-        )
+        rx_bits_per_sec = self._bitrate.payload_bytes_to_wire_bits(rx_delta) / elapsed_sec if elapsed_sec > 0 else 0.0
         fps = frame_delta / elapsed_sec if elapsed_sec > 0 else 0.0
 
         if rx_bits_per_sec > self._max_rx_bits_per_sec:

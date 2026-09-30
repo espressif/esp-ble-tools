@@ -8,9 +8,9 @@ without them being received, tolerating out-of-order delivery up to
 REORDER_WINDOW frames.
 """
 
-from src.backend.models import SourceCode
 from src.backend.models import SequenceSourceSummary
 from src.backend.models import SequenceSummary
+from src.backend.models import SourceCode
 
 SN_MAX = 1 << 24  # 24-bit SN space
 REORDER_WINDOW = 256  # receive window size

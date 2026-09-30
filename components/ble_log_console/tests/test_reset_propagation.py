@@ -26,12 +26,8 @@ class TestResetPropagation:
         stats.record_frame(100, 1, 10)  # frame_size=100, src=1, sn=10
         stats.record_frame(100, 1, 11)
         # ENH_STAT (firmware-coupled)
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=5, written_bytes=5000, lost_bytes=250
-        )
-        stats.record_enh_stat(
-            src_code=1, written_frames=200, lost_frames=10, written_bytes=10000, lost_bytes=500
-        )
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=5, written_bytes=5000, lost_bytes=250)
+        stats.record_enh_stat(src_code=1, written_frames=200, lost_frames=10, written_bytes=10000, lost_bytes=500)
 
     # === INIT_DONE Tests ===
 

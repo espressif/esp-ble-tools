@@ -5,8 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from textual.app import App
-
 from src.app import BLELogApp
 from src.app import unique_capture_path
 from src.backend.analysis.aggregator import AggregatorSnapshot
@@ -17,9 +15,10 @@ from src.backend.models import SequenceSummary
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.pipeline.controller import CapturePipelineResult
-from src.frontend.capture_session import CaptureSession
 from src.frontend.capture_report import CaptureReportScreen
 from src.frontend.capture_report import build_capture_report
+from src.frontend.capture_session import CaptureSession
+from textual.app import App
 
 
 def _completed_result(path: Path) -> CapturePipelineResult:

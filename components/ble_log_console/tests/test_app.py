@@ -4,12 +4,11 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-
 from src.app import _spawn_stderr_with_real_fileno
 
 

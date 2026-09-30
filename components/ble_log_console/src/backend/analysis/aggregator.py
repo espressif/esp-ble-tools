@@ -10,18 +10,18 @@ from typing import cast
 
 from src.backend.analysis.parser_events import BleLogEvent
 from src.backend.analysis.parser_events import EnhStatEvent
-from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import FinalStatEvent
+from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import BufUtilEntry
 from src.backend.models import BufUtilResult
 from src.backend.models import CaptureSegmentSummary
-from src.backend.models import FRAME_OVERHEAD
-from src.backend.models import FrameStats
 from src.backend.models import FirmwareLossSummary
+from src.backend.models import FrameStats
 from src.backend.models import FunnelSnapshot
 from src.backend.models import InternalDecoderResult
 from src.backend.models import InternalSource
@@ -211,11 +211,7 @@ class CaptureAggregator:
         else:
             firmware_written_bytes, firmware_lost_bytes = self._stats.capture_firmware_quality_bytes()
             firmware_loss = self._stats.capture_firmware_loss()
-        sequence = (
-            self._complete_sequence
-            if self._final_stat_seen
-            else self._stats.sequence_snapshot()
-        )
+        sequence = self._complete_sequence if self._final_stat_seen else self._stats.sequence_snapshot()
         return AggregatorSnapshot(
             stats=self._stats.snapshot(elapsed_sec),
             funnel_snapshots=tuple(self._stats.funnel_snapshot(elapsed_sec)),
@@ -311,7 +307,6 @@ class CaptureAggregator:
         )
         self._segment_regular_frames = 0
         self._segment_regular_bytes = 0
-
 
 
 def frame_size_from_payload(payload: bytes) -> int:

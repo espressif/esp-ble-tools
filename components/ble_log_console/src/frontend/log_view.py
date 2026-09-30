@@ -13,7 +13,6 @@ from src.frontend.rendering import keep_sgr_ansi_sequences
 from src.frontend.rendering import normalize_console_text
 from src.frontend.rendering import strip_ansi_sequences
 
-
 LOG_VIEW_MAX_LINES = 5000
 
 

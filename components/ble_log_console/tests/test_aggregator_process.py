@@ -7,8 +7,6 @@ import struct
 from queue import Empty
 from queue import Queue
 
-from src.backend.analysis.worker import AggregatorProcessEvent
-from src.backend.analysis.worker import run_aggregator_loop
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import frame_size_from_payload
@@ -16,7 +14,9 @@ from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.worker import ParserStatus
+from src.backend.analysis.worker import run_aggregator_loop
 from src.backend.models import BleLogSource
 
 

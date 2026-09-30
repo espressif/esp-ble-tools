@@ -14,8 +14,8 @@ import serial.tools.list_ports
 import usb.core
 import usb.util
 
-from src.backend.models import TransportConfig
 from src.backend.models import TransportBitrate
+from src.backend.models import TransportConfig
 from src.backend.support.transport.base import TransportMode
 from src.backend.support.transport.base import TransportProvider
 from src.backend.support.transport.base import TransportStatus
@@ -54,10 +54,7 @@ class SpiUsbBridgeEndpoint:
 
     @property
     def label(self) -> str:
-        return (
-            f'{DEVICE_DESCRIPTION} '
-            f'bus={self.bus} addr={self.address} intf={self.interface} ep=0x{self.endpoint:02x}'
-        )
+        return f'{DEVICE_DESCRIPTION} bus={self.bus} addr={self.address} intf={self.interface} ep=0x{self.endpoint:02x}'
 
 
 @dataclass
@@ -248,9 +245,7 @@ class SpiUsbBridgeCdcTransport(SerialReader):
     def _open_error(self, error: Exception) -> Exception:
         if not isinstance(error, serial.SerialException):
             return error
-        return RuntimeError(
-            f'Failed to connect to the USB-SPI bridge CDC port {self._port}: {error}'
-        )
+        return RuntimeError(f'Failed to connect to the USB-SPI bridge CDC port {self._port}: {error}')
 
 
 class SpiUsbBridgeBulkTransport:
@@ -358,7 +353,7 @@ class SpiUsbBridgeBulkTransport:
 
 def _cdc_port_from_key(port_key: str) -> str:
     if port_key.startswith(CDC_ENDPOINT_PREFIX):
-        return port_key[len(CDC_ENDPOINT_PREFIX):]
+        return port_key[len(CDC_ENDPOINT_PREFIX) :]
     return port_key
 
 

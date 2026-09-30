@@ -7,8 +7,6 @@ import struct
 from typing import cast
 
 import pytest
-
-
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser import parse_ble_log_chunk
 from src.backend.analysis.parser_events import EnhStatEvent
@@ -222,9 +220,7 @@ def test_feed_resyncs_around_garbage_between_frames() -> None:
 
 def test_unsupported_header_only_checksum_scope_is_rejected() -> None:
     with pytest.raises(ValueError, match='unsupported checksum mode'):
-        BleLogParser(
-            checksum_mode=ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY)
-        )
+        BleLogParser(checksum_mode=ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.HEADER_ONLY))
 
 
 def test_feed_bounds_unstructured_garbage_without_warning_event() -> None:

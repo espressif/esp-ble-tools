@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import serial
-
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.support.transport.uart_transport import PROVIDER
@@ -28,7 +27,9 @@ def test_linux_port_list_only_includes_usb_serial_devices(mock_comports: MagicMo
 
 
 class TestValidateUartPort:
-    @patch('src.backend.support.transport.uart_transport.list_serial_ports', return_value=['/dev/ttyUSB0', '/dev/ttyUSB1'])
+    @patch(
+        'src.backend.support.transport.uart_transport.list_serial_ports', return_value=['/dev/ttyUSB0', '/dev/ttyUSB1']
+    )
     def test_valid_port_returns_none(self, _mock: object) -> None:
         assert validate_uart_port('/dev/ttyUSB0') is None
 

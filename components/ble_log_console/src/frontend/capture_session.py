@@ -5,20 +5,20 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-import time
 
 from textual.message import Message
 
+from src.backend.io import WriterConfig
 from src.backend.models import CaptureFinished
 from src.backend.models import CaptureReport
 from src.backend.models import TransportConfig
 from src.backend.models import UserNotice
-from src.backend.pipeline.controller import CapturePipelineResult
 from src.backend.pipeline import CapturePipeline
-from src.backend.io import WriterConfig
+from src.backend.pipeline.controller import CapturePipelineResult
 from src.frontend.capture_events import CaptureEventPresenter
 from src.frontend.capture_report import build_capture_report
 from src.frontend.capture_report import report_path_for_capture
@@ -105,7 +105,9 @@ class CaptureSession:
                 parser_carried_bytes=0,
                 completed=False,
             )
-            return (UserNotice(tr('Failed to start recording: {message}', message=e), level='warning'),) + self._finish_result(result)
+            return (
+                UserNotice(tr('Failed to start recording: {message}', message=e), level='warning'),
+            ) + self._finish_result(result)
         return ()
 
     def poll(self) -> tuple[Message, ...]:
@@ -163,7 +165,9 @@ class CaptureSession:
             write_capture_report(report)
         except OSError as e:
             report = replace(report, report_write_error=str(e))
-            messages.append(UserNotice(tr('Recording report could not be saved: {message}', message=e), level='warning'))
+            messages.append(
+                UserNotice(tr('Recording report could not be saved: {message}', message=e), level='warning')
+            )
         self._report = report
         messages.append(CaptureFinished(report))
         return tuple(messages)
