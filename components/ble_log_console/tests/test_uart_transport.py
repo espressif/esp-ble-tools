@@ -58,7 +58,7 @@ class TestUartTransportReader:
             baudrate=3_000_000,
         )
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial') as mock_serial:
+        with patch('src.backend.support.transport.serial_reader.serial.Serial') as mock_serial:
             reader = PROVIDER.create_reader(config)
 
         mock_serial.assert_not_called()
@@ -70,7 +70,7 @@ class TestUartTransportReader:
         serial_obj.is_open = True
         serial_obj.read.return_value = b'abc'
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial', return_value=serial_obj):
+        with patch('src.backend.support.transport.serial_reader.serial.Serial', return_value=serial_obj):
             reader = UartTransport('/dev/ttyUSB0', 3_000_000)
             reader.open()
             block = reader.read()
@@ -88,7 +88,7 @@ class TestUartTransportReader:
         serial_obj = MagicMock()
         serial_obj.is_open = True
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial', return_value=serial_obj):
+        with patch('src.backend.support.transport.serial_reader.serial.Serial', return_value=serial_obj):
             with patch('src.backend.support.transport.uart_transport.time.sleep'):
                 reader = UartTransport('/dev/ttyUSB0', 3_000_000)
                 reader.open()
@@ -103,7 +103,7 @@ class TestUartTransportReader:
         serial_obj.is_open = True
 
         with patch(
-            'src.backend.support.transport.uart_transport.serial.Serial',
+            'src.backend.support.transport.serial_reader.serial.Serial',
             side_effect=[serial.SerialException('exclusive open rejected'), serial_obj],
         ) as mock_serial:
             reader = UartTransport('/dev/ttyUSB0', 3_000_000)

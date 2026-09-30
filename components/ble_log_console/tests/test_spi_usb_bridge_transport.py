@@ -64,7 +64,7 @@ class TestSpiUsbBridgeTransportOpen:
             baudrate=3_000_000,
         )
 
-        with patch('src.backend.support.transport.spi_usb_bridge_transport.serial.Serial') as mock_serial:
+        with patch('src.backend.support.transport.serial_reader.serial.Serial') as mock_serial:
             reader = PROVIDER.create_reader(config)
 
         mock_serial.assert_not_called()
@@ -86,7 +86,7 @@ class TestSpiUsbBridgeTransportOpen:
         assert isinstance(reader, SpiUsbBridgeBulkTransport)
         assert reader.status().opened is False
 
-    @patch('src.backend.support.transport.spi_usb_bridge_transport.serial.Serial')
+    @patch('src.backend.support.transport.serial_reader.serial.Serial')
     def test_cdc_transport_bitrate(self, mock_serial: MagicMock) -> None:
         mock_serial.return_value = MagicMock()
 
@@ -98,7 +98,7 @@ class TestSpiUsbBridgeTransportOpen:
         assert bitrate.wire_bits_per_sec == float(SPI_WIRE_BPS)
         assert transport.display_name.endswith('COM7')
 
-    @patch('src.backend.support.transport.spi_usb_bridge_transport.serial.Serial')
+    @patch('src.backend.support.transport.serial_reader.serial.Serial')
     def test_cdc_reader_open_read_close_status(self, mock_serial: MagicMock) -> None:
         serial_obj = MagicMock()
         serial_obj.is_open = True
@@ -117,13 +117,16 @@ class TestSpiUsbBridgeTransportOpen:
         assert status.rx_chunks == 1
         serial_obj.close.assert_called_once()
 
-    @patch('src.backend.support.transport.spi_usb_bridge_transport.serial.Serial')
+    @patch('src.backend.support.transport.serial_reader.serial.Serial')
     def test_cdc_open_wraps_serial_error_with_port_context(self, mock_serial: MagicMock) -> None:
         mock_serial.side_effect = serial.SerialException('access denied')
 
         reader = SpiUsbBridgeCdcTransport('COM7', 3_000_000)
         with pytest.raises(RuntimeError, match=r'Failed to connect to the USB-SPI bridge CDC port COM7'):
             reader.open()
+
+        # CDC is not exclusive: one attempt, and no retry while the port is busy.
+        assert mock_serial.call_count == 1
 
         status = reader.status()
         assert status.opened is False
