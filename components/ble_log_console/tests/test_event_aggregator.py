@@ -9,16 +9,16 @@ from typing import cast
 from src.backend.analysis.aggregator import CaptureAggregator
 from src.backend.analysis.aggregator import frame_size_from_payload
 from src.backend.analysis.parser_events import EnhStatEvent
-from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import FinalStatEvent
+from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseSummary
 from src.backend.analysis.parser_events import RedirEvent
+from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import BleLogSource
 from src.backend.models import BufUtilResult
 from src.backend.models import EnhStatResult
-from src.backend.models import FRAME_OVERHEAD
 from src.backend.models import FinalStatEntry
 from src.backend.models import InfoResult
 from src.backend.models import InternalSource
@@ -44,9 +44,7 @@ def test_regular_frame_updates_received_stats() -> None:
     payload = struct.pack('<I', 1234) + b'payload'
     frame_size = frame_size_from_payload(payload)
 
-    update = aggregator.consume_events(
-        (FrameEvent(frame_size=frame_size, source_code=BleLogSource.HOST, frame_sn=7),)
-    )
+    update = aggregator.consume_events((FrameEvent(frame_size=frame_size, source_code=BleLogSource.HOST, frame_sn=7),))
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1
@@ -59,9 +57,7 @@ def test_ll_frame_updates_received_stats() -> None:
     payload = b'\x00\x00' + struct.pack('<I', 555000) + b'll'
     frame_size = frame_size_from_payload(payload)
 
-    aggregator.consume_events(
-        (FrameEvent(frame_size=frame_size, source_code=BleLogSource.LL_TASK, frame_sn=1),)
-    )
+    aggregator.consume_events((FrameEvent(frame_size=frame_size, source_code=BleLogSource.LL_TASK, frame_sn=1),))
     snapshot = aggregator.snapshot(1.0)
 
     assert snapshot.stats.per_source_rx_bytes == {BleLogSource.LL_TASK: frame_size}

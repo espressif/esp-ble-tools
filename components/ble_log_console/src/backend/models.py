@@ -17,7 +17,6 @@ from typing import TypedDict
 
 from textual.message import Message
 
-
 # --- Common formatting helpers ---
 
 

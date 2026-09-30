@@ -17,7 +17,6 @@ from src.backend.support.transport.base import TransportMode
 from src.backend.support.transport.base import TransportProvider
 from src.backend.support.transport.serial_reader import SerialReader
 
-
 UART_BITS_PER_BYTE = 10
 
 UART_READ_TIMEOUT = 0.1
@@ -73,7 +72,6 @@ def list_uart_options() -> list[tuple[str, str]]:
 
 
 class UartTransportProvider:
-
     @property
     def label(self) -> str:
         return 'UART'

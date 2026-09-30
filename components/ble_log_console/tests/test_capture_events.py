@@ -6,15 +6,15 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from src.backend.analysis.worker import AggregatorProcessEvent
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.aggregator import InternalFrameUpdate
+from src.backend.analysis.parser_events import RedirEvent
+from src.backend.analysis.worker import AggregatorProcessEvent
+from src.backend.analysis.worker import ParserStatus
+from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import WriterEvent
 from src.backend.io.writer import WriterStatus
-from src.backend.io.reader import ReaderProcessEvent
-from src.backend.analysis.worker import ParserStatus
-from src.backend.analysis.parser_events import RedirEvent
 from src.backend.models import FrameStats
 from src.backend.models import InternalFrameDecoded
 from src.backend.models import InternalSource
@@ -85,9 +85,7 @@ def test_capture_progress_notice_is_emitted_every_ten_seconds(tmp_path: Path) ->
     assert not any(isinstance(message, UserNotice) for message in presenter.handle_event(snapshot(600_000, 10)))
 
     now[0] = 110.0
-    notices = [
-        message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)
-    ]
+    notices = [message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)]
     assert [notice.text for notice in notices] == ['Recorded 683.6 KB, 20 frames']
 
     now[0] = 119.0
@@ -138,14 +136,11 @@ def test_internal_frames_do_not_hide_repeated_no_valid_frame_warning(tmp_path: P
         )
 
     now[0] = 110.0
-    notices = [
-        message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)
-    ]
+    notices = [message for message in presenter.handle_event(snapshot(700_000, 20)) if isinstance(message, UserNotice)]
     assert len(notices) == 1
     assert notices[0].level == 'warning'
     assert notices[0].text == (
-        'No valid BLE Log frames were decoded for 10s. '
-        'Check transport mode, wiring, and firmware log configuration.'
+        'No valid BLE Log frames were decoded for 10s. Check transport mode, wiring, and firmware log configuration.'
     )
 
     now[0] = 120.0
@@ -182,9 +177,7 @@ def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
     presenter.close()
 
     stamp = _timestamp(2000).encode()
-    assert console_log_part_path(output_path, 1).read_bytes() == (
-        b'[' + stamp + b'] green\nnext\nline    '
-    )
+    assert console_log_part_path(output_path, 1).read_bytes() == (b'[' + stamp + b'] green\nnext\nline    ')
 
 
 def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:

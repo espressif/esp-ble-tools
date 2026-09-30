@@ -11,9 +11,9 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 from typing import Any
 from typing import Callable
-from typing import IO
 
 CAPTURE_PART_MAX_BYTES = 200 * 1024 * 1024
 FLUSH_INTERVAL_SEC = 1.0

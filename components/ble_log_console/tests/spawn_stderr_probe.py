@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import io
 import multiprocessing
-from pathlib import Path
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import src.app as app_module

@@ -3,8 +3,8 @@
 
 import struct
 
-from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 from src.backend.models import InternalSource
+from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 
 
 def _make_internal_payload(os_ts: int, int_src: int, sub_payload: bytes) -> bytes:

@@ -189,10 +189,8 @@ class TestRecordFrameWithSN:
 class TestRecordEnhStat:
     def test_feeds_both_trackers(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500)
         written = stats._fw_written.totals()
         assert written[1] == (100, 5000)
         loss = stats._fw_loss.per_source_totals()
@@ -200,12 +198,12 @@ class TestRecordEnhStat:
 
     def test_returns_loss_delta(self) -> None:
         stats = StatsAccumulator()
-        d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        d_f, d_b = stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         assert (d_f, d_b) == (0, 0)
 
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
+            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250
+        )
         assert (d_f, d_b) == (5, 250)
 
     def test_capture_loss_preserves_deltas_across_flush_baselines(self) -> None:
@@ -234,10 +232,10 @@ class TestRecordEnhStat:
         baudrate = 3_000_000
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0)
+            src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0
+        )
         assert (d_f, d_b) == (0, 0)
         assert stats._fw_written.totals()[1] == (0, 0)
 
@@ -246,10 +244,10 @@ class TestRecordEnhStat:
         baudrate = 3_000_000
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=10, lost_frames=5, written_bytes=500, lost_bytes=max_delta + 1)
+            src_code=1, written_frames=10, lost_frames=5, written_bytes=500, lost_bytes=max_delta + 1
+        )
         assert (d_f, d_b) == (0, 0)
         assert stats._fw_loss.per_source_totals()[1] == (0, 0)
 
@@ -258,10 +256,10 @@ class TestRecordEnhStat:
         baudrate = 3_000_000
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=10, lost_frames=2, written_bytes=max_delta, lost_bytes=100)
+            src_code=1, written_frames=10, lost_frames=2, written_bytes=max_delta, lost_bytes=100
+        )
         assert d_f == 2
         assert d_b == 100
 
@@ -270,12 +268,11 @@ class TestRecordEnhStat:
         baudrate = 3_000_000
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0)
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=20, lost_frames=3, written_bytes=1000, lost_bytes=150)
+            src_code=1, written_frames=20, lost_frames=3, written_bytes=1000, lost_bytes=150
+        )
         assert d_f == 3
         assert d_b == 150
 
@@ -309,10 +306,8 @@ class TestReset:
         stats = StatsAccumulator()
         stats.record_bytes(1000)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
         stats.reset('init')
 
         snapshot = stats.snapshot(1.0)
@@ -325,10 +320,8 @@ class TestReset:
     def test_flush_resets_baselines_only(self) -> None:
         stats = StatsAccumulator()
         stats.record_bytes(1000)
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
 
         stats.reset('flush')
@@ -343,7 +336,8 @@ class TestReset:
 
         # Next ENH_STAT re-baselines (first report = 0 delta)
         d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500)
+            src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500
+        )
         assert (d_f, d_b) == (0, 0)
 
 
@@ -354,10 +348,8 @@ class TestFunnelSnapshot:
 
     def test_single_source_full_data(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500)
         stats.record_frame(frame_size=80, src_code=1, frame_sn=0)
         stats.record_frame(frame_size=80, src_code=1, frame_sn=1)
 
@@ -379,25 +371,20 @@ class TestFunnelSnapshot:
 
     def test_transport_loss_zero_on_first_snapshot(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
         stats.record_frame(frame_size=80, src_code=1, frame_sn=0)
         funnels = stats.funnel_snapshot()
         assert funnels[0].transport_loss.frames == 0
 
     def test_transport_loss_stable_after_written_jump(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
         for i in range(50):
             stats.record_frame(frame_size=50, src_code=1, frame_sn=i)
         stats.funnel_snapshot()  # prev_written = {1: (50, 2500)}
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
         for i in range(49):
             stats.record_frame(frame_size=50, src_code=1, frame_sn=50 + i)
         funnels = stats.funnel_snapshot()
@@ -405,14 +392,10 @@ class TestFunnelSnapshot:
 
     def test_multi_source(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=2, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
-        stats.record_enh_stat(
-            src_code=2, written_frames=30, lost_frames=2, written_bytes=1500, lost_bytes=100)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=2, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
+        stats.record_enh_stat(src_code=2, written_frames=30, lost_frames=2, written_bytes=1500, lost_bytes=100)
         funnels = stats.funnel_snapshot()
         assert len(funnels) == 2
         assert funnels[0].source == 1
@@ -450,23 +433,17 @@ class TestFunnelSnapshot:
 class TestFunnelExcludesInternal:
     def test_internal_only_returns_empty(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=0, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=0, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
+        stats.record_enh_stat(src_code=0, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=0, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
         funnels = stats.funnel_snapshot()
         assert funnels == []
 
     def test_internal_excluded_alongside_others(self) -> None:
         stats = StatsAccumulator()
-        stats.record_enh_stat(
-            src_code=0, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=0, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        stats.record_enh_stat(
-            src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
+        stats.record_enh_stat(src_code=0, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=0, written_frames=50, lost_frames=0, written_bytes=2500, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        stats.record_enh_stat(src_code=1, written_frames=100, lost_frames=0, written_bytes=5000, lost_bytes=0)
         funnels = stats.funnel_snapshot()
         assert len(funnels) == 1
         assert funnels[0].source == 1

@@ -80,20 +80,10 @@ class StatusPanel(Widget):
             line1 = f'{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}'
             line2 = _format_speed(t.rx_bits_per_sec)
         elif width < MEDIUM_STATUS_WIDTH:
-            line1 = (
-                f'Status: {_customer_state_markup(s, self.disconnected)} | '
-                f'[bold]h[/bold]: help'
-            )
-            line2 = (
-                f'RX: {format_bytes(t.rx_bytes)}  '
-                f'Frames: {t.rx_frames}  '
-                f'Speed: {_format_speed(t.rx_bits_per_sec)}'
-            )
+            line1 = f'Status: {_customer_state_markup(s, self.disconnected)} | [bold]h[/bold]: help'
+            line2 = f'RX: {format_bytes(t.rx_bytes)}  Frames: {t.rx_frames}  Speed: {_format_speed(t.rx_bits_per_sec)}'
         else:
-            line1 = (
-                f'Status: {_customer_state_markup(s, self.disconnected)} | '
-                f'Press [bold]h[/bold] for help'
-            )
+            line1 = f'Status: {_customer_state_markup(s, self.disconnected)} | Press [bold]h[/bold] for help'
             line2 = (
                 f'RX: {format_bytes(t.rx_bytes)}  '
                 f'Frames: {t.rx_frames}  '

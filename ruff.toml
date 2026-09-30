@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+
+# Pinned to the style the codebase already uses: single quotes,
+# one import per line, 120-column lines. Ruff version must stay
+# pinned too (CI + dev extra) — formatter output drifts slightly
+# between ruff releases.
+
+line-length = 120
+target-version = "py311"
+
+[format]
+quote-style = "single"
+
+[lint]
+# ruff >=0.16 enabled 413 rules by default; pin the classic conservative
+# set (pyflakes + core pycodestyle) plus import sorting so CI stays green
+# across ruff upgrades.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[lint.isort]
+force-single-line = true

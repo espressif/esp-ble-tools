@@ -8,11 +8,10 @@ from queue import Empty
 from queue import Queue
 from threading import Event
 
+from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.io.reader import ReaderCommand
-from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.reader import run_reader_loop
 from src.backend.io.writer import WriterStatus
-from src.backend.analysis.parser_events import ReceivedChunk
 from src.backend.models import TransportBitrate
 from src.backend.models import TransportMode
 from src.backend.support.transport import TransportStatus

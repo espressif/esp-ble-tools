@@ -8,15 +8,15 @@ from __future__ import annotations
 from queue import Full
 from typing import Any
 
-from src.backend.models import TransportConfig
 from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.reader import StopSignal
 from src.backend.io.reader import run_reader_loop
+from src.backend.io.writer import AsyncBatchWriter
 from src.backend.io.writer import Clock
 from src.backend.io.writer import FileFactory
-from src.backend.io.writer import AsyncBatchWriter
 from src.backend.io.writer import WriterConfig
+from src.backend.models import TransportConfig
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport import create_transport_reader
 

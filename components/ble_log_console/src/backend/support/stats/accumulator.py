@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from src.backend.models import BleLogSource
 from src.backend.models import BufUtilEntry
+from src.backend.models import FirmwareLossSummary
 from src.backend.models import FrameByteCount
 from src.backend.models import FrameStats
-from src.backend.models import FirmwareLossSummary
 from src.backend.models import FunnelSnapshot
-from src.backend.models import SequenceSummary
 from src.backend.models import SequenceSourceSummary
+from src.backend.models import SequenceSummary
 from src.backend.models import SourceCode
 from src.backend.models import ThroughputInfo
 from src.backend.models import TransportBitrate

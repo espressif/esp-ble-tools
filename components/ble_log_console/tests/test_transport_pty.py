@@ -24,7 +24,6 @@ from dataclasses import dataclass
 
 import pytest
 import serial
-
 from src.backend.models import TransportMode
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport.spi_usb_bridge_transport import SPI_USB_RX_BUFFER_SIZE

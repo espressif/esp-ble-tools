@@ -6,13 +6,12 @@ from unittest.mock import patch
 
 import pytest
 import serial
-
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.support.transport.spi_usb_bridge_transport import CDC_ENDPOINT_PREFIX
+from src.backend.support.transport.spi_usb_bridge_transport import PROVIDER
 from src.backend.support.transport.spi_usb_bridge_transport import SPI_BITS_PER_BYTE
 from src.backend.support.transport.spi_usb_bridge_transport import SPI_WIRE_BPS
-from src.backend.support.transport.spi_usb_bridge_transport import PROVIDER
 from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeBulkTransport
 from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeCdcTransport
 from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeEndpoint

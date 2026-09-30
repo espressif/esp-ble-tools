@@ -14,8 +14,8 @@ from ble_log_frame_decoder import FrameFormat
 
 from src.backend.analysis.parser_events import BleLogEvent
 from src.backend.analysis.parser_events import EnhStatEvent
-from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import FinalStatEvent
+from src.backend.analysis.parser_events import FrameEvent
 from src.backend.analysis.parser_events import InternalEvent
 from src.backend.analysis.parser_events import ParseBatch
 from src.backend.analysis.parser_events import ParseChunkResult
@@ -57,8 +57,7 @@ def _decoder_for_mode(checksum_mode: ChecksumMode | None) -> FrameDecoder:
         frame_format = _FORMAT_BY_MODE[(resolved.algorithm, resolved.scope)]
     except KeyError:
         raise ValueError(
-            f'unsupported checksum mode {resolved}: esp-blfd covers '
-            'XOR/FULL (v2 xor32) and SUM/FULL (v2 sum32)'
+            f'unsupported checksum mode {resolved}: esp-blfd covers XOR/FULL (v2 xor32) and SUM/FULL (v2 sum32)'
         ) from None
     return FrameDecoder(format=frame_format, max_frame_size=MAX_DECODER_FRAME_SIZE)
 
