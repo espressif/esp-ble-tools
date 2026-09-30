@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import serial
+
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.support.transport.uart_transport import PROVIDER
@@ -56,7 +58,7 @@ class TestUartTransportReader:
             baudrate=3_000_000,
         )
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial') as mock_serial:
+        with patch('src.backend.support.transport.serial_reader.serial.Serial') as mock_serial:
             reader = PROVIDER.create_reader(config)
 
         mock_serial.assert_not_called()
@@ -68,7 +70,7 @@ class TestUartTransportReader:
         serial_obj.is_open = True
         serial_obj.read.return_value = b'abc'
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial', return_value=serial_obj):
+        with patch('src.backend.support.transport.serial_reader.serial.Serial', return_value=serial_obj):
             reader = UartTransport('/dev/ttyUSB0', 3_000_000)
             reader.open()
             block = reader.read()
@@ -86,7 +88,7 @@ class TestUartTransportReader:
         serial_obj = MagicMock()
         serial_obj.is_open = True
 
-        with patch('src.backend.support.transport.uart_transport.serial.Serial', return_value=serial_obj):
+        with patch('src.backend.support.transport.serial_reader.serial.Serial', return_value=serial_obj):
             with patch('src.backend.support.transport.uart_transport.time.sleep'):
                 reader = UartTransport('/dev/ttyUSB0', 3_000_000)
                 reader.open()
@@ -95,3 +97,19 @@ class TestUartTransportReader:
 
         assert serial_obj.dtr is False
         assert serial_obj.rts is False
+
+    def test_open_retries_without_exclusive_when_exclusive_open_fails(self) -> None:
+        serial_obj = MagicMock()
+        serial_obj.is_open = True
+
+        with patch(
+            'src.backend.support.transport.serial_reader.serial.Serial',
+            side_effect=[serial.SerialException('exclusive open rejected'), serial_obj],
+        ) as mock_serial:
+            reader = UartTransport('/dev/ttyUSB0', 3_000_000)
+            reader.open()
+
+        assert mock_serial.call_count == 2
+        assert mock_serial.call_args_list[0].kwargs['exclusive'] is True
+        assert 'exclusive' not in mock_serial.call_args_list[1].kwargs
+        assert reader.status().opened is True

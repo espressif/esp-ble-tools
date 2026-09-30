@@ -11,17 +11,18 @@ import time
 import serial
 import serial.tools.list_ports
 
-from src.backend.models import TransportConfig
 from src.backend.models import TransportBitrate
+from src.backend.models import TransportConfig
 from src.backend.support.transport.base import TransportMode
 from src.backend.support.transport.base import TransportProvider
-from src.backend.support.transport.base import TransportStatus
+from src.backend.support.transport.serial_reader import SerialReader
 
 
 UART_BITS_PER_BYTE = 10
 
 UART_READ_TIMEOUT = 0.1
 UART_BLOCK_SIZE = 50 * 1024
+
 
 def list_serial_ports() -> list[str]:
     ports = serial.tools.list_ports.comports()
@@ -39,29 +40,16 @@ def validate_uart_port(port: str) -> str | None:
     return None
 
 
-def open_serial(port: str, baudrate: int) -> serial.Serial:
-    try:
-        return serial.Serial(port, baudrate=baudrate, timeout=UART_READ_TIMEOUT, exclusive=True)
-    except (ValueError, serial.SerialException):
-        return serial.Serial(port, baudrate=baudrate, timeout=UART_READ_TIMEOUT)
-
-
-class UartTransport:
-    def __init__(self, port: str, baudrate: int) -> None:
-        self._port = port
-        self._baudrate = baudrate
-        self._serial: serial.Serial | None = None
-        self._rx_bytes = 0
-        self._rx_chunks = 0
-        self._last_error: str | None = None
+class UartTransport(SerialReader):
+    mode = TransportMode.UART
+    block_size = UART_BLOCK_SIZE
+    timeout = UART_READ_TIMEOUT
+    open_exclusive = True
+    not_open_message = 'UART transport is not open'
 
     @property
     def display_name(self) -> str:
         return f'UART {self._port} @ {self._baudrate}'
-
-    @property
-    def block_size(self) -> int:
-        return UART_BLOCK_SIZE
 
     @property
     def bitrate_config(self) -> TransportBitrate:
@@ -69,39 +57,6 @@ class UartTransport:
             bits_per_payload_byte=UART_BITS_PER_BYTE,
             wire_bits_per_sec=float(self._baudrate),
         )
-
-    def open(self) -> None:
-        if self._serial is not None and self._serial.is_open:
-            return
-        try:
-            self._serial = open_serial(self._port, self._baudrate)
-            self._last_error = None
-        except Exception as e:
-            self._last_error = str(e)
-            raise
-
-    def read(self, size: int | None = None) -> bytes:
-        if self._serial is None or not self._serial.is_open:
-            raise RuntimeError('UART transport is not open')
-        block = self._serial.read(size or self.block_size)  # type: ignore[no-any-return]
-        if block:
-            self._rx_bytes += len(block)
-            self._rx_chunks += 1
-        return block
-
-    def drain(self, max_rounds: int = 10) -> list[bytes]:
-        blocks: list[bytes] = []
-        for _ in range(max_rounds):
-            block = self.read()
-            if not block:
-                break
-            blocks.append(block)
-        return blocks
-
-    def close(self) -> None:
-        if self._serial is None:
-            return
-        self._serial.close()
 
     def reset_target(self) -> bool:
         if self._serial is None or not self._serial.is_open:
@@ -111,18 +66,6 @@ class UartTransport:
         time.sleep(0.1)
         self._serial.rts = False
         return True
-
-    def status(self) -> TransportStatus:
-        opened = self._serial is not None and self._serial.is_open
-        return TransportStatus(
-            mode=TransportMode.UART,
-            display_name=self.display_name,
-            opened=opened,
-            healthy=opened and self._last_error is None,
-            rx_bytes=self._rx_bytes,
-            rx_chunks=self._rx_chunks,
-            last_error=self._last_error,
-        )
 
 
 def list_uart_options() -> list[tuple[str, str]]:
