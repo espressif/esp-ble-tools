@@ -19,6 +19,7 @@ from src.backend.models import TransportBitrate
 from src.backend.support.transport.base import TransportMode
 from src.backend.support.transport.base import TransportProvider
 from src.backend.support.transport.base import TransportStatus
+from src.backend.support.transport.serial_reader import SerialReader
 
 VENDOR_ID = 0x303A
 PRODUCT_ID = 0x4001
@@ -227,22 +228,15 @@ def list_spi_usb_bridge_port_options() -> list[tuple[str, str]]:
     return [(endpoint.label, endpoint.key) for endpoint in list_spi_usb_bridge_bulk_endpoints()]
 
 
-class SpiUsbBridgeCdcTransport:
-    def __init__(self, port: str, baudrate: int) -> None:
-        self._port = port
-        self._baudrate = baudrate
-        self._serial: serial.Serial | None = None
-        self._rx_bytes = 0
-        self._rx_chunks = 0
-        self._last_error: str | None = None
+class SpiUsbBridgeCdcTransport(SerialReader):
+    mode = TransportMode.SPI_USB_BRIDGE
+    block_size = SPI_USB_RX_BUFFER_SIZE
+    timeout = USB_TIMEOUT_MS / 1000
+    not_open_message = 'USB-SPI bridge CDC transport is not open'
 
     @property
     def display_name(self) -> str:
         return f'{DEVICE_DESCRIPTION} CDC {self._port}'
-
-    @property
-    def block_size(self) -> int:
-        return SPI_USB_RX_BUFFER_SIZE
 
     @property
     def bitrate_config(self) -> TransportBitrate:
@@ -251,52 +245,11 @@ class SpiUsbBridgeCdcTransport:
             wire_bits_per_sec=float(SPI_WIRE_BPS),
         )
 
-    def open(self) -> None:
-        if self._serial is not None and self._serial.is_open:
-            return
-        try:
-            self._serial = serial.Serial(self._port, baudrate=self._baudrate, timeout=USB_TIMEOUT_MS / 1000)
-            self._last_error = None
-        except serial.SerialException as e:
-            self._last_error = str(e)
-            raise RuntimeError(f'Failed to connect to the USB-SPI bridge CDC port {self._port}: {e}') from e
-
-    def read(self, size: int | None = None) -> bytes:
-        if self._serial is None or not self._serial.is_open:
-            raise RuntimeError('USB-SPI bridge CDC transport is not open')
-        block = self._serial.read(size or self.block_size)  # type: ignore[no-any-return]
-        if block:
-            self._rx_bytes += len(block)
-            self._rx_chunks += 1
-        return block
-
-    def drain(self, max_rounds: int = 10) -> list[bytes]:
-        blocks: list[bytes] = []
-        for _ in range(max_rounds):
-            block = self.read()
-            if not block:
-                break
-            blocks.append(block)
-        return blocks
-
-    def close(self) -> None:
-        if self._serial is None:
-            return
-        self._serial.close()
-
-    def reset_target(self) -> bool:
-        return False
-
-    def status(self) -> TransportStatus:
-        opened = self._serial is not None and self._serial.is_open
-        return TransportStatus(
-            mode=TransportMode.SPI_USB_BRIDGE,
-            display_name=self.display_name,
-            opened=opened,
-            healthy=opened and self._last_error is None,
-            rx_bytes=self._rx_bytes,
-            rx_chunks=self._rx_chunks,
-            last_error=self._last_error,
+    def _open_error(self, error: Exception) -> Exception:
+        if not isinstance(error, serial.SerialException):
+            return error
+        return RuntimeError(
+            f'Failed to connect to the USB-SPI bridge CDC port {self._port}: {error}'
         )
 
 

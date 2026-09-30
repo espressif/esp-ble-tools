@@ -4,6 +4,9 @@
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+import serial
+
 from src.backend.models import TransportConfig
 from src.backend.models import TransportMode
 from src.backend.support.transport.spi_usb_bridge_transport import CDC_ENDPOINT_PREFIX
@@ -113,6 +116,18 @@ class TestSpiUsbBridgeTransportOpen:
         assert status.rx_bytes == 3
         assert status.rx_chunks == 1
         serial_obj.close.assert_called_once()
+
+    @patch('src.backend.support.transport.spi_usb_bridge_transport.serial.Serial')
+    def test_cdc_open_wraps_serial_error_with_port_context(self, mock_serial: MagicMock) -> None:
+        mock_serial.side_effect = serial.SerialException('access denied')
+
+        reader = SpiUsbBridgeCdcTransport('COM7', 3_000_000)
+        with pytest.raises(RuntimeError, match=r'Failed to connect to the USB-SPI bridge CDC port COM7'):
+            reader.open()
+
+        status = reader.status()
+        assert status.opened is False
+        assert status.last_error == 'access denied'
 
     def test_provider_metadata(self) -> None:
         assert PROVIDER.mode is TransportMode.SPI_USB_BRIDGE
