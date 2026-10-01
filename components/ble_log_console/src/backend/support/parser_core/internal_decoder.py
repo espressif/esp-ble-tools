@@ -9,29 +9,31 @@ See Spec Section 9.
 
 import struct
 
-from src.backend.models import BufUtilResult
-from src.backend.models import EnhStatResult
-from src.backend.models import FinalStatEntry
-from src.backend.models import FinalStatResult
-from src.backend.models import InfoResult
-from src.backend.models import InternalDecoderResult
-from src.backend.models import InternalSource
+from src.backend.models import (
+    BufUtilResult,
+    EnhStatResult,
+    FinalStatEntry,
+    FinalStatResult,
+    InfoResult,
+    InternalDecoderResult,
+    InternalSource,
+)
 
 # Minimum payload size: 4B os_ts + 1B int_src_code
 _MIN_PAYLOAD_SIZE = 5
 
 # ble_log_info_t: [1B int_src_code][1B version] — used by INIT_DONE, INFO, FLUSH
-_INFO_STRUCT = struct.Struct('<BB')
+_INFO_STRUCT = struct.Struct("<BB")
 
 # ble_log_enh_stat_t: [1B int_src_code][1B src_code][4B written][4B lost][4B written_bytes][4B lost_bytes]
-_ENH_STAT_STRUCT = struct.Struct('<BBIIII')
+_ENH_STAT_STRUCT = struct.Struct("<BBIIII")
 
 # ble_log_buf_util_t: [1B int_src_code][1B lbm_id][1B trans_cnt][1B inflight_peak]
-_BUF_UTIL_STRUCT = struct.Struct('<BBBB')
+_BUF_UTIL_STRUCT = struct.Struct("<BBBB")
 
 # ble_log_final_stat_t: [1B int_src_code][1B source_count][source_count * entry]
-_FINAL_STAT_HEAD_STRUCT = struct.Struct('<BB')
-_FINAL_STAT_ENTRY_STRUCT = struct.Struct('<BIIII')
+_FINAL_STAT_HEAD_STRUCT = struct.Struct("<BB")
+_FINAL_STAT_ENTRY_STRUCT = struct.Struct("<BIIII")
 
 
 def decode_internal_frame(payload: bytes) -> InternalDecoderResult | None:
@@ -46,7 +48,7 @@ def decode_internal_frame(payload: bytes) -> InternalDecoderResult | None:
     if len(payload) < _MIN_PAYLOAD_SIZE:
         return None
 
-    os_ts_ms = struct.unpack_from('<I', payload, 0)[0]
+    os_ts_ms = struct.unpack_from("<I", payload, 0)[0]
     int_src_code = payload[4]
     sub_payload = payload[4:]  # starts at int_src_code
 

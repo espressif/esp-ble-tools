@@ -2,21 +2,20 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from src.app import BLELogApp
-from src.app import unique_capture_path
+from src.app import BLELogApp, unique_capture_path
 from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.models import CaptureFinished
-from src.backend.models import FrameStats
-from src.backend.models import SequenceSourceSummary
-from src.backend.models import SequenceSummary
-from src.backend.models import TransportConfig
-from src.backend.models import TransportMode
+from src.backend.models import (
+    CaptureFinished,
+    FrameStats,
+    SequenceSourceSummary,
+    SequenceSummary,
+    TransportConfig,
+    TransportMode,
+)
 from src.backend.pipeline.controller import CapturePipelineResult
-from src.frontend.capture_report import CaptureReportScreen
-from src.frontend.capture_report import build_capture_report
+from src.frontend.capture_report import CaptureReportScreen, build_capture_report
 from src.frontend.capture_session import CaptureSession
 from textual.app import App
 
@@ -52,19 +51,19 @@ def _completed_result(path: Path) -> CapturePipelineResult:
 
 
 def test_unique_capture_path_never_overwrites_same_second(tmp_path: Path) -> None:
-    now = datetime(2026, 1, 2, 3, 4, 5)
+    now = datetime(2026, 1, 2, 3, 4, 5).astimezone()
     first = unique_capture_path(tmp_path, now)
-    first.write_bytes(b'old')
+    first.write_bytes(b"old")
 
     second = unique_capture_path(tmp_path, now)
 
-    assert second.name == 'ble_log_20260102_030405_002.bin'
+    assert second.name == "ble_log_20260102_030405_002.bin"
 
 
 def test_session_finishes_with_saved_report(tmp_path: Path) -> None:
-    output = tmp_path / 'capture.bin'
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
-    with patch('src.frontend.capture_session.CapturePipeline') as pipeline_type:
+    output = tmp_path / "capture.bin"
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
         pipeline = pipeline_type.return_value
         pipeline.io_is_alive.return_value = False
         pipeline.analysis_is_alive.return_value = False
@@ -76,14 +75,14 @@ def test_session_finishes_with_saved_report(tmp_path: Path) -> None:
         messages = session.poll()
 
     finished = next(message for message in messages if isinstance(message, CaptureFinished))
-    assert finished.report.report_path.read_text(encoding='utf-8').startswith('BLE Log Recording Report')
+    assert finished.report.report_path.read_text(encoding="utf-8").startswith("BLE Log Recording Report")
     assert session.report is finished.report
 
 
 def test_session_stop_is_idempotent(tmp_path: Path) -> None:
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
-    with patch('src.frontend.capture_session.CapturePipeline') as pipeline_type:
-        session = CaptureSession(config, tmp_path / 'capture.bin')
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
+        session = CaptureSession(config, tmp_path / "capture.bin")
         session.stop()
         session.stop()
 
@@ -91,19 +90,19 @@ def test_session_stop_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_session_stops_partial_analysis_after_twenty_seconds(tmp_path: Path) -> None:
-    output = tmp_path / 'capture.bin'
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    output = tmp_path / "capture.bin"
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
     now = [0.0]
     result = _completed_result(output)
     result = replace(
         result,
-        parser_error='Live quality check did not finish within 20 seconds.',
+        parser_error="Live quality check did not finish within 20 seconds.",
         parser_raw_bytes=10,
         parser_lag_bytes=10,
         completed=False,
         aggregator_finalized=False,
     )
-    with patch('src.frontend.capture_session.CapturePipeline') as pipeline_type:
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
         pipeline = pipeline_type.return_value
         pipeline.drain_events.return_value = []
         pipeline.io_is_alive.return_value = False
@@ -128,15 +127,15 @@ def test_session_stops_partial_analysis_after_twenty_seconds(tmp_path: Path) -> 
     pipeline.abort_analysis.assert_called_once()
     finished = next(message for message in messages if isinstance(message, CaptureFinished))
     assert not finished.report.parser_complete
-    assert finished.report.verdict.value == 'SAVED WITH WARNINGS'
+    assert finished.report.verdict.value == "SAVED WITH WARNINGS"
 
 
 def test_report_write_failure_keeps_capture_result(tmp_path: Path) -> None:
-    output = tmp_path / 'capture.bin'
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    output = tmp_path / "capture.bin"
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
     with (
-        patch('src.frontend.capture_session.CapturePipeline') as pipeline_type,
-        patch('src.frontend.capture_session.write_capture_report', side_effect=OSError('read only')),
+        patch("src.frontend.capture_session.CapturePipeline") as pipeline_type,
+        patch("src.frontend.capture_session.write_capture_report", side_effect=OSError("read only")),
     ):
         pipeline = pipeline_type.return_value
         pipeline.io_is_alive.return_value = False
@@ -150,11 +149,11 @@ def test_report_write_failure_keeps_capture_result(tmp_path: Path) -> None:
 
     finished = next(message for message in messages if isinstance(message, CaptureFinished))
     assert finished.report.raw_paths == (output,)
-    assert finished.report.report_write_error == 'read only'
+    assert finished.report.report_write_error == "read only"
 
 
 def test_app_ignores_repeated_stop_while_finalizing() -> None:
-    app = BLELogApp(port='COM3')
+    app = BLELogApp(port="COM3")
     session = MagicMock()
     session.finished = False
     app._capture_session = session
@@ -163,7 +162,7 @@ def test_app_ignores_repeated_stop_while_finalizing() -> None:
 
     def query(selector, widget_type=None):
         del widget_type
-        if selector == '#stop-review':
+        if selector == "#stop-review":
             return button
         return panel
 
@@ -180,15 +179,15 @@ def test_app_ignores_repeated_stop_while_finalizing() -> None:
 
 
 def test_capture_report_screen_mounts_with_actions(tmp_path: Path) -> None:
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
     report = build_capture_report(
-        _completed_result(tmp_path / 'capture.bin'),
+        _completed_result(tmp_path / "capture.bin"),
         config,
-        started_at=datetime(2026, 1, 1, 12, 0, 0),
-        ended_at=datetime(2026, 1, 1, 12, 0, 1),
+        started_at=datetime(2026, 1, 1, 12, 0, 0).astimezone(),
+        ended_at=datetime(2026, 1, 1, 12, 0, 1).astimezone(),
         duration_sec=1.0,
         console_log_paths=(),
-        report_path=tmp_path / 'capture_report.txt',
+        report_path=tmp_path / "capture_report.txt",
     )
 
     class ReportHost(App):
@@ -198,9 +197,9 @@ def test_capture_report_screen_mounts_with_actions(tmp_path: Path) -> None:
     async def run() -> None:
         async with ReportHost().run_test() as pilot:
             await pilot.pause()
-            assert pilot.app.screen.query_one('#capture-report-verdict')
-            assert pilot.app.screen.query_one('#record-again')
-            assert pilot.app.screen.query_one('#exit-report')
-            assert not pilot.app.screen.query('#capture-report-language')
+            assert pilot.app.screen.query_one("#capture-report-verdict")
+            assert pilot.app.screen.query_one("#record-again")
+            assert pilot.app.screen.query_one("#exit-report")
+            assert not pilot.app.screen.query("#capture-report-language")
 
     asyncio.run(run())

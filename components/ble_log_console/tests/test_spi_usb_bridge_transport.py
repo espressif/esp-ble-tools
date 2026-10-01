@@ -1,22 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import serial
-from src.backend.models import TransportConfig
-from src.backend.models import TransportMode
-from src.backend.support.transport.spi_usb_bridge_transport import CDC_ENDPOINT_PREFIX
-from src.backend.support.transport.spi_usb_bridge_transport import PROVIDER
-from src.backend.support.transport.spi_usb_bridge_transport import SPI_BITS_PER_BYTE
-from src.backend.support.transport.spi_usb_bridge_transport import SPI_WIRE_BPS
-from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeBulkTransport
-from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeCdcTransport
-from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeEndpoint
-from src.backend.support.transport.spi_usb_bridge_transport import _endpoint_from_key
-from src.backend.support.transport.spi_usb_bridge_transport import list_spi_usb_bridge_port_options
+from src.backend.models import TransportConfig, TransportMode
+from src.backend.support.transport.spi_usb_bridge_transport import (
+    CDC_ENDPOINT_PREFIX,
+    PROVIDER,
+    SPI_BITS_PER_BYTE,
+    SPI_WIRE_BPS,
+    SpiUsbBridgeBulkTransport,
+    SpiUsbBridgeCdcTransport,
+    SpiUsbBridgeEndpoint,
+    _endpoint_from_key,
+    list_spi_usb_bridge_port_options,
+)
 
 
 class TestSpiUsbBridgeEndpoint:
@@ -26,27 +26,27 @@ class TestSpiUsbBridgeEndpoint:
         parsed = _endpoint_from_key(endpoint.key)
 
         assert parsed == endpoint
-        assert 'ep=0x81' in endpoint.label
+        assert "ep=0x81" in endpoint.label
 
     def test_invalid_key_raises_value_error(self) -> None:
         try:
-            _endpoint_from_key('not-an-endpoint')
+            _endpoint_from_key("not-an-endpoint")
         except ValueError as e:
-            assert 'Invalid USB-SPI bridge endpoint key' in str(e)
+            assert "Invalid USB-SPI bridge endpoint key" in str(e)
         else:
-            raise AssertionError('expected ValueError')
+            raise AssertionError("expected ValueError")
 
 
 class TestSpiUsbBridgeOptions:
-    @patch('src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options')
-    @patch('src.backend.support.transport.spi_usb_bridge_transport._is_windows', return_value=True)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options")
+    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=True)
     def test_windows_prefers_cdc_options(self, _mock_windows: MagicMock, mock_cdc: MagicMock) -> None:
-        mock_cdc.return_value = [('USB-SPI-BRIDGE CDC COM7', f'{CDC_ENDPOINT_PREFIX}COM7')]
+        mock_cdc.return_value = [("USB-SPI-BRIDGE CDC COM7", f"{CDC_ENDPOINT_PREFIX}COM7")]
 
-        assert list_spi_usb_bridge_port_options() == [('USB-SPI-BRIDGE CDC COM7', f'{CDC_ENDPOINT_PREFIX}COM7')]
+        assert list_spi_usb_bridge_port_options() == [("USB-SPI-BRIDGE CDC COM7", f"{CDC_ENDPOINT_PREFIX}COM7")]
 
-    @patch('src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_bulk_endpoints')
-    @patch('src.backend.support.transport.spi_usb_bridge_transport._is_windows', return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_bulk_endpoints")
+    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
     def test_non_windows_lists_bulk_endpoints(self, _mock_windows: MagicMock, mock_endpoints: MagicMock) -> None:
         endpoint = SpiUsbBridgeEndpoint(bus=1, address=2, interface=0, endpoint=0x81)
         mock_endpoints.return_value = [endpoint]
@@ -58,12 +58,12 @@ class TestSpiUsbBridgeTransportOpen:
     def test_provider_create_reader_does_not_open_cdc(self) -> None:
         config = TransportConfig(
             mode=TransportMode.SPI_USB_BRIDGE,
-            label='bridge',
-            port=f'{CDC_ENDPOINT_PREFIX}COM7',
+            label="bridge",
+            port=f"{CDC_ENDPOINT_PREFIX}COM7",
             baudrate=3_000_000,
         )
 
-        with patch('src.backend.support.transport.serial_reader.serial.Serial') as mock_serial:
+        with patch("src.backend.support.transport.serial_reader.serial.Serial") as mock_serial:
             reader = PROVIDER.create_reader(config)
 
         mock_serial.assert_not_called()
@@ -73,55 +73,55 @@ class TestSpiUsbBridgeTransportOpen:
     def test_provider_create_reader_does_not_claim_bulk_endpoint(self) -> None:
         config = TransportConfig(
             mode=TransportMode.SPI_USB_BRIDGE,
-            label='bridge',
-            port='1:2:0:129',
+            label="bridge",
+            port="1:2:0:129",
             baudrate=3_000_000,
         )
 
-        with patch('src.backend.support.transport.spi_usb_bridge_transport._find_endpoint_access') as mock_find:
+        with patch("src.backend.support.transport.spi_usb_bridge_transport._find_endpoint_access") as mock_find:
             reader = PROVIDER.create_reader(config)
 
         mock_find.assert_not_called()
         assert isinstance(reader, SpiUsbBridgeBulkTransport)
         assert reader.status().opened is False
 
-    @patch('src.backend.support.transport.serial_reader.serial.Serial')
+    @patch("src.backend.support.transport.serial_reader.serial.Serial")
     def test_cdc_transport_bitrate(self, mock_serial: MagicMock) -> None:
         mock_serial.return_value = MagicMock()
 
-        transport = SpiUsbBridgeCdcTransport('COM7', 3_000_000)
+        transport = SpiUsbBridgeCdcTransport("COM7", 3_000_000)
         transport.open()
 
         bitrate = transport.bitrate_config
         assert bitrate.bits_per_payload_byte == SPI_BITS_PER_BYTE
         assert bitrate.wire_bits_per_sec == float(SPI_WIRE_BPS)
-        assert transport.display_name.endswith('COM7')
+        assert transport.display_name.endswith("COM7")
 
-    @patch('src.backend.support.transport.serial_reader.serial.Serial')
+    @patch("src.backend.support.transport.serial_reader.serial.Serial")
     def test_cdc_reader_open_read_close_status(self, mock_serial: MagicMock) -> None:
         serial_obj = MagicMock()
         serial_obj.is_open = True
-        serial_obj.read.return_value = b'abc'
+        serial_obj.read.return_value = b"abc"
         mock_serial.return_value = serial_obj
 
-        reader = SpiUsbBridgeCdcTransport('COM7', 3_000_000)
+        reader = SpiUsbBridgeCdcTransport("COM7", 3_000_000)
         reader.open()
         block = reader.read()
         status = reader.status()
         reader.close()
 
-        assert block == b'abc'
+        assert block == b"abc"
         assert status.opened is True
         assert status.rx_bytes == 3
         assert status.rx_chunks == 1
         serial_obj.close.assert_called_once()
 
-    @patch('src.backend.support.transport.serial_reader.serial.Serial')
+    @patch("src.backend.support.transport.serial_reader.serial.Serial")
     def test_cdc_open_wraps_serial_error_with_port_context(self, mock_serial: MagicMock) -> None:
-        mock_serial.side_effect = serial.SerialException('access denied')
+        mock_serial.side_effect = serial.SerialException("access denied")
 
-        reader = SpiUsbBridgeCdcTransport('COM7', 3_000_000)
-        with pytest.raises(RuntimeError, match=r'Failed to connect to the USB-SPI bridge CDC port COM7'):
+        reader = SpiUsbBridgeCdcTransport("COM7", 3_000_000)
+        with pytest.raises(RuntimeError, match=r"Failed to connect to the USB-SPI bridge CDC port COM7"):
             reader.open()
 
         # CDC is not exclusive: one attempt, and no retry while the port is busy.
@@ -129,8 +129,8 @@ class TestSpiUsbBridgeTransportOpen:
 
         status = reader.status()
         assert status.opened is False
-        assert status.last_error == 'access denied'
+        assert status.last_error == "access denied"
 
     def test_provider_metadata(self) -> None:
         assert PROVIDER.mode is TransportMode.SPI_USB_BRIDGE
-        assert PROVIDER.label == 'SPI USB Bridge'
+        assert PROVIDER.label == "SPI USB Bridge"

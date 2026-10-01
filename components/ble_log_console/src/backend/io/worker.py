@@ -8,17 +8,10 @@ from __future__ import annotations
 from queue import Full
 from typing import Any
 
-from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
-from src.backend.io.reader import ReaderProcessEvent
-from src.backend.io.reader import StopSignal
-from src.backend.io.reader import run_reader_loop
-from src.backend.io.writer import AsyncBatchWriter
-from src.backend.io.writer import Clock
-from src.backend.io.writer import FileFactory
-from src.backend.io.writer import WriterConfig
+from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC, ReaderProcessEvent, StopSignal, run_reader_loop
+from src.backend.io.writer import AsyncBatchWriter, Clock, FileFactory, WriterConfig
 from src.backend.models import TransportConfig
-from src.backend.support.transport import TransportReader
-from src.backend.support.transport import create_transport_reader
+from src.backend.support.transport import TransportReader, create_transport_reader
 
 
 def _put_stop_sentinel(queue: Any, timeout: float) -> None:
@@ -46,9 +39,9 @@ def run_io_loop(
 
     writer_kwargs: dict[str, Any] = {}
     if writer_clock is not None:
-        writer_kwargs['clock'] = writer_clock
+        writer_kwargs["clock"] = writer_clock
     if writer_file_factory is not None:
-        writer_kwargs['file_factory'] = writer_file_factory
+        writer_kwargs["file_factory"] = writer_file_factory
     writer = AsyncBatchWriter(writer_config, ui_queue, **writer_kwargs)
     writer.start()
 
@@ -93,6 +86,6 @@ def run_io_process(
             drain_rounds=drain_rounds,
         )
     except Exception as e:
-        ui_queue.put(ReaderProcessEvent(kind='error', message=str(e)))
+        ui_queue.put(ReaderProcessEvent(kind="error", message=str(e)))
         _put_stop_sentinel(parse_queue, QUEUE_PUT_TIMEOUT_SEC)
         _put_stop_sentinel(raw_stats_queue, QUEUE_PUT_TIMEOUT_SEC)

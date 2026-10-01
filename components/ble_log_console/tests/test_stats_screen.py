@@ -1,13 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from src.backend.models import FrameByteCount
-from src.backend.models import FunnelSnapshot
-from src.backend.models import ThroughputInfo
-from src.backend.models import format_throughput
+from src.backend.models import FrameByteCount, FunnelSnapshot, ThroughputInfo, format_throughput
 from src.backend.support.stats import StatsAccumulator
-from src.frontend.stats_screen import _build_console_table
-from src.frontend.stats_screen import _build_firmware_table
+from src.frontend.stats_screen import _build_console_table, _build_firmware_table
 
 _SRC_HOST = 5
 _SRC_LL_TASK = 2
@@ -42,29 +38,29 @@ def _snap(
 
 class TestFormatThroughput:
     def test_zero(self) -> None:
-        assert format_throughput(0.0) == '0.0 KB/s'
+        assert format_throughput(0.0) == "0.0 KB/s"
 
     def test_small_kb(self) -> None:
-        assert format_throughput(512.0) == '0.5 KB/s'
+        assert format_throughput(512.0) == "0.5 KB/s"
 
     def test_one_kb(self) -> None:
-        assert format_throughput(1024.0) == '1.0 KB/s'
+        assert format_throughput(1024.0) == "1.0 KB/s"
 
     def test_large_kb(self) -> None:
-        assert format_throughput(500 * 1024) == '500.0 KB/s'
+        assert format_throughput(500 * 1024) == "500.0 KB/s"
 
     def test_boundary_just_below_mb(self) -> None:
         bps = 1023.9 * 1024
         result = format_throughput(bps)
-        assert 'KB/s' in result
+        assert "KB/s" in result
 
     def test_boundary_at_mb(self) -> None:
         bps = 1024 * 1024
-        assert format_throughput(bps) == '1.00 MB/s'
+        assert format_throughput(bps) == "1.00 MB/s"
 
     def test_large_mb(self) -> None:
         bps = 2.5 * 1024 * 1024
-        assert format_throughput(bps) == '2.50 MB/s'
+        assert format_throughput(bps) == "2.50 MB/s"
 
 
 class TestBuildFirmwareTable:
@@ -75,9 +71,9 @@ class TestBuildFirmwareTable:
     def test_column_headers(self) -> None:
         table = _build_firmware_table([])
         headers = [str(col.header) for col in table.columns]
-        assert 'Source' in headers
-        assert any('Written' in h for h in headers)
-        assert any('Loss' in h for h in headers)
+        assert "Source" in headers
+        assert any("Written" in h for h in headers)
+        assert any("Loss" in h for h in headers)
 
     def test_single_source(self) -> None:
         snap = _snap(_SRC_HOST, written=(120, 6000))
@@ -103,11 +99,11 @@ class TestBuildConsoleTable:
         table = _build_console_table([])
         headers = [str(col.header) for col in table.columns]
         assert headers == [
-            'Source',
-            'Received\nFrames',
-            'Received\nBytes',
-            'Average\nFrames/s',
-            'Average\nBits/s',
+            "Source",
+            "Received\nFrames",
+            "Received\nBytes",
+            "Average\nFrames/s",
+            "Average\nBits/s",
         ]
 
     def test_single_source(self) -> None:

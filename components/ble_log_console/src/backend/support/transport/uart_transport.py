@@ -11,10 +11,8 @@ import time
 import serial
 import serial.tools.list_ports
 
-from src.backend.models import TransportBitrate
-from src.backend.models import TransportConfig
-from src.backend.support.transport.base import TransportMode
-from src.backend.support.transport.base import TransportProvider
+from src.backend.models import TransportBitrate, TransportConfig
+from src.backend.support.transport.base import TransportMode, TransportProvider
 from src.backend.support.transport.serial_reader import SerialReader
 
 UART_BITS_PER_BYTE = 10
@@ -26,8 +24,8 @@ UART_BLOCK_SIZE = 50 * 1024
 def list_serial_ports() -> list[str]:
     ports = serial.tools.list_ports.comports()
     devices = [port.device for port in ports]
-    if sys.platform.startswith('linux'):
-        return [device for device in devices if device.startswith(('/dev/ttyUSB', '/dev/ttyACM'))]
+    if sys.platform.startswith("linux"):
+        return [device for device in devices if device.startswith(("/dev/ttyUSB", "/dev/ttyACM"))]
     return devices
 
 
@@ -44,11 +42,11 @@ class UartTransport(SerialReader):
     block_size = UART_BLOCK_SIZE
     timeout = UART_READ_TIMEOUT
     open_exclusive = True
-    not_open_message = 'UART transport is not open'
+    not_open_message = "UART transport is not open"
 
     @property
     def display_name(self) -> str:
-        return f'UART {self._port} @ {self._baudrate}'
+        return f"UART {self._port} @ {self._baudrate}"
 
     @property
     def bitrate_config(self) -> TransportBitrate:
@@ -74,7 +72,7 @@ def list_uart_options() -> list[tuple[str, str]]:
 class UartTransportProvider:
     @property
     def label(self) -> str:
-        return 'UART'
+        return "UART"
 
     @property
     def mode(self) -> TransportMode:

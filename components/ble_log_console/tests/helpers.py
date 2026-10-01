@@ -12,14 +12,14 @@ def sum_checksum(data: bytes) -> int:
 def xor_checksum(data: bytes) -> int:
     checksum = 0
     for offset in range(0, len(data), 4):
-        checksum ^= int.from_bytes(data[offset : offset + 4], 'little')
+        checksum ^= int.from_bytes(data[offset : offset + 4], "little")
     return checksum & 0xFFFFFFFF
 
 
 def build_frame_header(payload_len: int, source_code: int, frame_sn: int) -> bytes:
     """Build a 6-byte BLE Log frame header."""
     frame_meta = (source_code & 0xFF) | (frame_sn << 8)
-    return struct.pack('<HI', payload_len, frame_meta)
+    return struct.pack("<HI", payload_len, frame_meta)
 
 
 def build_frame(
@@ -38,4 +38,4 @@ def build_frame(
     """
     header = build_frame_header(len(payload), source_code, frame_sn)
     checksum_val = checksum_fn(header + payload)
-    return header + payload + struct.pack('<I', checksum_val)
+    return header + payload + struct.pack("<I", checksum_val)

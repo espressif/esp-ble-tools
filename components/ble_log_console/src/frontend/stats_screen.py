@@ -9,28 +9,27 @@ Refreshes every second to show live throughput data.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from rich import box
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from src.backend.models import BufUtilEntry
-from src.backend.models import FunnelSnapshot
-from src.backend.models import format_bitrate
-from src.backend.models import format_bytes
-from src.backend.models import resolve_lbm_name
-from src.backend.models import resolve_pool_name
-from src.backend.models import resolve_source_name
-from src.frontend.rendering import normalize_display_text
-from src.frontend.rendering import table_ascii_box
-from src.frontend.rendering import table_safe_box
-from src.frontend.rendering import terminal_border_style
+from src.backend.models import (
+    BufUtilEntry,
+    FunnelSnapshot,
+    format_bitrate,
+    format_bytes,
+    resolve_lbm_name,
+    resolve_pool_name,
+    resolve_source_name,
+)
+from src.frontend.rendering import normalize_display_text, table_ascii_box, table_safe_box, terminal_border_style
 
 if TYPE_CHECKING:
     from src.app import BLELogApp
@@ -41,41 +40,41 @@ WINDOWS_ASCII_BOX = table_ascii_box()
 
 
 def _new_table(*, title: str, expand: bool = True) -> Table:
-    kwargs = {'title': title, 'expand': expand, 'safe_box': WINDOWS_SAFE_BOX}
+    kwargs = {"title": title, "expand": expand, "safe_box": WINDOWS_SAFE_BOX}
     if WINDOWS_ASCII_BOX:
-        kwargs['box'] = box.ASCII
+        kwargs["box"] = box.ASCII
     return Table(**kwargs)
 
 
 def _fmt_frames(n: int) -> str:
-    return str(n) if n > 0 else '-'
+    return str(n) if n > 0 else "-"
 
 
 def _fmt_loss_frames(n: int) -> Text:
     if n == 0:
-        return Text('-')
-    return Text(str(n), style='red')
+        return Text("-")
+    return Text(str(n), style="red")
 
 
 def _fmt_loss_bytes(n: int) -> Text:
     if n == 0:
-        return Text('-')
-    return Text(format_bytes(n), style='red')
+        return Text("-")
+    return Text(format_bytes(n), style="red")
 
 
 def _build_firmware_table(snapshots: list[FunnelSnapshot]) -> Table:
-    table = _new_table(title='Firmware Counters (since chip init)')
-    table.add_column('Source', style='cyan', no_wrap=True, min_width=12, max_width=16)
-    table.add_column('Written\nFrames', justify='right', min_width=10, max_width=12)
-    table.add_column('Written\nBytes', justify='right', min_width=10, max_width=12)
-    table.add_column('Buffer Loss\nFrames', justify='right', min_width=12, max_width=14)
-    table.add_column('Buffer Loss\nBytes', justify='right', min_width=12, max_width=14)
+    table = _new_table(title="Firmware Counters (since chip init)")
+    table.add_column("Source", style="cyan", no_wrap=True, min_width=12, max_width=16)
+    table.add_column("Written\nFrames", justify="right", min_width=10, max_width=12)
+    table.add_column("Written\nBytes", justify="right", min_width=10, max_width=12)
+    table.add_column("Buffer Loss\nFrames", justify="right", min_width=12, max_width=14)
+    table.add_column("Buffer Loss\nBytes", justify="right", min_width=12, max_width=14)
 
     for snap in snapshots:
         table.add_row(
             resolve_source_name(snap.source),
             _fmt_frames(snap.written.frames),
-            format_bytes(snap.written.bytes) if snap.written.bytes > 0 else '-',
+            format_bytes(snap.written.bytes) if snap.written.bytes > 0 else "-",
             _fmt_loss_frames(snap.buffer_loss.frames),
             _fmt_loss_bytes(snap.buffer_loss.bytes),
         )
@@ -84,20 +83,20 @@ def _build_firmware_table(snapshots: list[FunnelSnapshot]) -> Table:
 
 
 def _build_buf_util_table(entries: list[BufUtilEntry]) -> Table:
-    table = _new_table(title='Buffer Utilization (since chip init)')
-    table.add_column('Pool', style='cyan', no_wrap=True, min_width=12, max_width=16)
-    table.add_column('Idx', justify='right', min_width=4, max_width=6)
-    table.add_column('Name', style='cyan', no_wrap=True, min_width=10, max_width=14)
-    table.add_column('Peak', justify='right', min_width=6, max_width=8)
-    table.add_column('Total', justify='right', min_width=6, max_width=8)
-    table.add_column('Util%', justify='right', min_width=6, max_width=8)
+    table = _new_table(title="Buffer Utilization (since chip init)")
+    table.add_column("Pool", style="cyan", no_wrap=True, min_width=12, max_width=16)
+    table.add_column("Idx", justify="right", min_width=4, max_width=6)
+    table.add_column("Name", style="cyan", no_wrap=True, min_width=10, max_width=14)
+    table.add_column("Peak", justify="right", min_width=6, max_width=8)
+    table.add_column("Total", justify="right", min_width=6, max_width=8)
+    table.add_column("Util%", justify="right", min_width=6, max_width=8)
 
     for entry in entries:
         if entry.trans_cnt > 0:
             pct = entry.inflight_peak / entry.trans_cnt * 100
-            pct_text = Text(f'{pct:.0f}%', style='red' if pct >= 100 else '')
+            pct_text = Text(f"{pct:.0f}%", style="red" if pct >= 100 else "")
         else:
-            pct_text = Text('-')
+            pct_text = Text("-")
 
         table.add_row(
             resolve_pool_name(entry.pool),
@@ -112,12 +111,12 @@ def _build_buf_util_table(entries: list[BufUtilEntry]) -> Table:
 
 
 def _build_console_table(snapshots: list[FunnelSnapshot]) -> Table:
-    table = _new_table(title='Console Measurements (since console start)')
-    table.add_column('Source', style='cyan', no_wrap=True, min_width=12, max_width=16)
-    table.add_column('Received\nFrames', justify='right', min_width=10, max_width=12)
-    table.add_column('Received\nBytes', justify='right', min_width=10, max_width=12)
-    table.add_column('Average\nFrames/s', justify='right', style='magenta', min_width=10, max_width=12)
-    table.add_column('Average\nBits/s', justify='right', style='magenta', min_width=10, max_width=12)
+    table = _new_table(title="Console Measurements (since console start)")
+    table.add_column("Source", style="cyan", no_wrap=True, min_width=12, max_width=16)
+    table.add_column("Received\nFrames", justify="right", min_width=10, max_width=12)
+    table.add_column("Received\nBytes", justify="right", min_width=10, max_width=12)
+    table.add_column("Average\nFrames/s", justify="right", style="magenta", min_width=10, max_width=12)
+    table.add_column("Average\nBits/s", justify="right", style="magenta", min_width=10, max_width=12)
 
     for snap in snapshots:
         tp_fps = snap.throughput.throughput_fps
@@ -126,9 +125,9 @@ def _build_console_table(snapshots: list[FunnelSnapshot]) -> Table:
         table.add_row(
             resolve_source_name(snap.source),
             _fmt_frames(snap.received.frames),
-            format_bytes(snap.received.bytes) if snap.received.bytes > 0 else '-',
-            f'{tp_fps:.0f}' if tp_fps > 0 else '-',
-            format_bitrate(throughput_bits_per_sec) if throughput_bits_per_sec > 0 else '-',
+            format_bytes(snap.received.bytes) if snap.received.bytes > 0 else "-",
+            f"{tp_fps:.0f}" if tp_fps > 0 else "-",
+            format_bitrate(throughput_bits_per_sec) if throughput_bits_per_sec > 0 else "-",
         )
 
     return table
@@ -156,11 +155,11 @@ class StatsScreen(ModalScreen):
     #stats-container > Static {
         height: auto;
     }
-    """.replace('__BORDER_STYLE__', terminal_border_style())
+    """.replace("__BORDER_STYLE__", terminal_border_style())
 
-    BINDINGS = [
-        Binding('escape', 'dismiss', 'Close'),
-        Binding('d', 'dismiss', 'Close'),
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("d", "dismiss", "Close"),
     ]
 
     def __init__(self, start_time: float) -> None:
@@ -171,10 +170,10 @@ class StatsScreen(ModalScreen):
         return self.app  # type: ignore[return-value]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id='stats-container'):
-            yield Static(id='firmware-table')
-            yield Static(id='console-table')
-            yield Static(normalize_display_text('[dim]Press Escape to return -- refreshes every 1s[/dim]'))
+        with Vertical(id="stats-container"):
+            yield Static(id="firmware-table")
+            yield Static(id="console-table")
+            yield Static(normalize_display_text("[dim]Press Escape to return -- refreshes every 1s[/dim]"))
 
     def on_mount(self) -> None:
         self._refresh_table()
@@ -184,11 +183,11 @@ class StatsScreen(ModalScreen):
         app = self._get_app()
         snapshots = app.funnel_snapshots
 
-        fw = self.query_one('#firmware-table', Static)
-        cs = self.query_one('#console-table', Static)
+        fw = self.query_one("#firmware-table", Static)
+        cs = self.query_one("#console-table", Static)
         if not snapshots:
-            fw.update('No data received yet.\n\nPress Escape to return.')
-            cs.update('')
+            fw.update("No data received yet.\n\nPress Escape to return.")
+            cs.update("")
             return
 
         fw.update(_build_firmware_table(snapshots))
@@ -215,20 +214,20 @@ class BufUtilScreen(ModalScreen):
     #buf-util-container > Static {
         height: auto;
     }
-    """.replace('__BORDER_STYLE__', terminal_border_style())
+    """.replace("__BORDER_STYLE__", terminal_border_style())
 
-    BINDINGS = [
-        Binding('escape', 'dismiss', 'Close'),
-        Binding('m', 'dismiss', 'Close'),
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("m", "dismiss", "Close"),
     ]
 
     def _get_app(self) -> BLELogApp:
         return self.app  # type: ignore[return-value]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id='buf-util-container'):
-            yield Static(id='buf-util-table')
-            yield Static(normalize_display_text('[dim]Press Escape to return -- refreshes every 1s[/dim]'))
+        with Vertical(id="buf-util-container"):
+            yield Static(id="buf-util-table")
+            yield Static(normalize_display_text("[dim]Press Escape to return -- refreshes every 1s[/dim]"))
 
     def on_mount(self) -> None:
         self._refresh_table()
@@ -236,8 +235,8 @@ class BufUtilScreen(ModalScreen):
 
     def _refresh_table(self) -> None:
         entries = self._get_app().buf_util_snapshots
-        widget = self.query_one('#buf-util-table', Static)
+        widget = self.query_one("#buf-util-table", Static)
         if not entries:
-            widget.update('No buffer utilization data yet.\n\nPress Escape to return.')
+            widget.update("No buffer utilization data yet.\n\nPress Escape to return.")
             return
         widget.update(_build_buf_util_table(entries))

@@ -14,8 +14,7 @@ from __future__ import annotations
 import serial
 
 from src.backend.models import TransportBitrate
-from src.backend.support.transport.base import TransportMode
-from src.backend.support.transport.base import TransportStatus
+from src.backend.support.transport.base import TransportMode, TransportStatus
 
 
 class SerialReader:
@@ -30,7 +29,7 @@ class SerialReader:
     block_size: int
     timeout: float
     open_exclusive: bool = False
-    not_open_message: str = 'Serial transport is not open'
+    not_open_message: str = "Serial transport is not open"
 
     def __init__(self, port: str, baudrate: int) -> None:
         self._port = port

@@ -8,29 +8,31 @@ from __future__ import annotations
 import time
 from typing import cast
 
-from ble_log_frame_decoder import BleLogFrame
-from ble_log_frame_decoder import FrameDecoder
-from ble_log_frame_decoder import FrameFormat
+from ble_log_frame_decoder import BleLogFrame, FrameDecoder, FrameFormat
 
-from src.backend.analysis.parser_events import BleLogEvent
-from src.backend.analysis.parser_events import EnhStatEvent
-from src.backend.analysis.parser_events import FinalStatEvent
-from src.backend.analysis.parser_events import FrameEvent
-from src.backend.analysis.parser_events import InternalEvent
-from src.backend.analysis.parser_events import ParseBatch
-from src.backend.analysis.parser_events import ParseChunkResult
-from src.backend.analysis.parser_events import ParseSummary
-from src.backend.analysis.parser_events import RedirEvent
-from src.backend.models import FRAME_OVERHEAD
-from src.backend.models import MAX_FRAME_SIZE
-from src.backend.models import BleLogSource
-from src.backend.models import ChecksumAlgorithm
-from src.backend.models import ChecksumMode
-from src.backend.models import ChecksumScope
-from src.backend.models import EnhStatResult
-from src.backend.models import FinalStatResult
-from src.backend.models import InfoResult
-from src.backend.models import InternalSource
+from src.backend.analysis.parser_events import (
+    BleLogEvent,
+    EnhStatEvent,
+    FinalStatEvent,
+    FrameEvent,
+    InternalEvent,
+    ParseBatch,
+    ParseChunkResult,
+    ParseSummary,
+    RedirEvent,
+)
+from src.backend.models import (
+    FRAME_OVERHEAD,
+    MAX_FRAME_SIZE,
+    BleLogSource,
+    ChecksumAlgorithm,
+    ChecksumMode,
+    ChecksumScope,
+    EnhStatResult,
+    FinalStatResult,
+    InfoResult,
+    InternalSource,
+)
 from src.backend.support.parser_core.internal_decoder import decode_internal_frame
 
 DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
@@ -57,7 +59,7 @@ def _decoder_for_mode(checksum_mode: ChecksumMode | None) -> FrameDecoder:
         frame_format = _FORMAT_BY_MODE[(resolved.algorithm, resolved.scope)]
     except KeyError:
         raise ValueError(
-            f'unsupported checksum mode {resolved}: esp-blfd covers XOR/FULL (v2 xor32) and SUM/FULL (v2 sum32)'
+            f"unsupported checksum mode {resolved}: esp-blfd covers XOR/FULL (v2 xor32) and SUM/FULL (v2 sum32)"
         ) from None
     return FrameDecoder(format=frame_format, max_frame_size=MAX_DECODER_FRAME_SIZE)
 
@@ -128,10 +130,10 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
         decoded = decode_internal_frame(frame.payload)
         if decoded is None:
             return
-        int_src = decoded['int_src']
+        int_src = decoded["int_src"]
         if int_src == InternalSource.INIT_DONE:
             info = cast(InfoResult, decoded)
-            if info['version'] == 0:
+            if info["version"] == 0:
                 return
         if int_src == InternalSource.ENH_STAT:
             events.append(
@@ -146,8 +148,8 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
             events.append(
                 FinalStatEvent(
                     frame_size=frame_size,
-                    os_ts_ms=final_stat['os_ts_ms'],
-                    entries=final_stat['entries'],
+                    os_ts_ms=final_stat["os_ts_ms"],
+                    entries=final_stat["entries"],
                 )
             )
             return
@@ -166,7 +168,7 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
                 frame_size=frame_size,
                 source_code=source_code,
                 frame_sn=frame_sn,
-                text=frame.payload.decode('ascii', errors='replace'),
+                text=frame.payload.decode("ascii", errors="replace"),
                 received_at_ms=received_at_ms,
             )
         )

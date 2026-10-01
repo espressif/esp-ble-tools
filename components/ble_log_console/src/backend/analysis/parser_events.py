@@ -5,14 +5,9 @@
 
 from __future__ import annotations
 
-from typing import NamedTuple
-from typing import TypeAlias
+from typing import NamedTuple, TypeAlias
 
-from src.backend.models import EnhStatResult
-from src.backend.models import FinalStatEntry
-from src.backend.models import InternalDecoderResult
-from src.backend.models import InternalSource
-from src.backend.models import SourceCode
+from src.backend.models import EnhStatResult, FinalStatEntry, InternalDecoderResult, InternalSource, SourceCode
 
 
 class FrameEvent(NamedTuple):

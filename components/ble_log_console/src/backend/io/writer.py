@@ -9,11 +9,10 @@ import os
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
-from typing import Any
-from typing import Callable
+from typing import IO, Any
 
 CAPTURE_PART_MAX_BYTES = 200 * 1024 * 1024
 FLUSH_INTERVAL_SEC = 1.0
@@ -50,7 +49,7 @@ class WriterEvent:
     """Status or error emitted by the writer loop."""
 
     kind: str
-    message: str = ''
+    message: str = ""
     status: WriterStatus | None = None
 
 
@@ -63,12 +62,12 @@ def capture_part_path(base_path: Path, part_index: int) -> Path:
 
     if part_index <= 1:
         return base_path
-    return base_path.with_name(f'{base_path.stem}_part{part_index:03d}{base_path.suffix}')
+    return base_path.with_name(f"{base_path.stem}_part{part_index:03d}{base_path.suffix}")
 
 
 def _default_file_factory(path: Path) -> IO[bytes]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    return open(path, 'wb', buffering=RAW_FILE_BUFFER_BYTES)  # noqa: SIM115
+    return open(path, "wb", buffering=RAW_FILE_BUFFER_BYTES)
 
 
 def _flush_and_close_file(file_obj: IO[bytes]) -> None:
@@ -90,7 +89,7 @@ def _put_event(ui_queue: Any, event: WriterEvent) -> None:
 def _put_path_events(ui_queue: Any, old_paths: tuple[Path, ...], writer: Any) -> None:
     new_paths = writer.paths[len(old_paths) :]
     for index, path in enumerate(new_paths):
-        kind = 'opened' if not old_paths and index == 0 else 'rotated'
+        kind = "opened" if not old_paths and index == 0 else "rotated"
         _put_event(
             ui_queue,
             WriterEvent(
@@ -144,7 +143,7 @@ class Writer:
     def write(self, block: bytes, *, timeout: float | None = None) -> None:
         del timeout
         if self._finalized:
-            raise RuntimeError('writer is already finalized')
+            raise RuntimeError("writer is already finalized")
         if not block:
             return
 
@@ -155,7 +154,7 @@ class Writer:
             while offset < block_size:
                 self._rotate_if_needed()
                 if self._file is None:
-                    raise RuntimeError('writer failed to open output file')
+                    raise RuntimeError("writer failed to open output file")
 
                 if self._config.part_max_bytes > 0:
                     part_remaining = self._config.part_max_bytes - self._current_part_bytes
@@ -245,7 +244,7 @@ class AsyncBatchWriter:
         self._started = False
         self._error: BaseException | None = None
         self._queue: queue.Queue[bytes | None] = queue.Queue(maxsize=self._queue_max_blocks)
-        self._thread = threading.Thread(name='ble-log-writer-thread', target=self._run_writer)
+        self._thread = threading.Thread(name="ble-log-writer-thread", target=self._run_writer)
 
     @property
     def paths(self) -> tuple[Path, ...]:
@@ -281,19 +280,19 @@ class AsyncBatchWriter:
         if not block:
             return
         if not self._started:
-            raise RuntimeError('async writer is not started')
+            raise RuntimeError("async writer is not started")
 
         self._raise_if_unavailable()
         try:
             self._queue.put(block, timeout=timeout)
         except queue.Full as e:
-            raise TimeoutError('writer queue full; disk writer is not keeping up') from e
+            raise TimeoutError("writer queue full; disk writer is not keeping up") from e
         self._raise_if_unavailable()
 
     def finalize(self) -> None:
         if not self._started:
             self._writer.finalize()
-            _put_event(self._ui_queue, WriterEvent(kind='finalized', status=self.status()))
+            _put_event(self._ui_queue, WriterEvent(kind="finalized", status=self.status()))
             return
         self._closed = True
         while self._thread.is_alive():
@@ -309,7 +308,7 @@ class AsyncBatchWriter:
         if self._error is not None:
             raise RuntimeError(str(self._error))
         if self._closed:
-            raise RuntimeError('writer is already finalized')
+            raise RuntimeError("writer is already finalized")
 
     def _pop_batch(self) -> tuple[list[bytes], bool]:
         first = self._queue.get()
@@ -357,7 +356,7 @@ class AsyncBatchWriter:
                         break
                     continue
 
-                block = batch[0] if len(batch) == 1 else b''.join(batch)
+                block = batch[0] if len(batch) == 1 else b"".join(batch)
                 old_paths = self._writer.paths
                 self._writer.write(block)
                 _put_path_events(self._ui_queue, old_paths, self)
@@ -366,19 +365,19 @@ class AsyncBatchWriter:
         except Exception as e:
             failed = True
             self._set_error(e)
-            _put_event(self._ui_queue, WriterEvent(kind='error', message=str(e), status=self.status()))
+            _put_event(self._ui_queue, WriterEvent(kind="error", message=str(e), status=self.status()))
         finally:
             try:
                 self._writer.finalize()
                 if not failed:
-                    _put_event(self._ui_queue, WriterEvent(kind='finalized', status=self.status()))
+                    _put_event(self._ui_queue, WriterEvent(kind="finalized", status=self.status()))
             except Exception as close_error:
                 self._set_error(close_error)
                 _put_event(
                     self._ui_queue,
                     WriterEvent(
-                        kind='error',
-                        message=f'close failed: {close_error}',
+                        kind="error",
+                        message=f"close failed: {close_error}",
                         status=self.status(),
                     ),
                 )

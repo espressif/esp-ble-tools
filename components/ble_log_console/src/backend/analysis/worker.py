@@ -9,19 +9,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from queue import Empty
-from queue import Queue
+from queue import Empty, Queue
 from typing import Any
 
-from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.analysis.aggregator import AggregatorUpdate
-from src.backend.analysis.aggregator import CaptureAggregator
+from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, CaptureAggregator
 from src.backend.analysis.parser import BleLogParser
-from src.backend.analysis.parser_events import ParseBatch
-from src.backend.analysis.parser_events import ParseSummary
-from src.backend.analysis.parser_events import ReceivedChunk
-from src.backend.models import ChecksumMode
-from src.backend.models import TransportBitrate
+from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk
+from src.backend.models import ChecksumMode, TransportBitrate
 
 PARSER_BATCH_MAX_CHUNKS = 16
 PARSER_BATCH_MAX_BYTES = 1024 * 1024
@@ -40,7 +34,7 @@ class ParserStatus:
     """Parser status or error."""
 
     kind: str
-    message: str = ''
+    message: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,7 +42,7 @@ class AggregatorProcessEvent:
     """Aggregator status or error."""
 
     kind: str
-    message: str = ''
+    message: str = ""
 
 
 def _put_parser_event(output_queue: Any, event: ParseBatch | ParseSummary | ParserStatus) -> None:
@@ -115,7 +109,7 @@ def run_parser_loop(
                 break
         _put_parser_event(output_queue, parser.finalize())
     except Exception as e:
-        _put_parser_event(output_queue, ParserStatus(kind='error', message=str(e)))
+        _put_parser_event(output_queue, ParserStatus(kind="error", message=str(e)))
 
 
 def drain_parser_events(output_queue: Any) -> list[ParseBatch | ParseSummary | ParserStatus]:
@@ -179,7 +173,7 @@ def _handle_parser_item(
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
         _put_analysis_event(ui_queue, item)
-        return item.kind == 'error', False
+        return item.kind == "error", False
     return False, False
 
 
@@ -299,9 +293,9 @@ def run_aggregator_loop(
                 emit_snapshot()
 
         emit_snapshot(snapshot_elapsed_sec, final=True)
-        _put_analysis_event(ui_queue, AggregatorProcessEvent(kind='finalized' if parser_finalized else 'stopped'))
+        _put_analysis_event(ui_queue, AggregatorProcessEvent(kind="finalized" if parser_finalized else "stopped"))
     except Exception as e:
-        _put_analysis_event(ui_queue, AggregatorProcessEvent(kind='error', message=str(e)))
+        _put_analysis_event(ui_queue, AggregatorProcessEvent(kind="error", message=str(e)))
 
 
 def drain_aggregator_events(
@@ -330,11 +324,11 @@ def run_analysis_loop(
 
     analysis_queue: Queue[Any] = Queue(maxsize=analysis_queue_size)
     parser_thread = threading.Thread(
-        name='ble-log-parser-thread',
+        name="ble-log-parser-thread",
         target=run_parser_loop,
         args=(parse_queue, analysis_queue),
         kwargs={
-            'checksum_mode': checksum_mode,
+            "checksum_mode": checksum_mode,
         },
         daemon=True,
     )

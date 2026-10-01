@@ -3,12 +3,10 @@
 
 """Capture pipeline controller."""
 
-from src.backend.pipeline.controller import CapturePipeline
-from src.backend.pipeline.controller import CapturePipelineResult
-from src.backend.pipeline.controller import run_capture_pipeline_inprocess
+from src.backend.pipeline.controller import CapturePipeline, CapturePipelineResult, run_capture_pipeline_inprocess
 
 __all__ = [
-    'CapturePipeline',
-    'CapturePipelineResult',
-    'run_capture_pipeline_inprocess',
+    "CapturePipeline",
+    "CapturePipelineResult",
+    "run_capture_pipeline_inprocess",
 ]

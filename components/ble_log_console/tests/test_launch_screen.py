@@ -2,17 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from src.backend.models import LaunchConfig
-from src.backend.models import TransportMode
-from src.frontend.launch_screen import BAUD_RATES
-from src.frontend.launch_screen import DEFAULT_BAUD_RATE
-from src.frontend.launch_screen import SPI_PORT_LABEL_PREFIX
-from src.frontend.launch_screen import LaunchScreen
-from src.i18n import get_language
-from src.i18n import set_language
+from src.backend.models import LaunchConfig, TransportMode
+from src.frontend.launch_screen import BAUD_RATES, DEFAULT_BAUD_RATE, SPI_PORT_LABEL_PREFIX, LaunchScreen
+from src.i18n import get_language, set_language
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,27 +37,27 @@ class TestBaudRateConstants:
 class TestLaunchScreenInit:
     def test_default_log_dir_is_logs_under_cwd(self) -> None:
         screen = LaunchScreen()
-        assert screen._default_log_dir == Path.cwd() / 'logs'
+        assert screen._default_log_dir == Path.cwd() / "logs"
 
     def test_custom_log_dir(self) -> None:
-        custom = Path('/tmp/my_logs')
+        custom = Path("/tmp/my_logs")
         screen = LaunchScreen(default_log_dir=custom)
         assert screen._default_log_dir == custom
 
     def test_bindings_include_quit(self) -> None:
         """LaunchScreen should have a quit binding on 'q'."""
         keys = [b.key for b in LaunchScreen.BINDINGS]
-        assert 'q' in keys
+        assert "q" in keys
 
     def test_language_is_selected_before_connecting(self) -> None:
         screen = LaunchScreen()
         event = MagicMock()
-        event.value = 'zh_CN'
+        event.value = "zh_CN"
         try:
             screen.language_changed(event)
-            assert get_language() == 'zh_CN'
+            assert get_language() == "zh_CN"
         finally:
-            set_language('en')
+            set_language("en")
 
 
 # ---------------------------------------------------------------------------
@@ -72,10 +66,10 @@ class TestLaunchScreenInit:
 
 
 class TestRefreshPorts:
-    @patch('src.frontend.launch_screen.list_transport_port_options')
+    @patch("src.frontend.launch_screen.list_transport_port_options")
     def test_refresh_updates_select_with_ports(self, mock_list_options: MagicMock) -> None:
         """refresh_ports should scan ports and update the Select widget."""
-        mock_list_options.return_value = [('/dev/ttyUSB0', '/dev/ttyUSB0'), ('/dev/ttyUSB1', '/dev/ttyUSB1')]
+        mock_list_options.return_value = [("/dev/ttyUSB0", "/dev/ttyUSB0"), ("/dev/ttyUSB1", "/dev/ttyUSB1")]
         screen = LaunchScreen()
 
         mock_select = MagicMock()
@@ -85,11 +79,11 @@ class TestRefreshPorts:
 
         mock_list_options.assert_called_once_with(TransportMode.UART)
         mock_select.set_options.assert_called_once_with(
-            [('/dev/ttyUSB0', '/dev/ttyUSB0'), ('/dev/ttyUSB1', '/dev/ttyUSB1')]
+            [("/dev/ttyUSB0", "/dev/ttyUSB0"), ("/dev/ttyUSB1", "/dev/ttyUSB1")]
         )
-        assert mock_select.value == '/dev/ttyUSB0'
+        assert mock_select.value == "/dev/ttyUSB0"
 
-    @patch('src.frontend.launch_screen.list_transport_port_options')
+    @patch("src.frontend.launch_screen.list_transport_port_options")
     def test_refresh_empty_ports_no_value_set(self, mock_list_options: MagicMock) -> None:
         """When no ports found, set_options is called with empty list and value is not set."""
         mock_list_options.return_value = []
@@ -102,7 +96,7 @@ class TestRefreshPorts:
 
         mock_select.set_options.assert_called_once_with([])
         # value should NOT have been reassigned when ports list is empty
-        assert mock_select.value != '/dev/ttyUSB0'
+        assert mock_select.value != "/dev/ttyUSB0"
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +109,7 @@ class TestConnect:
         self,
         port_value: object,
         baud_value: int = 3000000,
-        dir_value: str = '/tmp/logs',
+        dir_value: str = "/tmp/logs",
     ) -> tuple[LaunchScreen, MagicMock, MagicMock, MagicMock]:
         """Helper: create a LaunchScreen with mocked query_one results."""
         screen = LaunchScreen()
@@ -130,13 +124,13 @@ class TestConnect:
         mock_dir_input.value = dir_value
 
         def fake_query_one(selector: str, widget_type: type = object) -> MagicMock:
-            if selector == '#port-select':
+            if selector == "#port-select":
                 return mock_port_select
-            if selector == '#baud-select':
+            if selector == "#baud-select":
                 return mock_baud_select
-            if selector == '#dir-input':
+            if selector == "#dir-input":
                 return mock_dir_input
-            raise ValueError(f'Unexpected selector: {selector}')
+            raise ValueError(f"Unexpected selector: {selector}")
 
         screen.query_one = fake_query_one  # type: ignore[assignment]
         screen.dismiss = MagicMock()  # type: ignore[method-assign]
@@ -147,9 +141,9 @@ class TestConnect:
     def test_connect_with_valid_port(self) -> None:
         """connect() should dismiss with LaunchConfig when port is selected."""
         screen, _, _, _ = self._make_screen_with_mocks(
-            port_value='/dev/ttyUSB0',
+            port_value="/dev/ttyUSB0",
             baud_value=921600,
-            dir_value='/tmp/logs',
+            dir_value="/tmp/logs",
         )
 
         screen.connect()
@@ -158,14 +152,14 @@ class TestConnect:
         config = screen.dismiss.call_args[0][0]
         assert isinstance(config, LaunchConfig)
         assert config.transport_config.mode is TransportMode.UART
-        assert config.transport_config.port == '/dev/ttyUSB0'
+        assert config.transport_config.port == "/dev/ttyUSB0"
         assert config.transport_config.baudrate == 921600
-        assert config.log_dir == Path('/tmp/logs')
+        assert config.log_dir == Path("/tmp/logs")
 
     def test_connect_with_spi_uses_default_baudrate_without_baud_select(self) -> None:
         screen, _, _, _ = self._make_screen_with_mocks(
-            port_value='usb:303a:4001',
-            dir_value='/tmp/logs',
+            port_value="usb:303a:4001",
+            dir_value="/tmp/logs",
         )
         screen._mode = TransportMode.SPI_USB_BRIDGE
 
@@ -173,7 +167,7 @@ class TestConnect:
 
         config = screen.dismiss.call_args[0][0]
         assert config.transport_config.mode is TransportMode.SPI_USB_BRIDGE
-        assert config.transport_config.port == 'usb:303a:4001'
+        assert config.transport_config.port == "usb:303a:4001"
         assert config.transport_config.baudrate == DEFAULT_BAUD_RATE
 
     def test_connect_with_blank_port_shows_error(self) -> None:
@@ -184,34 +178,34 @@ class TestConnect:
 
         screen.connect()
 
-        screen.notify.assert_called_once_with('Please select a port', severity='error')
+        screen.notify.assert_called_once_with("Please select a port", severity="error")
         screen.dismiss.assert_not_called()
 
     def test_connect_log_dir_is_path_object(self) -> None:
         """The log_dir in LaunchConfig should be a Path, not a string."""
-        screen, _, _, _ = self._make_screen_with_mocks(port_value='COM3', dir_value='/home/user/logs')
+        screen, _, _, _ = self._make_screen_with_mocks(port_value="COM3", dir_value="/home/user/logs")
 
         screen.connect()
 
         config = screen.dismiss.call_args[0][0]
         assert isinstance(config.log_dir, Path)
-        assert str(config.log_dir) == '/home/user/logs'
+        assert str(config.log_dir) == "/home/user/logs"
 
 
 class TestTransportModeHelpers:
     def test_spi_display_options_are_prefixed(self) -> None:
         screen = LaunchScreen()
         screen._mode = TransportMode.SPI_USB_BRIDGE
-        options = screen._display_port_options([('raw label', 'usb:303a:4001')])
-        assert options == [(f'{SPI_PORT_LABEL_PREFIX}  usb:303a:4001', 'usb:303a:4001')]
+        options = screen._display_port_options([("raw label", "usb:303a:4001")])
+        assert options == [(f"{SPI_PORT_LABEL_PREFIX}  usb:303a:4001", "usb:303a:4001")]
 
     def test_mode_from_select_value_accepts_enum_value(self) -> None:
         screen = LaunchScreen()
-        assert screen._mode_from_select_value('spi_usb_bridge') is TransportMode.SPI_USB_BRIDGE
+        assert screen._mode_from_select_value("spi_usb_bridge") is TransportMode.SPI_USB_BRIDGE
 
     def test_mode_from_select_value_accepts_cli_value(self) -> None:
         screen = LaunchScreen()
-        assert screen._mode_from_select_value('spi') is TransportMode.SPI_USB_BRIDGE
+        assert screen._mode_from_select_value("spi") is TransportMode.SPI_USB_BRIDGE
 
 
 # ---------------------------------------------------------------------------

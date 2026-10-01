@@ -9,32 +9,22 @@ from threading import Event
 from typing import IO
 from unittest.mock import MagicMock
 
-from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.analysis.aggregator import AggregatorUpdate
+from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
 from src.backend.analysis.worker import ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
-from src.backend.io.writer import WriterConfig
-from src.backend.io.writer import WriterEvent
-from src.backend.io.writer import WriterStatus
-from src.backend.models import BleLogSource
-from src.backend.models import FrameStats
-from src.backend.models import TransportBitrate
-from src.backend.models import TransportConfig
-from src.backend.models import TransportMode
-from src.backend.pipeline.controller import CapturePipeline
-from src.backend.pipeline.controller import _result_from_events
-from src.backend.pipeline.controller import run_capture_pipeline_inprocess
+from src.backend.io.writer import WriterConfig, WriterEvent, WriterStatus
+from src.backend.models import BleLogSource, FrameStats, TransportBitrate, TransportConfig, TransportMode
+from src.backend.pipeline.controller import CapturePipeline, _result_from_events, run_capture_pipeline_inprocess
 from src.backend.support.transport import TransportStatus
 
-from tests.helpers import build_frame
-from tests.helpers import xor_checksum
+from tests.helpers import build_frame, xor_checksum
 
 
 def test_capture_retains_only_latest_snapshot_and_keeps_errors() -> None:
-    config = TransportConfig(TransportMode.UART, 'COM3', 'COM3', 921600)
-    pipeline = CapturePipeline(config, WriterConfig(Path('capture.bin')))
+    config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
+    pipeline = CapturePipeline(config, WriterConfig(Path("capture.bin")))
     pipeline._ui_queue = Queue()
-    error = ParserStatus(kind='error', message='parser failed')
+    error = ParserStatus(kind="error", message="parser failed")
     pipeline._ui_queue.put(error)
     latest = None
     for index in range(30):
@@ -45,7 +35,7 @@ def test_capture_retains_only_latest_snapshot_and_keeps_errors() -> None:
     result = _result_from_events(pipeline._result_events)
     assert len(pipeline._result_events) == 2
     assert result.final_snapshot is latest
-    assert result.parser_error == 'parser failed'
+    assert result.parser_error == "parser failed"
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
@@ -53,8 +43,8 @@ def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
 
 
 def _sync_frames(src: int = BleLogSource.HOST) -> bytes:
-    payload = b'\x00\x00\x00\x00data'
-    return b''.join(_make_frame(payload, src=src, sn=sn) for sn in range(3))
+    payload = b"\x00\x00\x00\x00data"
+    return b"".join(_make_frame(payload, src=src, sn=sn) for sn in range(3))
 
 
 class FakeReader:
@@ -77,7 +67,7 @@ class FakeReader:
 
     @property
     def display_name(self) -> str:
-        return 'fake reader'
+        return "fake reader"
 
     @property
     def block_size(self) -> int:
@@ -98,9 +88,9 @@ class FakeReader:
             return block
         if self.fail_after_blocks and not self.failed:
             self.failed = True
-            raise RuntimeError('reader failed')
+            raise RuntimeError("reader failed")
         self.stop_event.set()
-        return b''
+        return b""
 
     def drain(self, max_rounds: int = 10) -> list[bytes]:
         return self.drain_blocks[:max_rounds]
@@ -124,13 +114,13 @@ class FakeReader:
 
 class FailingBinaryFile:
     def write(self, data: bytes) -> int:
-        raise OSError('disk full')
+        raise OSError("disk full")
 
     def flush(self) -> None:
         pass
 
     def fileno(self) -> int:
-        raise OSError('no fileno')
+        raise OSError("no fileno")
 
     def close(self) -> None:
         pass
@@ -138,8 +128,8 @@ class FailingBinaryFile:
 
 def test_fake_reader_writes_raw_file(tmp_path: Path) -> None:
     stop_event = Event()
-    reader = FakeReader([b'one', b'two'], stop_event)
-    output_path = tmp_path / 'ble_log.bin'
+    reader = FakeReader([b"one", b"two"], stop_event)
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
@@ -148,40 +138,40 @@ def test_fake_reader_writes_raw_file(tmp_path: Path) -> None:
     assert result.writer_error is None
     assert result.parser_error is None
     assert result.aggregator_error is None
-    assert result.raw_bytes == len(b'onetwo')
+    assert result.raw_bytes == len(b"onetwo")
     assert result.raw_paths == (output_path,)
-    assert output_path.read_bytes() == b'onetwo'
+    assert output_path.read_bytes() == b"onetwo"
 
 
 def test_stop_drains_reader_data_into_raw_file(tmp_path: Path) -> None:
     stop_event = Event()
     stop_event.set()
-    reader = FakeReader([], stop_event, drain_blocks=[b'last'])
-    output_path = tmp_path / 'ble_log.bin'
+    reader = FakeReader([], stop_event, drain_blocks=[b"last"])
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
     assert result.completed
-    assert output_path.read_bytes() == b'last'
+    assert output_path.read_bytes() == b"last"
 
 
 def test_parser_process_completes_with_raw_capture(tmp_path: Path) -> None:
     stop_event = Event()
-    reader = FakeReader([b'one', b'two'], stop_event)
-    output_path = tmp_path / 'ble_log.bin'
+    reader = FakeReader([b"one", b"two"], stop_event)
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
     assert result.completed
     assert result.parser_error is None
-    assert output_path.read_bytes() == b'onetwo'
+    assert output_path.read_bytes() == b"onetwo"
 
 
 def test_pipeline_aggregates_parser_events_and_raw_bytes(tmp_path: Path) -> None:
     stop_event = Event()
     frames = _sync_frames()
     reader = FakeReader([frames], stop_event)
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
@@ -195,9 +185,9 @@ def test_pipeline_aggregates_parser_events_and_raw_bytes(tmp_path: Path) -> None
 
 def test_pipeline_final_snapshot_seals_sequence_gaps(tmp_path: Path) -> None:
     stop_event = Event()
-    payload = b'\x00\x00\x00\x00data'
+    payload = b"\x00\x00\x00\x00data"
     frames = _make_frame(payload, BleLogSource.HOST, 0) + _make_frame(payload, BleLogSource.HOST, 2)
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(
         FakeReader([frames], stop_event),
@@ -212,7 +202,7 @@ def test_pipeline_final_snapshot_seals_sequence_gaps(tmp_path: Path) -> None:
 
 
 def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
     status = WriterStatus(
         base_path=output_path,
         paths=(output_path,),
@@ -225,11 +215,11 @@ def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
     result = _result_from_events(
         [
             ReaderProcessEvent(
-                kind='parse_backlog_summary',
+                kind="parse_backlog_summary",
                 parse_dropped_chunks=2,
                 parse_dropped_bytes=40,
             ),
-            WriterEvent(kind='finalized', status=status),
+            WriterEvent(kind="finalized", status=status),
             AggregatorSnapshot(
                 stats=FrameStats(),
                 funnel_snapshots=(),
@@ -249,9 +239,9 @@ def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:
 
 
 def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> None:
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
     pipeline = CapturePipeline(
-        TransportConfig(mode=TransportMode.UART, label='fake', port='fake'),
+        TransportConfig(mode=TransportMode.UART, label="fake", port="fake"),
         WriterConfig(output_path),
     )
     ui_queue: Queue[object] = Queue()
@@ -264,7 +254,7 @@ def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> No
         finalized=True,
     )
     ui_queue.put(AggregatorUpdate(frames_seen=1))
-    ui_queue.put(WriterEvent(kind='finalized', status=status))
+    ui_queue.put(WriterEvent(kind="finalized", status=status))
     pipeline._ui_queue = ui_queue  # type: ignore[attr-defined]
 
     events = pipeline.drain_events()
@@ -275,46 +265,46 @@ def test_pipeline_drain_events_keeps_result_relevant_state(tmp_path: Path) -> No
 
 def test_abort_analysis_stops_process_and_records_incomplete_check(tmp_path: Path) -> None:
     pipeline = CapturePipeline(
-        TransportConfig(mode=TransportMode.UART, label='fake', port='fake'),
-        WriterConfig(tmp_path / 'capture.bin'),
+        TransportConfig(mode=TransportMode.UART, label="fake", port="fake"),
+        WriterConfig(tmp_path / "capture.bin"),
     )
     process = MagicMock()
     process.is_alive.side_effect = (True, False)
     pipeline._analysis_process = process  # type: ignore[attr-defined]
 
-    pipeline.abort_analysis('quality check timed out')
+    pipeline.abort_analysis("quality check timed out")
 
     process.terminate.assert_called_once_with()
-    assert pipeline._result_events[-1] == ParserStatus(kind='error', message='quality check timed out')  # type: ignore[attr-defined]
+    assert pipeline._result_events[-1] == ParserStatus(kind="error", message="quality check timed out")  # type: ignore[attr-defined]
 
 
 def test_writer_error_marks_pipeline_incomplete(tmp_path: Path) -> None:
     stop_event = Event()
-    reader = FakeReader([b'one'], stop_event)
+    reader = FakeReader([b"one"], stop_event)
 
     def factory(path: Path) -> IO[bytes]:
         return FailingBinaryFile()  # type: ignore[return-value]
 
     result = run_capture_pipeline_inprocess(
         reader,
-        WriterConfig(tmp_path / 'ble_log.bin'),
+        WriterConfig(tmp_path / "ble_log.bin"),
         stop_requested=stop_event,
         writer_file_factory=factory,
     )
 
     assert not result.completed
-    assert result.writer_error == 'disk full'
+    assert result.writer_error == "disk full"
 
 
 def test_reader_error_marks_pipeline_incomplete_but_finalizes_written_data(tmp_path: Path) -> None:
     stop_event = Event()
-    reader = FakeReader([b'one'], stop_event, fail_after_blocks=True)
-    output_path = tmp_path / 'ble_log.bin'
+    reader = FakeReader([b"one"], stop_event, fail_after_blocks=True)
+    output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
     assert not result.completed
-    assert result.reader_error == 'reader failed'
+    assert result.reader_error == "reader failed"
     assert result.raw_paths == (output_path,)
-    assert result.raw_bytes == len(b'one')
-    assert output_path.read_bytes() == b'one'
+    assert result.raw_bytes == len(b"one")
+    assert output_path.read_bytes() == b"one"

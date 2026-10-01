@@ -1,22 +1,39 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-# Pinned to the style the codebase already uses: single quotes,
-# one import per line, 120-column lines. Ruff version must stay
-# pinned too (CI + dev extra) — formatter output drifts slightly
-# between ruff releases.
+# Ruff default formatting (double quotes) with 120-column lines. Re-run
+# the formatter with the same ruff version — its output drifts slightly
+# between releases.
 
 line-length = 120
 target-version = "py311"
 
-[format]
-quote-style = "single"
+# Ruff 0.16 formats Python code blocks in Markdown; keep docs out of the
+# formatter's scope.
+extend-exclude = ["*.md"]
 
 [lint]
-# ruff >=0.16 enabled 413 rules by default; pin the classic conservative
-# set (pyflakes + core pycodestyle) plus import sorting so CI stays green
-# across ruff upgrades.
-select = ["E4", "E7", "E9", "F", "I"]
+# The ruff default selection plus INP, instead of an explicit
+# conservative `select`. ruff >=0.16 enables ~413 rules by default, so
+# this is a deliberate broadening.
+extend-select = ["INP"]
+ignore = [
+    # Deliberate best-effort boundaries (reader/parser worker loops, USB
+    # enumeration, pipeline cleanup): a broad catch is the point, not an
+    # accident.
+    "BLE001",
+]
 
-[lint.isort]
-force-single-line = true
+[lint.per-file-ignores]
+# pyusb returns `Device | None` and configuration objects whose shape is
+# not guaranteed; the isinstance guards raise RuntimeError on purpose
+# (the device is absent or misconfigured, not the argument type), and
+# enumeration skips unreadable devices.
+"components/ble_log_console/src/backend/support/transport/spi_usb_bridge_transport.py" = ["S112", "TRY004"]
+# Test doubles deliberately keep class-level mutable state, nest `with`
+# blocks for setup/act phases, and assert broad failures.
+"**/tests/**" = ["B017", "RUF012", "SIM117"]
+# Project-root scripts and a standalone skill script are not importable
+# packages; an `__init__.py` does not apply to them.
+"components/ble_log_console/*.py" = ["INP001"]
+"components/ble_log_console/docs/**" = ["INP001"]
