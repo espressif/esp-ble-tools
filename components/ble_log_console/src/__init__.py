@@ -4,7 +4,7 @@
 import sys
 
 if sys.version_info < (3, 11):  # noqa: UP036 — runtime guard for users on old Python
-    print(f'Error: Python 3.11 or later is required.\nCurrent version: {sys.version}')
+    print(f"Error: Python 3.11 or later is required.\nCurrent version: {sys.version}")
     sys.exit(1)
 
 try:
@@ -13,6 +13,6 @@ except ImportError:
     print(
         "Error: 'textual' package is not installed.\n"
         "Run 'run.sh' (Linux/macOS) or 'run.bat' (Windows) "
-        'to launch with auto-setup.'
+        "to launch with auto-setup."
     )
     sys.exit(1)

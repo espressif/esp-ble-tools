@@ -24,12 +24,12 @@ class SpawnCaptureSession:
         pass
 
     def start(self) -> tuple[object, ...]:
-        queue = multiprocessing.get_context('spawn').Queue()
+        queue = multiprocessing.get_context("spawn").Queue()
         try:
             real_stderr = sys.__stderr__
             assert real_stderr is not None
             assert sys.stderr.fileno() == real_stderr.fileno()
-            sys.stderr.write('delegated')
+            sys.stderr.write("delegated")
         finally:
             queue.close()
             queue.join_thread()
@@ -48,7 +48,7 @@ class ProbeApp(app_module.BLELogApp):
         return self._widget
 
     def run_probe(self) -> None:
-        self._output_path = Path('unused.bin')
+        self._output_path = Path("unused.bin")
         self._start_capture()
 
     def _publish_view_messages(self, messages: tuple[object, ...]) -> None:
@@ -58,15 +58,15 @@ class ProbeApp(app_module.BLELogApp):
 def main() -> None:
     capture = CapturedStderr()
     original_stderr = sys.stderr
-    with patch.object(app_module, 'CaptureSession', SpawnCaptureSession):
+    with patch.object(app_module, "CaptureSession", SpawnCaptureSession):
         sys.stderr = capture
         try:
-            ProbeApp(port='test').run_probe()
+            ProbeApp(port="test").run_probe()
             assert sys.stderr is capture
-            assert capture.getvalue() == 'delegated'
+            assert capture.getvalue() == "delegated"
         finally:
             sys.stderr = original_stderr
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

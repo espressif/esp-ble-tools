@@ -40,7 +40,7 @@ class TestFirmwareLossTracker:
         t = FirmwareLossTracker()
         t.record(1, 0, 0)
         t.record(1, 100, 4000)
-        new_f, new_b = t.record(1, 30, 1200)
+        new_f, _new_b = t.record(1, 30, 1200)
         assert new_f == 0
         totals = t.totals()
         assert totals.total_frames == 30
@@ -65,11 +65,11 @@ class TestFirmwareLossTracker:
     def test_reset_baselines_preserves_latest_until_next_report(self) -> None:
         t = FirmwareLossTracker()
         t.record(1, 10, 100)
-        d_frames, d_bytes = t.record(1, 15, 150)
+        d_frames, _d_bytes = t.record(1, 15, 150)
         assert d_frames == 5
         t.reset_baselines()
         # Next report is treated as new baseline (no delta)
-        d_frames, d_bytes = t.record(1, 20, 200)
+        d_frames, _d_bytes = t.record(1, 20, 200)
         assert d_frames == 0  # baseline re-established
         # Latest snapshot follows the newest ENH_STAT after re-baseline.
         totals = t.totals()

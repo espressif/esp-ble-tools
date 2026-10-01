@@ -10,9 +10,7 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widget import Widget
 
-from src.backend.models import FrameStats
-from src.backend.models import format_bitrate
-from src.backend.models import format_bytes
+from src.backend.models import FrameStats, format_bitrate, format_bytes
 from src.frontend.rendering import terminal_border_style
 
 
@@ -22,22 +20,22 @@ def _format_speed(bits_per_sec: float) -> str:
 
 def _customer_state_markup(s: FrameStats, disconnected: bool) -> str:
     if disconnected:
-        return '[bold red]DISCONNECTED[/bold red]'
+        return "[bold red]DISCONNECTED[/bold red]"
     if s.transport.rx_bits_per_sec > 0 or s.transport.fps > 0:
-        return '[bold green]RECEIVING[/bold green]'
+        return "[bold green]RECEIVING[/bold green]"
     if s.transport.rx_bytes > 0:
-        return '[yellow]IDLE[/yellow]'
-    return '[cyan]CONNECTED[/cyan]'
+        return "[yellow]IDLE[/yellow]"
+    return "[cyan]CONNECTED[/cyan]"
 
 
 def _compact_customer_state_markup(s: FrameStats, disconnected: bool) -> str:
     if disconnected:
-        return '[bold red]DISC[/bold red]'
+        return "[bold red]DISC[/bold red]"
     if s.transport.rx_bits_per_sec > 0 or s.transport.fps > 0:
-        return '[bold green]RECV[/bold green]'
+        return "[bold green]RECV[/bold green]"
     if s.transport.rx_bytes > 0:
-        return '[yellow]IDLE[/yellow]'
-    return '[cyan]CONN[/cyan]'
+        return "[yellow]IDLE[/yellow]"
+    return "[cyan]CONN[/cyan]"
 
 
 COMPACT_STATUS_WIDTH = 56
@@ -52,7 +50,7 @@ class StatusPanel(Widget):
         border-top: __BORDER_STYLE__ $accent;
         padding: 0 1;
     }
-    """.replace('__BORDER_STYLE__', terminal_border_style())
+    """.replace("__BORDER_STYLE__", terminal_border_style())
 
     stats: reactive[FrameStats] = reactive(FrameStats)
     disconnected: reactive[bool] = reactive(False)
@@ -63,33 +61,33 @@ class StatusPanel(Widget):
         width = self.size.width
         if self.finalizing:
             return Text.from_markup(
-                '[bold yellow]FINALIZING[/bold yellow]\nSaving data and completing quality check (up to 20s)'
+                "[bold yellow]FINALIZING[/bold yellow]\nSaving data and completing quality check (up to 20s)"
             )
         if self.disconnected:
             if width < COMPACT_STATUS_WIDTH:
                 line1 = _compact_customer_state_markup(s, self.disconnected)
-                line2 = 'Transport closed'
+                line2 = "Transport closed"
             else:
-                line1 = f'Status: {_customer_state_markup(s, self.disconnected)}'
-                line2 = 'Backend stopped - transport connection closed'
-            return Text.from_markup('\n'.join((line1, line2)))
+                line1 = f"Status: {_customer_state_markup(s, self.disconnected)}"
+                line2 = "Backend stopped - transport connection closed"
+            return Text.from_markup(f"{line1}\n{line2}")
 
         t = s.transport
 
         if width < COMPACT_STATUS_WIDTH:
-            line1 = f'{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}'
+            line1 = f"{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}"
             line2 = _format_speed(t.rx_bits_per_sec)
         elif width < MEDIUM_STATUS_WIDTH:
-            line1 = f'Status: {_customer_state_markup(s, self.disconnected)} | [bold]h[/bold]: help'
-            line2 = f'RX: {format_bytes(t.rx_bytes)}  Frames: {t.rx_frames}  Speed: {_format_speed(t.rx_bits_per_sec)}'
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)} | [bold]h[/bold]: help"
+            line2 = f"RX: {format_bytes(t.rx_bytes)}  Frames: {t.rx_frames}  Speed: {_format_speed(t.rx_bits_per_sec)}"
         else:
-            line1 = f'Status: {_customer_state_markup(s, self.disconnected)} | Press [bold]h[/bold] for help'
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)} | Press [bold]h[/bold] for help"
             line2 = (
-                f'RX: {format_bytes(t.rx_bytes)}  '
-                f'Frames: {t.rx_frames}  '
-                f'Speed: {_format_speed(t.rx_bits_per_sec)}  '
-                f'Max: {_format_speed(t.max_rx_bits_per_sec)}  '
-                f'Rate: {t.fps:.0f} fps'
+                f"RX: {format_bytes(t.rx_bytes)}  "
+                f"Frames: {t.rx_frames}  "
+                f"Speed: {_format_speed(t.rx_bits_per_sec)}  "
+                f"Max: {_format_speed(t.max_rx_bits_per_sec)}  "
+                f"Rate: {t.fps:.0f} fps"
             )
 
-        return Text.from_markup('\n'.join((line1, line2)))
+        return Text.from_markup(f"{line1}\n{line2}")

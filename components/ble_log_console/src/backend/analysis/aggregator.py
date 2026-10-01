@@ -5,28 +5,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
-from src.backend.analysis.parser_events import BleLogEvent
-from src.backend.analysis.parser_events import EnhStatEvent
-from src.backend.analysis.parser_events import FinalStatEvent
-from src.backend.analysis.parser_events import FrameEvent
-from src.backend.analysis.parser_events import InternalEvent
-from src.backend.analysis.parser_events import ParseBatch
-from src.backend.analysis.parser_events import ParseSummary
-from src.backend.analysis.parser_events import RedirEvent
-from src.backend.models import FRAME_OVERHEAD
-from src.backend.models import BufUtilEntry
-from src.backend.models import BufUtilResult
-from src.backend.models import CaptureSegmentSummary
-from src.backend.models import FirmwareLossSummary
-from src.backend.models import FrameStats
-from src.backend.models import FunnelSnapshot
-from src.backend.models import InternalDecoderResult
-from src.backend.models import InternalSource
-from src.backend.models import SequenceSummary
-from src.backend.models import TransportBitrate
+from src.backend.analysis.parser_events import (
+    BleLogEvent,
+    EnhStatEvent,
+    FinalStatEvent,
+    FrameEvent,
+    InternalEvent,
+    ParseBatch,
+    ParseSummary,
+    RedirEvent,
+)
+from src.backend.models import (
+    FRAME_OVERHEAD,
+    BufUtilEntry,
+    BufUtilResult,
+    CaptureSegmentSummary,
+    FirmwareLossSummary,
+    FrameStats,
+    FunnelSnapshot,
+    InternalDecoderResult,
+    InternalSource,
+    SequenceSummary,
+    TransportBitrate,
+)
 from src.backend.support.stats import StatsAccumulator
 from src.backend.support.stats.accumulator import merge_sequence_summaries
 
@@ -60,7 +64,7 @@ class AggregatorSnapshot:
     parser_frames: int
     parser_carried_bytes: int
     regular_frames: int = 0
-    sequence: SequenceSummary = SequenceSummary()
+    sequence: SequenceSummary = field(default_factory=SequenceSummary)
     capture_firmware_loss: tuple[FirmwareLossSummary, ...] = ()
     capture_firmware_written_bytes: int = 0
     capture_firmware_lost_bytes: int = 0
@@ -234,25 +238,25 @@ class CaptureAggregator:
 
     def _record_internal_effect(self, event: InternalEvent) -> None:
         if event.int_src == InternalSource.INIT_DONE:
-            self._stats.reset('init')
+            self._stats.reset("init")
         elif event.int_src == InternalSource.FLUSH:
-            self._stats.reset('flush')
+            self._stats.reset("flush")
         elif event.int_src == InternalSource.BUF_UTIL:
             buf = cast(BufUtilResult, event.decoded)
             self._stats.record_buf_util(
-                lbm_id=buf['lbm_id'],
-                trans_cnt=buf['trans_cnt'],
-                inflight_peak=buf['inflight_peak'],
+                lbm_id=buf["lbm_id"],
+                trans_cnt=buf["trans_cnt"],
+                inflight_peak=buf["inflight_peak"],
             )
 
     def _record_enh_stat(self, event: EnhStatEvent) -> None:
         stat = event.stat
         self._stats.record_enh_stat(
-            src_code=stat['src_code'],
-            written_frames=stat['written_frame_cnt'],
-            lost_frames=stat['lost_frame_cnt'],
-            written_bytes=stat['written_bytes_cnt'],
-            lost_bytes=stat['lost_bytes_cnt'],
+            src_code=stat["src_code"],
+            written_frames=stat["written_frame_cnt"],
+            lost_frames=stat["lost_frame_cnt"],
+            written_bytes=stat["written_bytes_cnt"],
+            lost_bytes=stat["lost_bytes_cnt"],
         )
 
     def _close_final_stat_segment(self, event: FinalStatEvent) -> None:

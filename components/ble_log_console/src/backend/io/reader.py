@@ -6,19 +6,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from queue import Empty
-from queue import Full
-from typing import Any
-from typing import Callable
-from typing import Protocol
+from queue import Empty, Full
+from typing import Any, Protocol
 
 from src.backend.analysis.parser_events import ReceivedChunk
-from src.backend.io.writer import Clock
-from src.backend.io.writer import WriterEvent
-from src.backend.io.writer import WriterStatus
-from src.backend.support.transport import TransportReader
-from src.backend.support.transport import TransportStatus
+from src.backend.io.writer import Clock, WriterEvent, WriterStatus
+from src.backend.support.transport import TransportReader, TransportStatus
 
 QUEUE_PUT_TIMEOUT_SEC = 5.0
 RAW_STATS_INTERVAL_SEC = 0.25
@@ -34,7 +29,7 @@ class ReaderProcessEvent:
     """Status or error emitted by the reader loop."""
 
     kind: str
-    message: str = ''
+    message: str = ""
     status: TransportStatus | None = None
     parse_dropped_chunks: int = 0
     parse_dropped_bytes: int = 0
@@ -141,27 +136,27 @@ class RawStatsBatcher:
 
 def _handle_reader_command(reader: TransportReader, ui_queue: Any, command: Any) -> None:
     kind = command.kind if isinstance(command, ReaderCommand) else str(command)
-    if kind != 'reset_target':
-        _put_event(ui_queue, ReaderProcessEvent(kind='error', message=f'unknown reader command: {kind}'))
+    if kind != "reset_target":
+        _put_event(ui_queue, ReaderProcessEvent(kind="error", message=f"unknown reader command: {kind}"))
         return
 
     try:
         reset_done = reader.reset_target()
     except Exception as e:
-        _put_event(ui_queue, ReaderProcessEvent(kind='reset_error', message=str(e), status=reader.status()))
+        _put_event(ui_queue, ReaderProcessEvent(kind="reset_error", message=str(e), status=reader.status()))
         return
 
     if reset_done:
         _put_event(
             ui_queue,
-            ReaderProcessEvent(kind='reset_done', message='Chip reset triggered', status=reader.status()),
+            ReaderProcessEvent(kind="reset_done", message="Chip reset triggered", status=reader.status()),
         )
     else:
         _put_event(
             ui_queue,
             ReaderProcessEvent(
-                kind='reset_unsupported',
-                message='Reset is not supported by this transport',
+                kind="reset_unsupported",
+                message="Reset is not supported by this transport",
                 status=reader.status(),
             ),
         )
@@ -182,7 +177,7 @@ def _write_block(writer: WriterSink, block: bytes, ui_queue: Any, *, timeout: fl
     old_paths = writer.paths
     writer.write(block, timeout=timeout)
     if not writer.emits_events and len(writer.paths) > len(old_paths):
-        kind = 'opened' if not old_paths else 'rotated'
+        kind = "opened" if not old_paths else "rotated"
         _put_event(
             ui_queue,
             WriterEvent(
@@ -197,10 +192,10 @@ def _finalize_writer(writer: WriterSink, ui_queue: Any, *, emit_finalized: bool)
     try:
         writer.finalize()
     except Exception as e:
-        _put_event(ui_queue, WriterEvent(kind='error', message=f'close failed: {e}', status=writer.status()))
+        _put_event(ui_queue, WriterEvent(kind="error", message=f"close failed: {e}", status=writer.status()))
         return
     if emit_finalized and not writer.emits_events:
-        _put_event(ui_queue, WriterEvent(kind='finalized', status=writer.status()))
+        _put_event(ui_queue, WriterEvent(kind="finalized", status=writer.status()))
 
 
 def run_reader_loop(
@@ -241,7 +236,7 @@ def run_reader_loop(
         _put_event(
             ui_queue,
             ReaderProcessEvent(
-                kind='parse_backlog',
+                kind="parse_backlog",
                 message=message,
                 status=reader.status(),
                 parse_dropped_chunks=parse_dropped_chunks,
@@ -261,21 +256,21 @@ def run_reader_loop(
             _write_block(writer, block, ui_queue, timeout=queue_put_timeout)
         except Exception as e:
             writer_failed = True
-            _put_event(ui_queue, WriterEvent(kind='error', message=str(e), status=writer.status()))
+            _put_event(ui_queue, WriterEvent(kind="error", message=str(e), status=writer.status()))
             return False
 
         raw_stats.record(len(block))
         if not _put_parse(parse_queue, ReceivedChunk(block, received_at_ms)):
             record_parse_drop(
                 block,
-                ('Realtime parser fell behind; raw recording continues, live stats may be incomplete.'),
+                ("Realtime parser fell behind; raw recording continues, live stats may be incomplete."),
             )
         return True
 
     try:
         reader.open()
         opened = True
-        _put_event(ui_queue, ReaderProcessEvent(kind='opened', status=reader.status()))
+        _put_event(ui_queue, ReaderProcessEvent(kind="opened", status=reader.status()))
 
         while not stop_requested.is_set():
             _drain_reader_commands(reader, ui_queue, command_queue)
@@ -291,35 +286,33 @@ def run_reader_loop(
                 if not handle_block(block, wall_clock_ms()):
                     break
     except Exception as e:
-        _put_event(ui_queue, ReaderProcessEvent(kind='error', message=str(e)))
+        _put_event(ui_queue, ReaderProcessEvent(kind="error", message=str(e)))
     finally:
         try:
             reader.close()
         except Exception as e:
-            _put_event(ui_queue, ReaderProcessEvent(kind='error', message=f'close failed: {e}'))
+            _put_event(ui_queue, ReaderProcessEvent(kind="error", message=f"close failed: {e}"))
 
         raw_stats.close()
         if not _put_parse_sentinel(parse_queue, queue_put_timeout) and not parse_backlog_reported:
             report_parse_backlog(
-                (
-                    'Realtime parser queue stayed full during shutdown; '
-                    'raw recording continues, final live stats may be incomplete.'
-                )
+                "Realtime parser queue stayed full during shutdown; "
+                "raw recording continues, final live stats may be incomplete."
             )
         _finalize_writer(writer, ui_queue, emit_finalized=not writer_failed)
         if parse_dropped_chunks:
             _put_event(
                 ui_queue,
                 ReaderProcessEvent(
-                    kind='parse_backlog_summary',
+                    kind="parse_backlog_summary",
                     message=(
-                        'Realtime parser skipped '
-                        f'{parse_dropped_chunks} chunks ({parse_dropped_bytes} bytes); '
-                        'raw recording saved them, live stats are incomplete.'
+                        "Realtime parser skipped "
+                        f"{parse_dropped_chunks} chunks ({parse_dropped_bytes} bytes); "
+                        "raw recording saved them, live stats are incomplete."
                     ),
                     status=reader.status(),
                     parse_dropped_chunks=parse_dropped_chunks,
                     parse_dropped_bytes=parse_dropped_bytes,
                 ),
             )
-        _put_event(ui_queue, ReaderProcessEvent(kind='stopped', status=reader.status()))
+        _put_event(ui_queue, ReaderProcessEvent(kind="stopped", status=reader.status()))

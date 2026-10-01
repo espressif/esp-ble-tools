@@ -13,16 +13,11 @@ from pathlib import Path
 from textual.message import Message
 
 from src.backend.io import WriterConfig
-from src.backend.models import CaptureFinished
-from src.backend.models import CaptureReport
-from src.backend.models import TransportConfig
-from src.backend.models import UserNotice
+from src.backend.models import CaptureFinished, CaptureReport, TransportConfig, UserNotice
 from src.backend.pipeline import CapturePipeline
 from src.backend.pipeline.controller import CapturePipelineResult
 from src.frontend.capture_events import CaptureEventPresenter
-from src.frontend.capture_report import build_capture_report
-from src.frontend.capture_report import report_path_for_capture
-from src.frontend.capture_report import write_capture_report
+from src.frontend.capture_report import build_capture_report, report_path_for_capture, write_capture_report
 from src.i18n import tr
 
 PIPELINE_JOIN_TIMEOUT_SEC = 2.0
@@ -106,7 +101,7 @@ class CaptureSession:
                 completed=False,
             )
             return (
-                UserNotice(tr('Failed to start recording: {message}', message=e), level='warning'),
+                UserNotice(tr("Failed to start recording: {message}", message=e), level="warning"),
             ) + self._finish_result(result)
         return ()
 
@@ -125,7 +120,7 @@ class CaptureSession:
             if now - self._analysis_drain_started_at < self._analysis_drain_timeout_sec:
                 return messages
             self._pipeline.abort_analysis(
-                f'Live quality check did not finish within {self._analysis_drain_timeout_sec:g} seconds.'
+                f"Live quality check did not finish within {self._analysis_drain_timeout_sec:g} seconds."
             )
 
         return messages + self._finish()
@@ -166,7 +161,7 @@ class CaptureSession:
         except OSError as e:
             report = replace(report, report_write_error=str(e))
             messages.append(
-                UserNotice(tr('Recording report could not be saved: {message}', message=e), level='warning')
+                UserNotice(tr("Recording report could not be saved: {message}", message=e), level="warning")
             )
         self._report = report
         messages.append(CaptureFinished(report))

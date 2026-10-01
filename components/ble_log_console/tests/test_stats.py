@@ -1,9 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from src.backend.models import BleLogSource
-from src.backend.models import TransportBitrate
-from src.backend.models import has_os_ts
+from src.backend.models import BleLogSource, TransportBitrate, has_os_ts
 from src.backend.support.stats import StatsAccumulator
 
 
@@ -210,7 +208,7 @@ class TestRecordEnhStat:
         stats = StatsAccumulator()
         stats.record_enh_stat(1, 10, 5, 1000, 500)
         stats.record_enh_stat(1, 20, 7, 2000, 700)
-        stats.reset('flush')
+        stats.reset("flush")
         stats.record_enh_stat(1, 5, 1, 500, 100)
         stats.record_enh_stat(1, 10, 3, 1000, 300)
 
@@ -221,7 +219,7 @@ class TestRecordEnhStat:
 
     def test_quality_bytes_use_capture_deltas_and_exclude_internal(self) -> None:
         stats = StatsAccumulator()
-        stats.reset('init')
+        stats.reset("init")
         stats.record_enh_stat(0, 5, 2, 500, 200)
         stats.record_enh_stat(1, 10, 1, 1000, 100)
 
@@ -308,7 +306,7 @@ class TestReset:
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
-        stats.reset('init')
+        stats.reset("init")
 
         snapshot = stats.snapshot(1.0)
         assert snapshot.transport.rx_bytes == 1000
@@ -324,7 +322,7 @@ class TestReset:
         stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
 
-        stats.reset('flush')
+        stats.reset("flush")
 
         # Console-local data preserved
         snapshot = stats.snapshot(1.0)

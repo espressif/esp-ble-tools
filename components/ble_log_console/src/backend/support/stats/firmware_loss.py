@@ -7,8 +7,7 @@ ENH_STAT reports are firmware snapshots. The latest value is used for display,
 while per-report deltas are returned only for new-loss alerts.
 """
 
-from src.backend.models import LossSnapshot
-from src.backend.models import SourceCode
+from src.backend.models import LossSnapshot, SourceCode
 
 
 class FirmwareLossTracker:

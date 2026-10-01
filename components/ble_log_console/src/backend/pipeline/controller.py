@@ -9,29 +9,17 @@ import multiprocessing
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Empty
-from queue import Queue
+from queue import Empty, Queue
 from typing import Any
 
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.parser_events import ReceivedChunk
-from src.backend.analysis.worker import AggregatorProcessEvent
-from src.backend.analysis.worker import ParserStatus
-from src.backend.analysis.worker import run_analysis_loop
-from src.backend.analysis.worker import run_analysis_process
-from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC
-from src.backend.io.reader import ReaderCommand
-from src.backend.io.reader import ReaderProcessEvent
-from src.backend.io.worker import run_io_loop
-from src.backend.io.worker import run_io_process
-from src.backend.io.writer import Clock
-from src.backend.io.writer import FileFactory
-from src.backend.io.writer import WriterConfig
-from src.backend.io.writer import WriterEvent
-from src.backend.models import ChecksumMode
-from src.backend.models import TransportConfig
-from src.backend.support.transport import TransportReader
-from src.backend.support.transport import create_transport_reader
+from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus, run_analysis_loop, run_analysis_process
+from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC, ReaderCommand, ReaderProcessEvent
+from src.backend.io.worker import run_io_loop, run_io_process
+from src.backend.io.writer import Clock, FileFactory, WriterConfig, WriterEvent
+from src.backend.models import ChecksumMode, TransportConfig
+from src.backend.support.transport import TransportReader, create_transport_reader
 
 PARSE_QUEUE_SIZE = 512
 # ui_queue still carries critical reader/writer status. Keep it unbounded by
@@ -107,11 +95,9 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
 
     for event in events:
         if isinstance(event, ReaderProcessEvent):
-            if event.kind == 'error' and reader_error is None:
+            if event.kind == "error" and reader_error is None:
                 reader_error = event.message
-            elif event.kind == 'parse_backlog':
-                parse_backlog = True
-            elif event.kind == 'parse_backlog_summary':
+            elif event.kind == "parse_backlog" or event.kind == "parse_backlog_summary":
                 parse_backlog = True
             parse_dropped_chunks = max(parse_dropped_chunks, event.parse_dropped_chunks)
             parse_dropped_bytes = max(parse_dropped_bytes, event.parse_dropped_bytes)
@@ -119,12 +105,12 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
             if event.status is not None:
                 raw_paths = event.status.paths
                 raw_bytes = event.status.bytes_written
-            if event.kind == 'error' and writer_error is None:
+            if event.kind == "error" and writer_error is None:
                 writer_error = event.message
-            elif event.kind == 'finalized':
+            elif event.kind == "finalized":
                 writer_finalized = True
         elif isinstance(event, ParserStatus):
-            if event.kind == 'error' and parser_error is None:
+            if event.kind == "error" and parser_error is None:
                 parser_error = event.message
         elif isinstance(event, AggregatorSnapshot):
             final_snapshot = event
@@ -132,9 +118,9 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
             parser_frames = event.parser_frames
             parser_carried_bytes = event.parser_carried_bytes
         elif isinstance(event, AggregatorProcessEvent):
-            if event.kind == 'error' and aggregator_error is None:
+            if event.kind == "error" and aggregator_error is None:
                 aggregator_error = event.message
-            elif event.kind == 'finalized':
+            elif event.kind == "finalized":
                 aggregator_finalized = True
 
     completed = (
@@ -191,18 +177,18 @@ def run_capture_pipeline_inprocess(
         target=run_analysis_loop,
         args=(parse_queue, raw_stats_queue, ui_queue),
         kwargs={
-            'bitrate': reader.bitrate_config,
-            'checksum_mode': parser_checksum_mode,
+            "bitrate": reader.bitrate_config,
+            "checksum_mode": parser_checksum_mode,
         },
     )
     io_thread = threading.Thread(
         target=run_io_loop,
         args=(reader, writer_config, parse_queue, raw_stats_queue, ui_queue, stop_requested),
         kwargs={
-            'queue_put_timeout': queue_put_timeout,
-            'drain_rounds': drain_rounds,
-            'writer_clock': writer_clock,
-            'writer_file_factory': writer_file_factory,
+            "queue_put_timeout": queue_put_timeout,
+            "drain_rounds": drain_rounds,
+            "writer_clock": writer_clock,
+            "writer_file_factory": writer_file_factory,
         },
     )
 
@@ -247,7 +233,7 @@ class CapturePipeline:
 
     def start(self) -> None:
         if self._io_process is not None or self._analysis_process is not None:
-            raise RuntimeError('recording pipeline is already started')
+            raise RuntimeError("recording pipeline is already started")
 
         self._parse_queue = self._ctx.Queue(maxsize=self._parse_queue_size)
         self._raw_stats_queue = self._ctx.Queue()
@@ -258,7 +244,7 @@ class CapturePipeline:
         bitrate = create_transport_reader(self._transport_config).bitrate_config
 
         self._analysis_process = self._ctx.Process(
-            name='ble-log-analysis',
+            name="ble-log-analysis",
             target=run_analysis_process,
             args=(
                 self._parse_queue,
@@ -269,7 +255,7 @@ class CapturePipeline:
             ),
         )
         self._io_process = self._ctx.Process(
-            name='ble-log-io',
+            name="ble-log-io",
             target=run_io_process,
             args=(
                 self._transport_config,
@@ -280,9 +266,9 @@ class CapturePipeline:
                 self._stop_requested,
             ),
             kwargs={
-                'command_queue': self._command_queue,
-                'queue_put_timeout': self._queue_put_timeout,
-                'drain_rounds': self._drain_rounds,
+                "command_queue": self._command_queue,
+                "queue_put_timeout": self._queue_put_timeout,
+                "drain_rounds": self._drain_rounds,
             },
         )
 
@@ -295,8 +281,8 @@ class CapturePipeline:
 
     def reset_target(self) -> None:
         if self._command_queue is None:
-            raise RuntimeError('recording pipeline is not started')
-        self._command_queue.put(ReaderCommand(kind='reset_target'))
+            raise RuntimeError("recording pipeline is not started")
+        self._command_queue.put(ReaderCommand(kind="reset_target"))
 
     def is_alive(self) -> bool:
         return any(process is not None and process.is_alive() for process in (self._io_process, self._analysis_process))
@@ -317,13 +303,13 @@ class CapturePipeline:
             if process.is_alive():
                 process.kill()
                 process.join(1.0)
-        self._result_events.append(ParserStatus(kind='error', message=message))
+        self._result_events.append(ParserStatus(kind="error", message=message))
 
     def drain_events(self) -> list[Any]:
         """Drain events for UI consumption without losing final result state."""
 
         if self._ui_queue is None:
-            raise RuntimeError('recording pipeline is not started')
+            raise RuntimeError("recording pipeline is not started")
         events = _drain_events(self._ui_queue)
         self._result_events.extend(_events_for_result(events))
         snapshots = [event for event in self._result_events if isinstance(event, AggregatorSnapshot)]
@@ -335,7 +321,7 @@ class CapturePipeline:
 
     def wait_with_events(self, timeout: float | None = None) -> tuple[list[Any], CapturePipelineResult]:
         if self._io_process is None or self._analysis_process is None or self._ui_queue is None:
-            raise RuntimeError('recording pipeline is not started')
+            raise RuntimeError("recording pipeline is not started")
 
         self._io_process.join(timeout)
         if self._io_process.is_alive():
@@ -351,7 +337,7 @@ class CapturePipeline:
                 events,
                 CapturePipelineResult(
                     raw_paths=result.raw_paths,
-                    reader_error=result.reader_error or 'recording pipeline did not stop before timeout',
+                    reader_error=result.reader_error or "recording pipeline did not stop before timeout",
                     writer_error=result.writer_error,
                     parser_error=result.parser_error,
                     aggregator_error=result.aggregator_error,

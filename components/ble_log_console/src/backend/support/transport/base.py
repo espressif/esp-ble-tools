@@ -8,9 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from src.backend.models import TransportBitrate
-from src.backend.models import TransportConfig
-from src.backend.models import TransportMode
+from src.backend.models import TransportBitrate, TransportConfig, TransportMode
 
 
 @dataclass(frozen=True)

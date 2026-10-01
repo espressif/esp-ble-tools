@@ -4,19 +4,11 @@
 from __future__ import annotations
 
 import struct
-from queue import Empty
-from queue import Queue
+from queue import Empty, Queue
 
-from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.analysis.aggregator import AggregatorUpdate
-from src.backend.analysis.aggregator import frame_size_from_payload
-from src.backend.analysis.parser_events import FrameEvent
-from src.backend.analysis.parser_events import ParseBatch
-from src.backend.analysis.parser_events import ParseSummary
-from src.backend.analysis.parser_events import RedirEvent
-from src.backend.analysis.worker import AggregatorProcessEvent
-from src.backend.analysis.worker import ParserStatus
-from src.backend.analysis.worker import run_aggregator_loop
+from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, frame_size_from_payload
+from src.backend.analysis.parser_events import FrameEvent, ParseBatch, ParseSummary, RedirEvent
+from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus, run_aggregator_loop
 from src.backend.models import BleLogSource
 
 
@@ -45,7 +37,7 @@ def test_aggregator_loop_emits_update_snapshot_and_finalized_status() -> None:
     raw_stats_queue: Queue[int | None] = Queue()
     ui_queue: Queue[object] = Queue()
 
-    payload = struct.pack('<I', 1234) + b'payload'
+    payload = struct.pack("<I", 1234) + b"payload"
     frame_event = FrameEvent(
         frame_size=frame_size_from_payload(payload),
         source_code=BleLogSource.HOST,
@@ -77,7 +69,7 @@ def test_aggregator_loop_emits_update_snapshot_and_finalized_status() -> None:
     assert snapshots[0].parser_raw_bytes == len(payload) + 20
     assert snapshots[0].parser_frames == 1
     assert snapshots[0].parser_carried_bytes == 0
-    assert statuses[-1].kind == 'finalized'
+    assert statuses[-1].kind == "finalized"
 
 
 def test_aggregator_loop_merges_available_parse_batches_into_one_update() -> None:
@@ -85,7 +77,7 @@ def test_aggregator_loop_merges_available_parse_batches_into_one_update() -> Non
     raw_stats_queue: Queue[int | None] = Queue()
     ui_queue: Queue[object] = Queue()
 
-    payload = struct.pack('<I', 1234) + b'payload'
+    payload = struct.pack("<I", 1234) + b"payload"
     raw_stats_queue.put((len(payload) + 20) * 2)
     raw_stats_queue.put(None)
     parser_event_queue.put(
@@ -139,7 +131,7 @@ def test_aggregator_loop_preserves_redir_receive_timestamp() -> None:
             parsed_frames=1,
             consumed=20,
             carried_bytes=0,
-            events=(RedirEvent(20, BleLogSource.REDIR, 1, 'line\n', 123),),
+            events=(RedirEvent(20, BleLogSource.REDIR, 1, "line\n", 123),),
         )
     )
     parser_event_queue.put(ParseSummary(raw_bytes=20, parsed_frames=1, carried_bytes=0))
@@ -177,12 +169,12 @@ def test_aggregator_loop_forwards_parser_error_and_stops() -> None:
     raw_stats_queue: Queue[int | None] = Queue()
     ui_queue: Queue[object] = Queue()
     raw_stats_queue.put(None)
-    parser_event_queue.put(ParserStatus(kind='error', message='parser failed'))
+    parser_event_queue.put(ParserStatus(kind="error", message="parser failed"))
 
     run_aggregator_loop(parser_event_queue, raw_stats_queue, ui_queue)
 
     events = _events(ui_queue)
     parser_errors = [event for event in events if isinstance(event, ParserStatus)]
     statuses = [event for event in events if isinstance(event, AggregatorProcessEvent)]
-    assert parser_errors[0].message == 'parser failed'
-    assert statuses[-1].kind == 'stopped'
+    assert parser_errors[0].message == "parser failed"
+    assert statuses[-1].kind == "stopped"

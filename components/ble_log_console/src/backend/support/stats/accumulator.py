@@ -5,17 +5,19 @@
 
 from __future__ import annotations
 
-from src.backend.models import BleLogSource
-from src.backend.models import BufUtilEntry
-from src.backend.models import FirmwareLossSummary
-from src.backend.models import FrameByteCount
-from src.backend.models import FrameStats
-from src.backend.models import FunnelSnapshot
-from src.backend.models import SequenceSourceSummary
-from src.backend.models import SequenceSummary
-from src.backend.models import SourceCode
-from src.backend.models import ThroughputInfo
-from src.backend.models import TransportBitrate
+from src.backend.models import (
+    BleLogSource,
+    BufUtilEntry,
+    FirmwareLossSummary,
+    FrameByteCount,
+    FrameStats,
+    FunnelSnapshot,
+    SequenceSourceSummary,
+    SequenceSummary,
+    SourceCode,
+    ThroughputInfo,
+    TransportBitrate,
+)
 from src.backend.support.stats.buf_util import BufUtilTracker
 from src.backend.support.stats.firmware_loss import FirmwareLossTracker
 from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
@@ -177,7 +179,7 @@ class StatsAccumulator:
 
         reason: "init" (INIT_DONE) or "flush" (FLUSH)
         """
-        if reason == 'init':
+        if reason == "init":
             # INIT_DONE confirms a new firmware instance. FLUSH may be followed
             # by older asynchronously buffered frames, so it is not an SN cut.
             self.seal_sequence_segment()
@@ -188,7 +190,7 @@ class StatsAccumulator:
             self._enh_zero_baseline = True
             self._prev_written.clear()
             self._buf_util.reset()
-        elif reason == 'flush':
+        elif reason == "flush":
             # ENH_STAT-coupled: reset baselines only
             self._fw_loss.reset_baselines()
             self._fw_written.reset_baselines()

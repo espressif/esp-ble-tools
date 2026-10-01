@@ -11,25 +11,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import IO
-from typing import Any
+from typing import IO, Any
 
 from textual.message import Message
 
-from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.analysis.aggregator import AggregatorUpdate
-from src.backend.analysis.worker import AggregatorProcessEvent
-from src.backend.analysis.worker import ParserStatus
+from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
+from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
-from src.backend.io.writer import CAPTURE_PART_MAX_BYTES
-from src.backend.io.writer import WriterEvent
-from src.backend.models import InternalFrameDecoded
-from src.backend.models import LogLine
-from src.backend.models import StatsUpdated
-from src.backend.models import UserNotice
-from src.backend.models import format_bytes
-from src.frontend.rendering import normalize_console_text
-from src.frontend.rendering import strip_ansi_sequences
+from src.backend.io.writer import CAPTURE_PART_MAX_BYTES, WriterEvent
+from src.backend.models import InternalFrameDecoded, LogLine, StatsUpdated, UserNotice, format_bytes
+from src.frontend.rendering import normalize_console_text, strip_ansi_sequences
 from src.i18n import tr
 
 REDIR_LINE_BUFFER_LIMIT = 16 * 1024
@@ -59,13 +50,13 @@ class CaptureEventState:
 def console_log_part_path(base_path: Path, part_index: int) -> Path:
     """Return console log path matching legacy app naming."""
 
-    suffix = '' if part_index <= 1 else f'_part{part_index:03d}'
-    return base_path.with_name(f'{base_path.stem}_console{suffix}.log')
+    suffix = "" if part_index <= 1 else f"_part{part_index:03d}"
+    return base_path.with_name(f"{base_path.stem}_console{suffix}.log")
 
 
 def _default_text_file_factory(path: Path) -> IO[str]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    return open(path, 'w', encoding='utf-8', newline='\n')  # noqa: SIM115
+    return open(path, "w", encoding="utf-8", newline="\n")
 
 
 def _flush_and_close_text_file(file_obj: IO[str]) -> None:
@@ -80,16 +71,16 @@ def _flush_and_close_text_file(file_obj: IO[str]) -> None:
 
 
 def _normalize_console_log_text(text: str) -> str:
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    return normalize_console_text(strip_ansi_sequences(text).replace('\x1b', ''))
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return normalize_console_text(strip_ansi_sequences(text).replace("\x1b", ""))
 
 
 def _format_receive_timestamp(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=' ', timespec='milliseconds')
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=" ", timespec="milliseconds")
 
 
 def _format_receive_time(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime('%H:%M:%S.%f')[:-3]
+    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime("%H:%M:%S.%f")[:-3]
 
 
 class CaptureEventPresenter:
@@ -115,11 +106,11 @@ class CaptureEventPresenter:
         self._console_log_path = console_log_part_path(output_path, 1)
         self._console_part_index = 1
         self._console_part_bytes = 0
-        self._console_line_buf = ''
+        self._console_line_buf = ""
         self._console_line_prefixed = False
         self._console_line_received_at_ms = 0
         self._console_timestamp_pending = False
-        self._redir_line_buf = ''
+        self._redir_line_buf = ""
         self._disconnected = False
         now = self._clock()
         self._last_console_flush_at = now
@@ -179,11 +170,11 @@ class CaptureEventPresenter:
 
         if self._console_log_file is None:
             return
-        if self._console_line_buf.endswith('\r'):
+        if self._console_line_buf.endswith("\r"):
             self._write_console_line(self._console_line_buf[:-1], self._console_line_received_at_ms, complete=True)
         else:
             self._write_console_line(self._console_line_buf, self._console_line_received_at_ms, complete=False)
-        self._console_line_buf = ''
+        self._console_line_buf = ""
         _flush_and_close_text_file(self._console_log_file)
         self._console_log_file = None
 
@@ -198,7 +189,7 @@ class CaptureEventPresenter:
         ]
         if self._redir_line_buf:
             self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
-            self._redir_line_buf = ''
+            self._redir_line_buf = ""
 
         if event.captured_bytes > self._last_captured_bytes:
             self._last_data_at = now
@@ -216,8 +207,8 @@ class CaptureEventPresenter:
             ):
                 messages.append(
                     UserNotice(
-                        tr('No data received for 10s. Check transport mode, port, cable, and firmware logging.'),
-                        level='warning',
+                        tr("No data received for 10s. Check transport mode, port, cable, and firmware logging."),
+                        level="warning",
                     )
                 )
                 self._last_idle_warning_at = now
@@ -230,10 +221,10 @@ class CaptureEventPresenter:
                 messages.append(
                     UserNotice(
                         tr(
-                            'No valid BLE Log frames were decoded for 10s. '
-                            'Check transport mode, wiring, and firmware log configuration.'
+                            "No valid BLE Log frames were decoded for 10s. "
+                            "Check transport mode, wiring, and firmware log configuration."
                         ),
-                        level='warning',
+                        level="warning",
                     )
                 )
                 self._last_frame_warning_at = now
@@ -247,7 +238,7 @@ class CaptureEventPresenter:
                 )
             ):
                 messages.append(
-                    UserNotice(f'Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames')
+                    UserNotice(f"Recorded {format_bytes(event.captured_bytes)}, {event.regular_frames} frames")
                 )
                 self._last_capture_notice_at = now
                 self._last_noticed_captured_bytes = event.captured_bytes
@@ -267,54 +258,54 @@ class CaptureEventPresenter:
         if event.status is not None:
             self._saved_capture_paths = list(event.status.paths)
 
-        if event.kind == 'opened' and event.status is not None and event.status.paths:
-            return (LogLine(f'Saving to {event.status.paths[-1]}'),)
-        if event.kind == 'rotated' and event.status is not None and event.status.paths:
-            return (UserNotice(f'Recording file rotated to {event.status.paths[-1]}'),)
-        if event.kind == 'error':
-            return (UserNotice(tr('Writer error: {message}', message=event.message), level='warning'),)
+        if event.kind == "opened" and event.status is not None and event.status.paths:
+            return (LogLine(f"Saving to {event.status.paths[-1]}"),)
+        if event.kind == "rotated" and event.status is not None and event.status.paths:
+            return (UserNotice(f"Recording file rotated to {event.status.paths[-1]}"),)
+        if event.kind == "error":
+            return (UserNotice(tr("Writer error: {message}", message=event.message), level="warning"),)
         return ()
 
     def _handle_reader_event(self, event: ReaderProcessEvent) -> tuple[Message, ...]:
-        if event.kind == 'opened' and event.status is not None:
-            return (UserNotice(f'Connected to {event.status.display_name}'),)
-        if event.kind == 'parse_backlog':
+        if event.kind == "opened" and event.status is not None:
+            return (UserNotice(f"Connected to {event.status.display_name}"),)
+        if event.kind == "parse_backlog":
             return (
                 UserNotice(
                     tr(
                         event.message
-                        or 'Realtime parser fell behind; raw recording continues, live stats may be incomplete.'
+                        or "Realtime parser fell behind; raw recording continues, live stats may be incomplete."
                     ),
-                    level='warning',
+                    level="warning",
                 ),
             )
-        if event.kind == 'parse_backlog_summary' and event.parse_dropped_chunks:
+        if event.kind == "parse_backlog_summary" and event.parse_dropped_chunks:
             return (
                 UserNotice(
                     tr(
-                        'Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.',
+                        "Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.",
                         chunks=event.parse_dropped_chunks,
                         bytes=format_bytes(event.parse_dropped_bytes),
                     ),
-                    level='warning',
+                    level="warning",
                 ),
             )
-        if event.kind in {'reset_done', 'reset_unsupported'}:
+        if event.kind in {"reset_done", "reset_unsupported"}:
             return (UserNotice(event.message),)
-        if event.kind == 'reset_error':
-            return (UserNotice(tr('Reset failed: {message}', message=event.message), level='warning'),)
-        if event.kind == 'error':
-            return (UserNotice(tr('Reader error: {message}', message=event.message), level='warning'),)
+        if event.kind == "reset_error":
+            return (UserNotice(tr("Reset failed: {message}", message=event.message), level="warning"),)
+        if event.kind == "error":
+            return (UserNotice(tr("Reader error: {message}", message=event.message), level="warning"),)
         return ()
 
     def _handle_parser_status(self, event: ParserStatus) -> tuple[Message, ...]:
-        if event.kind == 'error':
-            return (UserNotice(tr('Parser error: {message}', message=event.message), level='warning'),)
+        if event.kind == "error":
+            return (UserNotice(tr("Parser error: {message}", message=event.message), level="warning"),)
         return ()
 
     def _handle_aggregator_status(self, event: AggregatorProcessEvent) -> tuple[Message, ...]:
-        if event.kind == 'error':
-            return (UserNotice(tr('Aggregator error: {message}', message=event.message), level='warning'),)
+        if event.kind == "error":
+            return (UserNotice(tr("Aggregator error: {message}", message=event.message), level="warning"),)
         return ()
 
     def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
@@ -322,18 +313,18 @@ class CaptureEventPresenter:
         self._console_timestamp_pending = not self._console_line_prefixed
         old_console_path_count = len(self._saved_console_log_paths)
         self._ensure_console_log_open()
-        if len(self._saved_console_log_paths) > old_console_path_count and old_console_path_count > 0:
-            messages.append(UserNotice(f'Console log rotated to {self._saved_console_log_paths[-1]}'))
+        if len(self._saved_console_log_paths) > old_console_path_count > 0:
+            messages.append(UserNotice(f"Console log rotated to {self._saved_console_log_paths[-1]}"))
 
         self._console_line_buf += text
         self._console_line_received_at_ms = received_at_ms
         while True:
-            cr = self._console_line_buf.find('\r')
-            lf = self._console_line_buf.find('\n')
+            cr = self._console_line_buf.find("\r")
+            lf = self._console_line_buf.find("\n")
             line_end = min(index for index in (cr, lf) if index >= 0) if cr >= 0 or lf >= 0 else -1
             if line_end < 0 or (line_end == len(self._console_line_buf) - 1 and cr == line_end):
                 break
-            separator_size = 2 if cr == line_end and self._console_line_buf[line_end : line_end + 2] == '\r\n' else 1
+            separator_size = 2 if cr == line_end and self._console_line_buf[line_end : line_end + 2] == "\r\n" else 1
             line = self._console_line_buf[:line_end]
             self._console_line_buf = self._console_line_buf[line_end + separator_size :]
             self._write_console_line(line, received_at_ms, complete=True)
@@ -344,8 +335,8 @@ class CaptureEventPresenter:
             self._write_console_line(console_text, received_at_ms, complete=False)
 
         self._redir_line_buf += text
-        if '\n' in self._redir_line_buf:
-            lines = self._redir_line_buf.split('\n')
+        if "\n" in self._redir_line_buf:
+            lines = self._redir_line_buf.split("\n")
             self._redir_line_buf = lines.pop()
             self._append_redir_log_lines(messages, lines, received_at_ms)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
@@ -357,29 +348,29 @@ class CaptureEventPresenter:
         normalized = _normalize_console_log_text(text)
         if normalized and self._console_timestamp_pending and not self._console_line_prefixed:
             timestamp = _format_receive_timestamp(received_at_ms)
-            self._append_console_log_text(f'[{timestamp}] ')
+            self._append_console_log_text(f"[{timestamp}] ")
             self._console_line_prefixed = True
             self._console_timestamp_pending = False
         self._append_console_log_text(normalized)
         if complete:
-            self._append_console_log_text('\n')
+            self._append_console_log_text("\n")
             self._console_line_prefixed = False
 
     def _append_console_log_text(self, text: str) -> None:
         if self._console_log_file is None or not text:
             return
         self._console_log_file.write(text)
-        self._console_part_bytes += len(text.encode(errors='replace'))
+        self._console_part_bytes += len(text.encode(errors="replace"))
         self._flush_console_log_if_due()
 
     def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
         non_empty_lines = [line for line in lines if line]
         if non_empty_lines:
-            non_empty_lines[0] = f'[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}'
+            non_empty_lines[0] = f"[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}"
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:
-                messages.append(LogLine('\n'.join(batch)))
+                messages.append(LogLine("\n".join(batch)))
 
     def _flush_console_log_if_due(self) -> None:
         if self._console_log_file is None:

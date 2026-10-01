@@ -4,14 +4,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from queue import Empty
-from queue import Queue
+from queue import Empty, Queue
 from typing import IO
 
-from src.backend.io.writer import AsyncBatchWriter
-from src.backend.io.writer import Writer
-from src.backend.io.writer import WriterConfig
-from src.backend.io.writer import WriterEvent
+from src.backend.io.writer import AsyncBatchWriter, Writer, WriterConfig, WriterEvent
 
 
 class FakeClock:
@@ -32,7 +28,7 @@ class FakeBinaryFile:
 
     def write(self, data: bytes) -> int:
         if self.fail_write:
-            raise OSError('disk full')
+            raise OSError("disk full")
         self.write_calls.append(data)
         self.data.extend(data)
         return len(data)
@@ -41,7 +37,7 @@ class FakeBinaryFile:
         self.flush_count += 1
 
     def fileno(self) -> int:
-        raise OSError('no fileno')
+        raise OSError("no fileno")
 
     def close(self) -> None:
         self.closed = True
@@ -58,17 +54,17 @@ def _events(ui_queue: Queue[WriterEvent]) -> list[WriterEvent]:
 
 def test_writes_all_chunks_to_single_file(tmp_path: Path) -> None:
     ui_queue: Queue[WriterEvent] = Queue()
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
     writer = AsyncBatchWriter(WriterConfig(output_path), ui_queue, batch_timeout_sec=0)
 
     writer.start()
-    writer.write(b'one', timeout=1)
-    writer.write(b'two', timeout=1)
+    writer.write(b"one", timeout=1)
+    writer.write(b"two", timeout=1)
     writer.finalize()
 
-    assert output_path.read_bytes() == b'onetwo'
+    assert output_path.read_bytes() == b"onetwo"
     events = _events(ui_queue)
-    assert [event.kind for event in events] == ['opened', 'finalized']
+    assert [event.kind for event in events] == ["opened", "finalized"]
     assert events[0].message == str(output_path)
     assert events[0].status is not None
     assert events[0].status.paths == (output_path,)
@@ -80,7 +76,7 @@ def test_writes_all_chunks_to_single_file(tmp_path: Path) -> None:
 
 def test_empty_input_does_not_create_file(tmp_path: Path) -> None:
     ui_queue: Queue[WriterEvent] = Queue()
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
     writer = AsyncBatchWriter(WriterConfig(output_path), ui_queue, batch_timeout_sec=0)
 
     writer.start()
@@ -88,7 +84,7 @@ def test_empty_input_does_not_create_file(tmp_path: Path) -> None:
 
     assert not output_path.exists()
     events = _events(ui_queue)
-    assert [event.kind for event in events] == ['finalized']
+    assert [event.kind for event in events] == ["finalized"]
     assert events[-1].status is not None
     assert events[-1].status.paths == ()
 
@@ -100,17 +96,17 @@ def test_each_chunk_calls_write_and_flushes_every_second(tmp_path: Path) -> None
     def factory(path: Path) -> IO[bytes]:
         return fake_file  # type: ignore[return-value]
 
-    writer = Writer(WriterConfig(tmp_path / 'ble_log.bin', flush_interval_sec=1.0), clock=clock, file_factory=factory)
+    writer = Writer(WriterConfig(tmp_path / "ble_log.bin", flush_interval_sec=1.0), clock=clock, file_factory=factory)
 
-    writer.write(b'a')
+    writer.write(b"a")
     clock.now = 0.5
-    writer.write(b'b')
-    assert fake_file.write_calls == [b'a', b'b']
+    writer.write(b"b")
+    assert fake_file.write_calls == [b"a", b"b"]
     assert fake_file.flush_count == 0
 
     clock.now = 1.0
-    writer.write(b'c')
-    assert fake_file.write_calls == [b'a', b'b', b'c']
+    writer.write(b"c")
+    assert fake_file.write_calls == [b"a", b"b", b"c"]
     assert fake_file.flush_count == 1
 
     writer.finalize()
@@ -120,19 +116,19 @@ def test_each_chunk_calls_write_and_flushes_every_second(tmp_path: Path) -> None
 
 def test_rotates_capture_parts_with_legacy_names(tmp_path: Path) -> None:
     ui_queue: Queue[WriterEvent] = Queue()
-    output_path = tmp_path / 'ble_log.bin'
+    output_path = tmp_path / "ble_log.bin"
     writer = AsyncBatchWriter(WriterConfig(output_path, part_max_bytes=3), ui_queue, batch_timeout_sec=0)
 
     writer.start()
-    writer.write(b'abc', timeout=1)
-    writer.write(b'de', timeout=1)
+    writer.write(b"abc", timeout=1)
+    writer.write(b"de", timeout=1)
     writer.finalize()
 
-    part2 = tmp_path / 'ble_log_part002.bin'
-    assert output_path.read_bytes() == b'abc'
-    assert part2.read_bytes() == b'de'
+    part2 = tmp_path / "ble_log_part002.bin"
+    assert output_path.read_bytes() == b"abc"
+    assert part2.read_bytes() == b"de"
     events = _events(ui_queue)
-    assert [event.kind for event in events] == ['opened', 'rotated', 'finalized']
+    assert [event.kind for event in events] == ["opened", "rotated", "finalized"]
     assert events[1].message == str(part2)
     assert events[-1].status is not None
     assert events[-1].status.paths == (output_path, part2)
@@ -146,17 +142,17 @@ def test_write_error_reports_error_and_closes_file(tmp_path: Path) -> None:
 
     ui_queue: Queue[WriterEvent] = Queue()
     writer = AsyncBatchWriter(
-        WriterConfig(tmp_path / 'ble_log.bin'),
+        WriterConfig(tmp_path / "ble_log.bin"),
         ui_queue,
         batch_timeout_sec=0,
         file_factory=factory,
     )
 
     writer.start()
-    writer.write(b'boom', timeout=1)
+    writer.write(b"boom", timeout=1)
     writer.finalize()
 
     events = _events(ui_queue)
-    assert events[0].kind == 'error'
-    assert events[0].message == 'disk full'
+    assert events[0].kind == "error"
+    assert events[0].message == "disk full"
     assert fake_file.closed

@@ -26,13 +26,10 @@ import pytest
 import serial
 from src.backend.models import TransportMode
 from src.backend.support.transport import TransportReader
-from src.backend.support.transport.spi_usb_bridge_transport import SPI_USB_RX_BUFFER_SIZE
-from src.backend.support.transport.spi_usb_bridge_transport import SpiUsbBridgeCdcTransport
-from src.backend.support.transport.uart_transport import UART_BLOCK_SIZE
-from src.backend.support.transport.uart_transport import UART_READ_TIMEOUT
-from src.backend.support.transport.uart_transport import UartTransport
+from src.backend.support.transport.spi_usb_bridge_transport import SPI_USB_RX_BUFFER_SIZE, SpiUsbBridgeCdcTransport
+from src.backend.support.transport.uart_transport import UART_BLOCK_SIZE, UART_READ_TIMEOUT, UartTransport
 
-pty = pytest.importorskip('pty', reason='POSIX-only virtual terminal; Windows has no pty module')
+pty = pytest.importorskip("pty", reason="POSIX-only virtual terminal; Windows has no pty module")
 
 # A pty has no physical baud rate, so any value pyserial accepts works — except
 # that macOS termios has no B3000000 and would route the request through the
@@ -66,7 +63,7 @@ def pty_port() -> Iterator[PtyPort]:
 
 def _read_exactly(reader: TransportReader, size: int) -> bytes:
     """pyserial may return short reads; accumulate until size or the timeout."""
-    received = b''
+    received = b""
     while len(received) < size:
         block = reader.read(size - len(received))
         if not block:
@@ -81,15 +78,15 @@ def test_uart_open_falls_back_when_port_is_exclusively_locked(pty_port: PtyPort)
     try:
         # Precondition: the lock is real, so UartTransport's first attempt fails
         # and its fallback to a plain open is what makes the test pass.
-        with pytest.raises(serial.SerialException, match='Could not exclusively lock'):
+        with pytest.raises(serial.SerialException, match="Could not exclusively lock"):
             serial.Serial(pty_port.path, baudrate=PTY_BAUDRATE, timeout=0.1, exclusive=True)
 
         reader.open()
 
         assert reader.status().opened is True
         assert reader.status().last_error is None
-        pty_port.feed(b'uart')
-        assert _read_exactly(reader, 4) == b'uart'
+        pty_port.feed(b"uart")
+        assert _read_exactly(reader, 4) == b"uart"
     finally:
         reader.close()
         holder.close()
@@ -105,11 +102,11 @@ def test_uart_read_uses_the_real_kernel_timeout(pty_port: PtyPort) -> None:
         # A read on an empty port must block for the configured timeout. Assert
         # a lower bound only, so scheduler jitter cannot flake the test.
         started = time.monotonic()
-        assert reader.read() == b''
+        assert reader.read() == b""
         assert time.monotonic() - started >= UART_READ_TIMEOUT / 2
 
-        pty_port.feed(b'ble-log')
-        assert _read_exactly(reader, 7) == b'ble-log'
+        pty_port.feed(b"ble-log")
+        assert _read_exactly(reader, 7) == b"ble-log"
 
         status = reader.status()
         assert status.rx_bytes == 7
@@ -129,8 +126,8 @@ def test_cdc_reader_opens_reads_and_closes_on_a_real_port(pty_port: PtyPort) -> 
         assert reader.status().opened is True
         assert reader.status().display_name.endswith(pty_port.path)
 
-        pty_port.feed(b'cdc')
-        assert _read_exactly(reader, 3) == b'cdc'
+        pty_port.feed(b"cdc")
+        assert _read_exactly(reader, 3) == b"cdc"
     finally:
         reader.close()
 

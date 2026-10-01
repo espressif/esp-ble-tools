@@ -35,7 +35,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_frame(100, 1, 0)
         stats.record_frame(100, 1, 1)
-        stats.reset('init')
+        stats.reset("init")
         stats.record_frame(100, 1, 100)
         funnel = stats.funnel_snapshot()
         for snap in funnel:
@@ -45,7 +45,7 @@ class TestResetPropagation:
     def test_init_resets_firmware_loss(self) -> None:
         stats = StatsAccumulator()
         self._populate(stats)
-        stats.reset('init')
+        stats.reset("init")
         # INIT_DONE is a trusted zero baseline, so the first report belongs
         # to this capture instead of being discarded as historical loss.
         stats.record_enh_stat(1, 50, 3, 2500, 150)
@@ -60,7 +60,7 @@ class TestResetPropagation:
     def test_init_resets_firmware_written(self) -> None:
         stats = StatsAccumulator()
         self._populate(stats)
-        stats.reset('init')
+        stats.reset("init")
         stats.record_enh_stat(1, 50, 0, 2500, 0)
         funnel = stats.funnel_snapshot()
         for snap in funnel:
@@ -71,7 +71,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_bytes(5000)
         stats.record_frame()
-        stats.reset('init')
+        stats.reset("init")
         snapshot = stats.snapshot(1.0)
         assert snapshot.transport.rx_bytes == 5000
         assert snapshot.transport.fps == 1.0
@@ -79,7 +79,7 @@ class TestResetPropagation:
     def test_init_preserves_per_source_received(self) -> None:
         stats = StatsAccumulator()
         stats.record_frame(100, 1, 0)
-        stats.reset('init')
+        stats.reset("init")
         funnel = stats.funnel_snapshot()
         assert len(funnel) == 1
         assert funnel[0].received.frames == 1
@@ -90,7 +90,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_frame(100, 1, 0)
         stats.record_frame(100, 1, 1)
-        stats.reset('flush')
+        stats.reset("flush")
         stats.record_frame(100, 1, 0)
 
         sequence = stats.finalize_sequence().sources[0]
@@ -104,7 +104,7 @@ class TestResetPropagation:
         stats.record_enh_stat(1, 100, 5, 5000, 250)
         stats.record_enh_stat(1, 200, 10, 10000, 500)
         # Now flush
-        stats.reset('flush')
+        stats.reset("flush")
         # Next report re-establishes baseline (no additional delta)
         stats.record_enh_stat(1, 50, 3, 2500, 150)
         funnel = stats.funnel_snapshot()
@@ -116,7 +116,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_enh_stat(1, 100, 0, 5000, 0)
         stats.record_enh_stat(1, 200, 0, 10000, 0)
-        stats.reset('flush')
+        stats.reset("flush")
         stats.record_enh_stat(1, 50, 0, 2500, 0)
         funnel = stats.funnel_snapshot()
         for snap in funnel:
@@ -127,7 +127,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_bytes(5000)
         stats.record_frame()
-        stats.reset('flush')
+        stats.reset("flush")
         snapshot = stats.snapshot(1.0)
         assert snapshot.transport.rx_bytes == 5000  # preserved
 
@@ -135,7 +135,7 @@ class TestResetPropagation:
         stats = StatsAccumulator()
         stats.record_frame(100, 1, 0)
         stats.record_frame(100, 1, 1)
-        stats.reset('flush')
+        stats.reset("flush")
         funnel = stats.funnel_snapshot()
         for snap in funnel:
             if snap.source == 1:

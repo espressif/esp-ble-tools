@@ -8,8 +8,7 @@ sections below mirror the runtime pipeline layers so the data ownership is easy
 to read before we split the contracts into smaller modules.
 """
 
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -23,28 +22,28 @@ from textual.message import Message
 def format_bytes(cnt: int) -> str:
     """Format byte count as human-readable string (B / KB / MB)."""
     if cnt < 1024:
-        return f'{cnt} B'
+        return f"{cnt} B"
     if cnt < 1024 * 1024:
-        return f'{cnt / 1024:.1f} KB'
-    return f'{cnt / 1024 / 1024:.2f} MB'
+        return f"{cnt / 1024:.1f} KB"
+    return f"{cnt / 1024 / 1024:.2f} MB"
 
 
 def format_throughput(bytes_per_sec: float) -> str:
     """Format throughput as human-readable string with auto KB/s or MB/s switching."""
     kb_per_sec = bytes_per_sec / 1024
     if kb_per_sec < 1024:
-        return f'{kb_per_sec:.1f} KB/s'
-    return f'{kb_per_sec / 1024:.2f} MB/s'
+        return f"{kb_per_sec:.1f} KB/s"
+    return f"{kb_per_sec / 1024:.2f} MB/s"
 
 
 def format_bitrate(bits_per_sec: float) -> str:
     """Format bit rate as human-readable string with SI units."""
     if bits_per_sec < 1000:
-        return f'{bits_per_sec:.0f} bps'
+        return f"{bits_per_sec:.0f} bps"
     kbps = bits_per_sec / 1000
     if kbps < 1000:
-        return f'{kbps:.1f} Kbps'
-    return f'{kbps / 1000:.2f} Mbps'
+        return f"{kbps:.1f} Kbps"
+    return f"{kbps / 1000:.2f} Mbps"
 
 
 # --- Parser/frame contract ---
@@ -57,13 +56,13 @@ MAX_FRAME_SIZE = 2048  # Max payload_len sanity check
 
 
 class ChecksumAlgorithm(str, Enum):
-    XOR = 'XOR'
-    SUM = 'Sum'
+    XOR = "XOR"
+    SUM = "Sum"
 
 
 class ChecksumScope(str, Enum):
-    FULL = 'Header+Payload'
-    HEADER_ONLY = 'Header'
+    FULL = "Header+Payload"
+    HEADER_ONLY = "Header"
 
 
 @dataclass(slots=True)
@@ -167,15 +166,15 @@ def resolve_source_name(src_code: int) -> str:
     try:
         return str(BleLogSource(src_code).name)
     except ValueError:
-        return f'SRC_{src_code}'
+        return f"SRC_{src_code}"
 
 
 # --- Transport contract ---
 
 
 class TransportMode(str, Enum):
-    UART = 'uart'
-    SPI_USB_BRIDGE = 'spi_usb_bridge'
+    UART = "uart"
+    SPI_USB_BRIDGE = "spi_usb_bridge"
 
 
 @dataclass(frozen=True)
@@ -195,7 +194,7 @@ class TransportBitrate:
     bits_per_payload_byte: float = 8.0
     wire_bits_per_sec: float | None = None
 
-    def payload_bytes_to_wire_bits(self, byte_count: int | float) -> float:
+    def payload_bytes_to_wire_bits(self, byte_count: float) -> float:
         return byte_count * self.bits_per_payload_byte
 
     @property
@@ -344,10 +343,10 @@ class FirmwareLossSummary:
 
 
 class CaptureVerdict(str, Enum):
-    READY = 'READY FOR ANALYSIS'
-    WARNING = 'SAVED WITH WARNINGS'
-    CHECK_CONFIGURATION = 'CHECK CONFIGURATION'
-    RECAPTURE = 'RECORD AGAIN RECOMMENDED'
+    READY = "READY FOR ANALYSIS"
+    WARNING = "SAVED WITH WARNINGS"
+    CHECK_CONFIGURATION = "CHECK CONFIGURATION"
+    RECAPTURE = "RECORD AGAIN RECOMMENDED"
 
 
 @dataclass(frozen=True)
@@ -388,11 +387,11 @@ class CaptureReport:
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {
-    (0, 0): 'spin',
-    (1, 0): 'spin',
-    (2, 0): 'll_task',
-    (2, 1): 'll_hci',
-    (3, 0): 'redir',
+    (0, 0): "spin",
+    (1, 0): "spin",
+    (2, 0): "ll_task",
+    (2, 1): "ll_hci",
+    (3, 0): "redir",
 }
 
 
@@ -401,7 +400,7 @@ def resolve_pool_name(pool: int) -> str:
     try:
         return BufUtilPool(pool).name
     except ValueError:
-        return f'POOL_{pool}'
+        return f"POOL_{pool}"
 
 
 def resolve_lbm_name(pool: int, index: int) -> str:
@@ -410,8 +409,8 @@ def resolve_lbm_name(pool: int, index: int) -> str:
     if key in _LBM_NAMES:
         return _LBM_NAMES[key]
     if pool in (0, 1) and index >= 1:
-        return f'atomic[{index - 1}]'
-    return f'lbm_{pool}_{index}'
+        return f"atomic[{index - 1}]"
+    return f"lbm_{pool}_{index}"
 
 
 # --- UI/control contract ---
@@ -452,14 +451,14 @@ class LogLine(Message):
 
 
 class UserNotice(Message):
-    def __init__(self, text: str, level: str = 'info') -> None:
+    def __init__(self, text: str, level: str = "info") -> None:
         super().__init__()
         self.text = text
         self.level = level
 
 
 class BackendStopped(Message):
-    def __init__(self, reason: str = '') -> None:
+    def __init__(self, reason: str = "") -> None:
         super().__init__()
         self.reason = reason
 

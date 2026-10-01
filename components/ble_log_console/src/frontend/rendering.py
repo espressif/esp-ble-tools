@@ -9,36 +9,36 @@ import os
 import re
 import sys
 
-ANSI_ESCAPE_RE = re.compile(r'\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])')
-SGR_ANSI_RE = re.compile(r'\x1b\[[0-9;:]*m')
-CONTROL_CHAR_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]')
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
+SGR_ANSI_RE = re.compile(r"\x1b\[[0-9;:]*m")
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 WINDOWS_TEXT_TRANSLATION = str.maketrans(
     {
-        '—': '--',
-        '–': '-',
-        '…': '...',
+        "—": "--",
+        "–": "-",
+        "…": "...",
     }
 )
 
 
 def use_windows_safe_rendering() -> bool:
     """Return True when the current terminal should avoid wide Unicode decorations."""
-    override = os.environ.get('BLE_LOG_CONSOLE_ASCII')
+    override = os.environ.get("BLE_LOG_CONSOLE_ASCII")
     if override is not None:
-        return override.lower() not in {'0', 'false', 'no', 'off'}
+        return override.lower() not in {"0", "false", "no", "off"}
     return (
-        sys.platform == 'win32'
-        or os.name == 'nt'
-        or os.environ.get('OS') == 'Windows_NT'
-        or 'WT_SESSION' in os.environ
-        or 'ANSICON' in os.environ
-        or 'ConEmuANSI' in os.environ
+        sys.platform == "win32"
+        or os.name == "nt"
+        or os.environ.get("OS") == "Windows_NT"
+        or "WT_SESSION" in os.environ
+        or "ANSICON" in os.environ
+        or "ConEmuANSI" in os.environ
     )
 
 
 def terminal_border_style() -> str:
     """Return the shared Textual border style used on every platform."""
-    return 'ascii' if use_windows_safe_rendering() else 'solid'
+    return "ascii" if use_windows_safe_rendering() else "solid"
 
 
 def launch_control_css() -> str:
@@ -83,7 +83,7 @@ def launch_control_css() -> str:
 
 def launch_width_stable_css() -> str:
     """Lock launch-screen horizontal layout without changing height or borders."""
-    arrow_css = ''
+    arrow_css = ""
     if use_windows_safe_rendering():
         arrow_css = """
     LaunchScreen SelectCurrent .arrow,
@@ -131,7 +131,7 @@ def launch_width_stable_css() -> str:
 def launch_screen_safe_css() -> str:
     """Return launch-screen focus styles for selects and inputs."""
     if not use_windows_safe_rendering():
-        return ''
+        return ""
     border = terminal_border_style()
     return f"""
     LaunchScreen Select.-expanded > SelectCurrent,
@@ -160,9 +160,9 @@ def table_ascii_box() -> bool:
 
 def normalize_console_text(text: str) -> str:
     """Remove terminal control characters that can corrupt Textual layout."""
-    normalized = text.replace('\r\n', '\n').replace('\r', '')
+    normalized = text.replace("\r\n", "\n").replace("\r", "")
     normalized = normalized.expandtabs(4)
-    return CONTROL_CHAR_RE.sub('', normalized)
+    return CONTROL_CHAR_RE.sub("", normalized)
 
 
 def normalize_display_text(text: str) -> str:
@@ -174,9 +174,9 @@ def normalize_display_text(text: str) -> str:
 
 def keep_sgr_ansi_sequences(text: str) -> str:
     """Keep ANSI SGR styling while removing cursor/control escape sequences."""
-    return ANSI_ESCAPE_RE.sub(lambda match: match.group(0) if SGR_ANSI_RE.fullmatch(match.group(0)) else '', text)
+    return ANSI_ESCAPE_RE.sub(lambda match: match.group(0) if SGR_ANSI_RE.fullmatch(match.group(0)) else "", text)
 
 
 def strip_ansi_sequences(text: str) -> str:
     """Remove ANSI escapes when Rich's ANSI parser is unavailable."""
-    return ANSI_ESCAPE_RE.sub('', text)
+    return ANSI_ESCAPE_RE.sub("", text)
