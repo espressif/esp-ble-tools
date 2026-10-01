@@ -7,11 +7,26 @@ import struct
 from typing import cast
 
 import pytest
+from ble_log_frame_decoder import (
+    BleLogVersionInfo,
+    InternalLogBufferUtil,
+    InternalLogInfo,
+    Snapshot,
+    parse_snapshot_version_info,
+)
 from src.backend.analysis.parser import BleLogParser, parse_ble_log_chunk
 from src.backend.analysis.parser_events import EnhStatEvent, FinalStatEvent, FrameEvent, InternalEvent, RedirEvent
-from src.backend.models import BleLogSource, ChecksumAlgorithm, ChecksumMode, ChecksumScope, InfoResult, InternalSource
+from src.backend.models import BleLogSource, ChecksumAlgorithm, ChecksumMode, ChecksumScope, InternalSource
 
-from tests.helpers import build_frame, sum_checksum, xor_checksum
+from tests.helpers import (
+    build_frame,
+    final_stat_payload,
+    internal_payload,
+    snapshot_payload,
+    sum_checksum,
+    version_info_payload,
+    xor_checksum,
+)
 
 
 def _make_frame(payload: bytes, src: int, sn: int) -> bytes:
@@ -25,10 +40,6 @@ def _make_sum_frame(payload: bytes, src: int, sn: int) -> bytes:
 def _sync_frames(src: int = 1) -> bytes:
     payload = b"\x00\x00\x00\x00data"
     return b"".join(_make_frame(payload, src=src, sn=sn) for sn in range(3))
-
-
-def _internal_payload(os_ts: int, int_src: int, sub_payload: bytes) -> bytes:
-    return struct.pack("<I", os_ts) + bytes([int_src]) + sub_payload
 
 
 def test_feed_emits_batch_with_frame_events() -> None:
@@ -112,7 +123,7 @@ def test_parser_accepts_explicit_sum_full_checksum_mode() -> None:
 
 def test_feed_decodes_internal_frame_once() -> None:
     parser = BleLogParser()
-    payload = _internal_payload(os_ts=1234, int_src=InternalSource.INFO, sub_payload=b"\x03")
+    payload = internal_payload(os_ts=1234, int_src=InternalSource.INFO, sub_payload=b"\x03")
     frames = b"".join(_make_frame(payload, src=BleLogSource.INTERNAL, sn=sn) for sn in range(3))
 
     batch = parser.feed(frames)
@@ -120,49 +131,111 @@ def test_feed_decodes_internal_frame_once() -> None:
     internal_events = [event for event in batch.events if isinstance(event, InternalEvent)]
     assert len(internal_events) == 3
     assert internal_events[0].int_src == InternalSource.INFO
-    assert cast(InfoResult, internal_events[0].decoded)["version"] == 3
+    assert cast(InternalLogInfo, internal_events[0].decoded).version == 3
 
 
 def test_feed_emits_enh_stat_event() -> None:
     parser = BleLogParser()
     enh_payload = struct.pack("<BIIII", 2, 100, 5, 4096, 256)
-    payload = _internal_payload(os_ts=1234, int_src=InternalSource.ENH_STAT, sub_payload=enh_payload)
+    payload = internal_payload(os_ts=1234, int_src=InternalSource.ENHANCED_STAT, sub_payload=enh_payload)
     frames = b"".join(_make_frame(payload, src=BleLogSource.INTERNAL, sn=sn) for sn in range(3))
 
     batch = parser.feed(frames)
 
     enh_events = [event for event in batch.events if isinstance(event, EnhStatEvent)]
     assert len(enh_events) == 3
-    assert enh_events[0].stat["src_code"] == 2
-    assert enh_events[0].stat["written_frame_cnt"] == 100
-    assert enh_events[0].stat["lost_frame_cnt"] == 5
-    assert enh_events[0].stat["written_bytes_cnt"] == 4096
-    assert enh_events[0].stat["lost_bytes_cnt"] == 256
+    stat = enh_events[0].stat.enhanced_stat
+    assert stat.log_source == 2
+    assert stat.written_frame_cnt == 100
+    assert stat.lost_frame_cnt == 5
+    assert stat.written_bytes_cnt == 4096
+    assert stat.lost_bytes_cnt == 256
+
+
+def test_feed_emits_buf_util_event() -> None:
+    parser = BleLogParser()
+    payload = internal_payload(os_ts=7777, int_src=InternalSource.BUF_UTIL, sub_payload=b"\x21\x04\x03")
+
+    batch = parser.feed(_make_frame(payload, src=BleLogSource.INTERNAL, sn=1))
+
+    event = next(event for event in batch.events if isinstance(event, InternalEvent))
+    buf = cast(InternalLogBufferUtil, event.decoded)
+    assert buf.log_os_ts == 7777
+    assert buf.lbm_id == 0x21
+    assert buf.pool == 2
+    assert buf.index == 1
+    assert buf.trans_cnt == 4
+    assert buf.inflight_peak == 3
 
 
 def test_feed_emits_final_stat_event() -> None:
     parser = BleLogParser()
-    entry = struct.pack("<BIIII", BleLogSource.HOST, 100, 2, 4096, 128)
-    payload = _internal_payload(os_ts=4321, int_src=InternalSource.FINAL_STAT, sub_payload=b"\x01" + entry)
+    payload = final_stat_payload(4321, host=(100, 2, 4096, 128))
 
     batch = parser.feed(_make_frame(payload, src=BleLogSource.INTERNAL, sn=1))
 
     event = next(event for event in batch.events if isinstance(event, FinalStatEvent))
     assert event.os_ts_ms == 4321
-    assert event.entries[0].source_code == BleLogSource.HOST
-    assert event.entries[0].written_frame_cnt == 100
-    assert event.entries[0].failed_frame_cnt == 2
+    entry = next(entry for entry in event.entries if entry.log_source == BleLogSource.HOST)
+    assert entry.written_frame_cnt == 100
+    assert entry.lost_frame_cnt == 2
+    assert entry.written_bytes_cnt == 4096
+    assert entry.lost_bytes_cnt == 128
+
+
+def test_feed_decodes_version_info_chip() -> None:
+    parser = BleLogParser()
+
+    batch = parser.feed(_make_frame(version_info_payload(1234), src=BleLogSource.INTERNAL, sn=1))
+
+    event = next(event for event in batch.events if isinstance(event, InternalEvent))
+    assert event.int_src is InternalSource.VERSION_INFO
+    info = cast(BleLogVersionInfo, event.decoded)
+    assert info.chip_name == "ESP32C6"
+    assert info.chip_revision_str == "v3.02"
+
+
+def test_feed_decodes_snapshot_with_chip_identity() -> None:
+    parser = BleLogParser()
+
+    batch = parser.feed(_make_frame(snapshot_payload(), src=BleLogSource.INTERNAL, sn=1))
+
+    event = next(event for event in batch.events if isinstance(event, InternalEvent))
+    assert event.int_src is InternalSource.SNAPSHOT
+    snapshot = cast(Snapshot, event.decoded)
+    assert snapshot.reason_flags == 0b1011
+    assert snapshot.pool == (7, 1, 2, 3)
+    assert len(snapshot.stats) == 7
+    assert parse_snapshot_version_info(snapshot).chip_name == "ESP32C6"
 
 
 def test_feed_filters_false_init_done_version_zero() -> None:
     parser = BleLogParser()
-    payload = _internal_payload(os_ts=1234, int_src=InternalSource.INIT_DONE, sub_payload=b"\x00")
+    payload = internal_payload(os_ts=1234, int_src=InternalSource.INIT_DONE, sub_payload=b"\x00")
     frames = b"".join(_make_frame(payload, src=BleLogSource.INTERNAL, sn=sn) for sn in range(3))
 
     batch = parser.feed(frames)
 
     assert batch.parsed_frames == 3
     assert not [event for event in batch.events if isinstance(event, InternalEvent)]
+
+
+@pytest.mark.parametrize(
+    "int_src, sub_payload",
+    (
+        (InternalSource.TIMESTAMP, struct.pack("<BIII", 1, 100, 200, 300)),
+        (99, b"\x00"),
+        (InternalSource.ENHANCED_STAT, b"\x00" * 10),  # wrong length
+    ),
+)
+def test_feed_drops_unsupported_or_malformed_internal_payloads(int_src: int, sub_payload: bytes) -> None:
+    parser = BleLogParser()
+    payload = internal_payload(os_ts=1234, int_src=int_src, sub_payload=sub_payload)
+
+    batch = parser.feed(_make_frame(payload, src=BleLogSource.INTERNAL, sn=1))
+
+    assert batch.parsed_frames == 1
+    assert batch.events == ()
 
 
 def test_feed_emits_redir_payload_event() -> None:

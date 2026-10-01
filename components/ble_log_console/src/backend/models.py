@@ -12,8 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TypedDict
 
+from ble_log_frame_decoder import (
+    BleLogVersionInfo,
+    InternalLogBufferUtil,
+    InternalLogEnhancedStat,
+    InternalLogFinalStat,
+    InternalLogInfo,
+    InternalSource,
+    Snapshot,
+)
+from ble_log_frame_decoder import FinalStatEntry as FinalStatEntry  # noqa: PLC0414 - re-exported contract type
 from textual.message import Message
 
 # --- Common formatting helpers ---
@@ -87,58 +96,17 @@ class BleLogSource(int, Enum):
 SourceCode = int
 
 
-class InternalSource(int, Enum):
-    INIT_DONE = 0
-    TS = 1
-    ENH_STAT = 2
-    INFO = 3
-    FLUSH = 4
-    BUF_UTIL = 5
-    FINAL_STAT = 6
-
-
-class InfoResult(TypedDict):
-    int_src: InternalSource
-    version: int
-    os_ts_ms: int
-
-
-class EnhStatResult(TypedDict):
-    int_src: InternalSource
-    src_code: int
-    written_frame_cnt: int
-    lost_frame_cnt: int
-    written_bytes_cnt: int
-    lost_bytes_cnt: int
-    os_ts_ms: int
-
-
-class BufUtilResult(TypedDict):
-    int_src: InternalSource
-    lbm_id: int
-    pool: int
-    index: int
-    trans_cnt: int
-    inflight_peak: int
-    os_ts_ms: int
-
-
-@dataclass(frozen=True)
-class FinalStatEntry:
-    source_code: SourceCode
-    written_frame_cnt: int
-    failed_frame_cnt: int
-    written_bytes_cnt: int
-    failed_bytes_cnt: int
-
-
-class FinalStatResult(TypedDict):
-    int_src: InternalSource
-    entries: tuple[FinalStatEntry, ...]
-    os_ts_ms: int
-
-
-InternalDecoderResult = InfoResult | EnhStatResult | BufUtilResult | FinalStatResult
+# INTERNAL (source 0) payload records are owned by esp-blfd's internal module;
+# the console maps those records into its event types without re-declaring the
+# wire shapes.  This union is everything InternalEvent.decoded can carry.
+InternalDecoderResult = (
+    InternalLogInfo
+    | InternalLogEnhancedStat
+    | InternalLogBufferUtil
+    | InternalLogFinalStat
+    | BleLogVersionInfo
+    | Snapshot
+)
 
 
 # Sources written via ble_log_write_hex_ll() or stream_write have no 4-byte os_ts prefix.

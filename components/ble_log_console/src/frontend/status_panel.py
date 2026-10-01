@@ -55,6 +55,7 @@ class StatusPanel(Widget):
     stats: reactive[FrameStats] = reactive(FrameStats)
     disconnected: reactive[bool] = reactive(False)
     finalizing: reactive[bool] = reactive(False)
+    chip_label: reactive[str] = reactive("")
 
     def render(self) -> Text:
         s = self.stats
@@ -73,15 +74,16 @@ class StatusPanel(Widget):
             return Text.from_markup(f"{line1}\n{line2}")
 
         t = s.transport
+        chip = f" | [dim]{self.chip_label}[/dim]" if self.chip_label else ""
 
         if width < COMPACT_STATUS_WIDTH:
-            line1 = f"{_compact_customer_state_markup(s, self.disconnected)} | RX {format_bytes(t.rx_bytes)}"
+            line1 = f"{_compact_customer_state_markup(s, self.disconnected)}{chip} | RX {format_bytes(t.rx_bytes)}"
             line2 = _format_speed(t.rx_bits_per_sec)
         elif width < MEDIUM_STATUS_WIDTH:
-            line1 = f"Status: {_customer_state_markup(s, self.disconnected)} | [bold]h[/bold]: help"
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{chip} | [bold]h[/bold]: help"
             line2 = f"RX: {format_bytes(t.rx_bytes)}  Frames: {t.rx_frames}  Speed: {_format_speed(t.rx_bits_per_sec)}"
         else:
-            line1 = f"Status: {_customer_state_markup(s, self.disconnected)} | Press [bold]h[/bold] for help"
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{chip} | Press [bold]h[/bold] for help"
             line2 = (
                 f"RX: {format_bytes(t.rx_bytes)}  "
                 f"Frames: {t.rx_frames}  "

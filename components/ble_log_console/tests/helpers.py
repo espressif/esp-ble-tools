@@ -3,6 +3,9 @@
 
 import struct
 from collections.abc import Callable
+from enum import Enum
+
+from src.backend.models import BleLogSource, InternalSource
 
 
 def sum_checksum(data: bytes) -> int:
@@ -14,6 +17,65 @@ def xor_checksum(data: bytes) -> int:
     for offset in range(0, len(data), 4):
         checksum ^= int.from_bytes(data[offset : offset + 4], "little")
     return checksum & 0xFFFFFFFF
+
+
+def _int_value(value: int | Enum) -> int:
+    return int(value.value) if isinstance(value, Enum) else int(value)
+
+
+def internal_payload(os_ts: int, int_src: int | Enum, sub_payload: bytes) -> bytes:
+    """Build an INTERNAL frame payload: os_ts, subtype byte, then the subtype body."""
+    return struct.pack("<I", os_ts) + bytes([_int_value(int_src)]) + sub_payload
+
+
+def final_stat_payload(os_ts: int, host: tuple[int, int, int, int]) -> bytes:
+    """Canonical FINAL_STAT payload: one 17-byte entry per source code 0..8."""
+    payload = struct.pack("<IBB", os_ts, _int_value(InternalSource.FINAL_STAT), 9)
+    for source in range(9):
+        counts = host if source == _int_value(BleLogSource.HOST) else (0, 0, 0, 0)
+        payload += struct.pack("<BIIII", source, *counts)
+    return payload
+
+
+def version_info_payload(os_ts: int, chip_model: int = 13, chip_revision: int = 302) -> bytes:
+    """VERSION_INFO payload. The chip identity is what the status bar surfaces."""
+    return struct.pack(
+        "<IBB12s10s10s10s10sHH",
+        os_ts,
+        _int_value(InternalSource.VERSION_INFO),
+        8,
+        b"a" * 12,
+        b"b" * 10,
+        b"c" * 10,
+        b"d" * 10,
+        b"e" * 10,
+        chip_model,
+        chip_revision,
+    )
+
+
+def snapshot_payload(
+    os_ts: int = 0x1234,
+    chip_model: int = 13,
+    chip_revision: int = 302,
+    *,
+    version_block: bytes | None = None,
+) -> bytes:
+    """SNAPSHOT payload. The embedded VERSION_INFO block drops its timestamp.
+
+    Pass `version_block` to substitute a 58-byte block the console cannot interpret.
+    """
+    stats = b"".join(struct.pack("<III", 5 + source, source, 50 + source) for source in range(7))
+    block = version_block if version_block is not None else version_info_payload(os_ts, chip_model, chip_revision)[4:]
+    body = (
+        struct.pack("<H", 0b1011)
+        + (0x0201).to_bytes(3, "little")
+        + block
+        + struct.pack("<BIII", 2, 0x1111, 0x2222, 0x3333)
+        + struct.pack("<BBBB", 7, 1, 2, 3)
+        + stats
+    )
+    return struct.pack("<I", os_ts) + bytes([_int_value(InternalSource.SNAPSHOT)]) + body
 
 
 def build_frame_header(payload_len: int, source_code: int, frame_sn: int) -> bytes:

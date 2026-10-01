@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from typing import NamedTuple, TypeAlias
 
-from src.backend.models import EnhStatResult, FinalStatEntry, InternalDecoderResult, InternalSource, SourceCode
+from src.backend.models import (
+    FinalStatEntry,
+    InternalDecoderResult,
+    InternalLogEnhancedStat,
+    InternalSource,
+    SourceCode,
+)
 
 
 class FrameEvent(NamedTuple):
@@ -30,7 +36,7 @@ class EnhStatEvent(NamedTuple):
     """Firmware ENH_STAT counters decoded from an INTERNAL frame."""
 
     frame_size: int
-    stat: EnhStatResult
+    stat: InternalLogEnhancedStat
 
 
 class FinalStatEvent(NamedTuple):

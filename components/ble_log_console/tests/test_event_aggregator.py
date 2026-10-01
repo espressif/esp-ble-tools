@@ -6,6 +6,7 @@ from __future__ import annotations
 import struct
 from typing import cast
 
+from ble_log_frame_decoder import EnhancedStat, InternalLogBufferUtil, InternalLogEnhancedStat, InternalLogInfo
 from src.backend.analysis.aggregator import CaptureAggregator, frame_size_from_payload
 from src.backend.analysis.parser_events import (
     EnhStatEvent,
@@ -16,15 +17,7 @@ from src.backend.analysis.parser_events import (
     ParseSummary,
     RedirEvent,
 )
-from src.backend.models import (
-    FRAME_OVERHEAD,
-    BleLogSource,
-    BufUtilResult,
-    EnhStatResult,
-    FinalStatEntry,
-    InfoResult,
-    InternalSource,
-)
+from src.backend.models import FRAME_OVERHEAD, BleLogSource, FinalStatEntry, InternalSource
 
 
 def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
@@ -91,8 +84,8 @@ def test_redir_event_updates_stats_and_returns_text() -> None:
 
 def test_internal_info_event_sets_version_and_is_forwarded() -> None:
     aggregator = CaptureAggregator()
-    decoded = InfoResult(int_src=InternalSource.INFO, version=4, os_ts_ms=10)
-    payload = struct.pack("<I", 10) + bytes([InternalSource.INFO, 4])
+    decoded = InternalLogInfo(log_os_ts=10, source=InternalSource.INFO, version=4)
+    payload = struct.pack("<I", 10) + bytes([InternalSource.INFO.value, 4])
 
     update = aggregator.consume_events(
         (
@@ -107,22 +100,20 @@ def test_internal_info_event_sets_version_and_is_forwarded() -> None:
 
     assert update.frames_seen == 1
     assert update.internal_frames[0].int_src == InternalSource.INFO
-    assert cast(InfoResult, update.internal_frames[0].decoded)["version"] == 4
+    assert cast(InternalLogInfo, update.internal_frames[0].decoded).version == 4
     assert snapshot.stats.transport.rx_frames == 1
 
 
 def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
     aggregator = CaptureAggregator()
-    decoded = BufUtilResult(
-        int_src=InternalSource.BUF_UTIL,
+    decoded = InternalLogBufferUtil(
+        log_os_ts=11,
+        source=InternalSource.BUF_UTIL,
         lbm_id=0x21,
-        pool=2,
-        index=1,
         trans_cnt=9,
         inflight_peak=3,
-        os_ts_ms=11,
     )
-    payload = struct.pack("<I", 11) + bytes([InternalSource.BUF_UTIL, 0x21, 9, 3])
+    payload = struct.pack("<I", 11) + bytes([InternalSource.BUF_UTIL.value, 0x21, 9, 3])
 
     aggregator.consume_events(
         (
@@ -143,24 +134,28 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
 
 def test_enh_stat_event_updates_loss() -> None:
     aggregator = CaptureAggregator()
-    payload = struct.pack("<I", 12) + bytes([InternalSource.ENH_STAT]) + b"\x00" * 17
-    first = EnhStatResult(
-        int_src=InternalSource.ENH_STAT,
-        src_code=BleLogSource.HOST,
-        written_frame_cnt=10,
-        lost_frame_cnt=0,
-        written_bytes_cnt=1000,
-        lost_bytes_cnt=0,
-        os_ts_ms=12,
+    payload = struct.pack("<I", 12) + bytes([InternalSource.ENHANCED_STAT.value]) + b"\x00" * 17
+    first = InternalLogEnhancedStat(
+        log_os_ts=12,
+        source=InternalSource.ENHANCED_STAT,
+        enhanced_stat=EnhancedStat(
+            log_source=BleLogSource.HOST,
+            written_frame_cnt=10,
+            lost_frame_cnt=0,
+            written_bytes_cnt=1000,
+            lost_bytes_cnt=0,
+        ),
     )
-    second = EnhStatResult(
-        int_src=InternalSource.ENH_STAT,
-        src_code=BleLogSource.HOST,
-        written_frame_cnt=20,
-        lost_frame_cnt=2,
-        written_bytes_cnt=2000,
-        lost_bytes_cnt=128,
-        os_ts_ms=13,
+    second = InternalLogEnhancedStat(
+        log_os_ts=13,
+        source=InternalSource.ENHANCED_STAT,
+        enhanced_stat=EnhancedStat(
+            log_source=BleLogSource.HOST,
+            written_frame_cnt=20,
+            lost_frame_cnt=2,
+            written_bytes_cnt=2000,
+            lost_bytes_cnt=128,
+        ),
     )
 
     aggregator.consume_events((EnhStatEvent(frame_size=frame_size_from_payload(payload), stat=first),))
@@ -168,7 +163,7 @@ def test_enh_stat_event_updates_loss() -> None:
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1
-    assert update.internal_frames[0].int_src == InternalSource.ENH_STAT
+    assert update.internal_frames[0].int_src == InternalSource.ENHANCED_STAT
     assert snapshot.stats.loss.total_frames == 2
     assert snapshot.stats.loss.total_bytes == 128
 
@@ -186,7 +181,7 @@ def test_parser_summary_overwrites_final_parser_counters() -> None:
 
 def test_final_stat_closes_independent_capture_segments() -> None:
     aggregator = CaptureAggregator()
-    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
     aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
     final = FinalStatEvent(
         frame_size=169,
@@ -241,7 +236,7 @@ def test_first_and_last_segments_are_marked_partial_without_boundaries() -> None
 
 def test_ambiguous_cross_segment_frame_is_retained_and_marked_uncertain() -> None:
     aggregator = CaptureAggregator()
-    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
     aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
     final = FinalStatEvent(
         frame_size=169,

@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
+from ble_log_frame_decoder import InternalLogBufferUtil, InternalSource
+
 from src.backend.analysis.parser_events import (
     BleLogEvent,
     EnhStatEvent,
@@ -21,13 +23,11 @@ from src.backend.analysis.parser_events import (
 from src.backend.models import (
     FRAME_OVERHEAD,
     BufUtilEntry,
-    BufUtilResult,
     CaptureSegmentSummary,
     FirmwareLossSummary,
     FrameStats,
     FunnelSnapshot,
     InternalDecoderResult,
-    InternalSource,
     SequenceSummary,
     TransportBitrate,
 )
@@ -179,7 +179,7 @@ class CaptureAggregator:
             elif event_type is EnhStatEvent:
                 flush_regular_frames()
                 self._record_internal_frame(event.frame_size)
-                internal_frames.append(InternalFrameUpdate(int_src=InternalSource.ENH_STAT, decoded=event.stat))
+                internal_frames.append(InternalFrameUpdate(int_src=InternalSource.ENHANCED_STAT, decoded=event.stat))
                 self._record_enh_stat(event)
             elif event_type is FinalStatEvent:
                 flush_regular_frames()
@@ -242,27 +242,27 @@ class CaptureAggregator:
         elif event.int_src == InternalSource.FLUSH:
             self._stats.reset("flush")
         elif event.int_src == InternalSource.BUF_UTIL:
-            buf = cast(BufUtilResult, event.decoded)
+            buf = cast(InternalLogBufferUtil, event.decoded)
             self._stats.record_buf_util(
-                lbm_id=buf["lbm_id"],
-                trans_cnt=buf["trans_cnt"],
-                inflight_peak=buf["inflight_peak"],
+                lbm_id=buf.lbm_id,
+                trans_cnt=buf.trans_cnt,
+                inflight_peak=buf.inflight_peak,
             )
 
     def _record_enh_stat(self, event: EnhStatEvent) -> None:
-        stat = event.stat
+        stat = event.stat.enhanced_stat
         self._stats.record_enh_stat(
-            src_code=stat["src_code"],
-            written_frames=stat["written_frame_cnt"],
-            lost_frames=stat["lost_frame_cnt"],
-            written_bytes=stat["written_bytes_cnt"],
-            lost_bytes=stat["lost_bytes_cnt"],
+            src_code=int(stat.log_source),
+            written_frames=stat.written_frame_cnt,
+            lost_frames=stat.lost_frame_cnt,
+            written_bytes=stat.written_bytes_cnt,
+            lost_bytes=stat.lost_bytes_cnt,
         )
 
     def _close_final_stat_segment(self, event: FinalStatEvent) -> None:
         self._final_stat_seen = True
         sequence = self._stats.seal_sequence_segment()
-        entries = tuple(entry for entry in event.entries if entry.source_code > 0)
+        entries = tuple(entry for entry in event.entries if int(entry.log_source) > 0)
         segment = CaptureSegmentSummary(
             index=len(self._segments) + 1,
             complete=self._segment_start_known,
@@ -271,8 +271,8 @@ class CaptureAggregator:
             received_bytes=self._segment_regular_bytes,
             firmware_written_frames=sum(entry.written_frame_cnt for entry in entries),
             firmware_written_bytes=sum(entry.written_bytes_cnt for entry in entries),
-            firmware_lost_frames=sum(entry.failed_frame_cnt for entry in entries),
-            firmware_lost_bytes=sum(entry.failed_bytes_cnt for entry in entries),
+            firmware_lost_frames=sum(entry.lost_frame_cnt for entry in entries),
+            firmware_lost_bytes=sum(entry.lost_bytes_cnt for entry in entries),
             sequence_missing_frames=sequence.total_missing_frames,
             sequence_uncertain=sequence.uncertain,
         )
@@ -281,10 +281,10 @@ class CaptureAggregator:
             self._complete_sequence = merge_sequence_summaries((self._complete_sequence, sequence))
             for entry in entries:
                 self._final_written_bytes += entry.written_bytes_cnt
-                lost_frames, lost_bytes = self._final_loss.get(entry.source_code, (0, 0))
-                self._final_loss[entry.source_code] = (
-                    lost_frames + entry.failed_frame_cnt,
-                    lost_bytes + entry.failed_bytes_cnt,
+                lost_frames, lost_bytes = self._final_loss.get(int(entry.log_source), (0, 0))
+                self._final_loss[int(entry.log_source)] = (
+                    lost_frames + entry.lost_frame_cnt,
+                    lost_bytes + entry.lost_bytes_cnt,
                 )
         self._segment_regular_frames = 0
         self._segment_regular_bytes = 0

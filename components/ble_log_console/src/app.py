@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, TextIO, cast
 
+from ble_log_frame_decoder import Snapshot, parse_snapshot_version_info
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -22,13 +23,14 @@ from textual.widgets import Button
 
 from src.backend.models import (
     BackendStopped,
+    BleLogVersionInfo,
     BufUtilEntry,
     CaptureFinished,
     CaptureReport,
     FrameStats,
     FunnelSnapshot,
-    InfoResult,
     InternalFrameDecoded,
+    InternalLogInfo,
     InternalSource,
     LaunchConfig,
     LogLine,
@@ -113,6 +115,22 @@ def unique_capture_path(log_dir: Path, now: datetime | None = None) -> Path:
         candidate = base.with_name(f"{base.stem}_{index:03d}{base.suffix}")
         index += 1
     return candidate
+
+
+def _chip_label(msg: InternalFrameDecoded) -> str:
+    """Chip name + revision from a VERSION_INFO or SNAPSHOT record, else ''."""
+
+    try:
+        if msg.int_src is InternalSource.VERSION_INFO:
+            info = cast(BleLogVersionInfo, msg.payload)
+        elif msg.int_src is InternalSource.SNAPSHOT:
+            info = parse_snapshot_version_info(cast(Snapshot, msg.payload))
+        else:
+            return ""
+    except ValueError:
+        # A SNAPSHOT can pass shape validation with a corrupt embedded block.
+        return ""
+    return f"{info.chip_name} {info.chip_revision_str}"
 
 
 class BLELogApp(App):
@@ -302,12 +320,15 @@ class BLELogApp(App):
         self._buf_util_snapshots = msg.buf_util_snapshots
 
     def on_internal_frame_decoded(self, msg: InternalFrameDecoded) -> None:
+        chip_label = _chip_label(msg)
+        if chip_label:
+            self.query_one(StatusPanel).chip_label = chip_label
         if not self._debug:
             return
         if msg.int_src == InternalSource.INIT_DONE:
-            info = cast(InfoResult, msg.payload)
+            info = cast(InternalLogInfo, msg.payload)
             log_view = self.query_one(LogView)
-            log_view.write_info(f"BLE Log v{info['version']} initialized - starting a new SN segment")
+            log_view.write_info(f"BLE Log v{info.version} initialized - starting a new SN segment")
         elif msg.int_src == InternalSource.FLUSH:
             log_view = self.query_one(LogView)
             log_view.write_info("Firmware flush detected")
