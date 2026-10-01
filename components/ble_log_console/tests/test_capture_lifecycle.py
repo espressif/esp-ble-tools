@@ -30,7 +30,9 @@ def _completed_result(path: Path) -> CapturePipelineResult:
         parser_frames=1,
         parser_carried_bytes=0,
         regular_frames=1,
-        sequence=SequenceSummary((SequenceSourceSummary(5, 1, 7, 7, 0, 1),)),
+        sequence=SequenceSummary(
+            observed_frames=7, first_sn=1, last_sn=7, segments=1, sources=(SequenceSourceSummary(5, 7, 1, 7),)
+        ),
     )
     return CapturePipelineResult(
         raw_paths=(path,),

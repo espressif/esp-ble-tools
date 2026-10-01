@@ -3,6 +3,7 @@
 
 from src.backend.models import BleLogSource, TransportBitrate, has_os_ts
 from src.backend.support.stats import StatsAccumulator
+from src.backend.support.stats.accumulator import SN_REPLAY_LIMIT
 
 
 def _set_uart_bitrate(stats: StatsAccumulator, baudrate: int = 3_000_000) -> None:
@@ -169,7 +170,21 @@ class TestRecordFrameWithSN:
         stats.record_frame(frame_size=100, src_code=1, frame_sn=0)
         # SN=257 is beyond the reorder window (256), forcing SN=1 to be confirmed lost
         stats.record_frame(frame_size=100, src_code=1, frame_sn=257)
-        assert stats._sn_gap.totals() == {1: 1}
+        assert stats._sn_gap.totals() == {1: 2}
+        assert stats.sequence_snapshot().missing_frames == 1
+
+    def test_internal_frames_share_the_sn_stream_with_regular_frames(self) -> None:
+        """A snapshot frame's SN must not read as a lost regular frame."""
+        stats = StatsAccumulator()
+        stats.record_frame(frame_size=100, src_code=2, frame_sn=0)
+        stats.record_frame_sn(0, 1)  # INTERNAL snapshot frame
+        stats.record_frame(frame_size=100, src_code=2, frame_sn=2)
+
+        sequence = stats.sequence_snapshot()
+
+        assert sequence.observed_frames == 3
+        assert sequence.missing_frames == 0
+        assert 0 not in stats._per_source_received_frames
 
     def test_no_sn_tracking_when_sn_negative(self) -> None:
         stats = StatsAccumulator()
@@ -178,10 +193,31 @@ class TestRecordFrameWithSN:
         snapshot = stats.snapshot(1.0)
         assert snapshot.transport.fps == 1.0
 
+    def test_a_contract_switch_after_a_full_replay_log_reports_unverified(self) -> None:
+        """Windows that cannot be re-keyed are dropped, observation counts survive.
+
+        A capture that outran the replay log cannot be recomputed under the
+        other contract, so it reports unverified instead of a number derived
+        from the wrong grouping — and it must not raise while doing so.
+        """
+        stats = StatsAccumulator()
+        for frame_sn in range(SN_REPLAY_LIMIT + 1):
+            stats.record_frame_sn(2, frame_sn)
+
+        stats.set_sequence_model(True)
+        sequence = stats.finalize_sequence()
+
+        assert sequence.uncertain
+        assert sequence.per_source
+        assert sequence.observed_frames == SN_REPLAY_LIMIT + 1
+        assert [(entry.source, entry.observed_frames) for entry in sequence.sources] == [(2, SN_REPLAY_LIMIT + 1)]
+
     def test_no_sn_tracking_when_src_zero(self) -> None:
+        """src 0 through the regular-frame entry point stays out of per-source bytes."""
         stats = StatsAccumulator()
         stats.record_frame(frame_size=100, src_code=0, frame_sn=5)
         assert 0 not in stats._per_source_received_frames
+        assert stats.sequence_snapshot().observed_frames == 0
 
 
 class TestRecordEnhStat:

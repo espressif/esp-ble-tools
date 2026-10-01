@@ -196,9 +196,9 @@ def test_pipeline_final_snapshot_seals_sequence_gaps(tmp_path: Path) -> None:
     )
 
     assert result.final_snapshot is not None
-    source = result.final_snapshot.sequence.sources[0]
-    assert source.observed_frames == 2
-    assert source.missing_frames == 1
+    sequence = result.final_snapshot.sequence
+    assert sequence.sources[0].observed_frames == 2
+    assert sequence.missing_frames == 1
 
 
 def test_pipeline_result_reports_parse_backlog_metrics(tmp_path: Path) -> None:

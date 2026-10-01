@@ -24,6 +24,12 @@ from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
 from src.backend.support.stats.sn_gap import SNGapTracker
 from src.backend.support.stats.transport import TransportMetrics
 
+# Frames kept for a replay while the firmware's counter contract is not proven.
+# The log only has to outlast the gap between attaching to a running device and
+# its first record (about a second); past it the frames cannot be re-grouped and
+# a disagreeing record marks the result unverified instead.
+SN_REPLAY_LIMIT = 65536
+
 
 class StatsAccumulator:
     def __init__(self) -> None:
@@ -31,7 +37,20 @@ class StatsAccumulator:
         self._transport = TransportMetrics()
         self._fw_loss = FirmwareLossTracker()
         self._fw_written = FirmwareWrittenTracker()
-        self._sn_gap = SNGapTracker()
+        # The counter contract is only proven once the firmware writes a record
+        # that identifies it (see set_sequence_model). Frames are accounted under
+        # the default until then and logged, so a proven contract can re-group
+        # them; the default matches the current firmware's shared counter.
+        self._sn_per_source = False
+        self._sn_contract_known = False
+        self._sn_reset_pending = False
+        self._sn_replay_log: list[tuple[SourceCode, int]] = []
+        self._sn_replay_lost = False
+        self._sn_gap = SNGapTracker(per_source=self._sn_per_source)
+        # REDIR numbers frames from its own firmware counter
+        # (ble_log_redir.c: `redir->frame_sn`), so its numbers must never fill
+        # a gap in the stream shared by regular frames and snapshots.
+        self._redir_sn_gap = SNGapTracker(per_source=self._sn_per_source)
         self._sequence_total = SequenceSummary()
         self._buf_util = BufUtilTracker()
         self._per_source_received_frames: dict[SourceCode, int] = {}
@@ -51,37 +70,117 @@ class StatsAccumulator:
         self._transport.record_frame()
         gap = 0
         if frame_sn >= 0 and src_code > 0:
-            gap = self._sn_gap.record(src_code, frame_sn)
+            gap = self.record_frame_sn(src_code, frame_sn)
             self._per_source_received_frames[src_code] = self._per_source_received_frames.get(src_code, 0) + 1
             self._per_source_received_bytes[src_code] = self._per_source_received_bytes.get(src_code, 0) + frame_size
         return gap
 
     def record_frame_sn(self, src_code: SourceCode, frame_sn: int) -> int:
-        """Record sequence number for an already-counted regular frame."""
+        """Record the sequence number of one transmitted frame.
 
-        if frame_sn < 0 or src_code <= 0:
+        Called for regular frames and for the INTERNAL frames that share the
+        global counter, plus for REDIR frames, whose number comes from a
+        private counter. The trackers keep the counters apart and the
+        capture-level summary merges them; src_code tallies which source was
+        observed and, per the firmware contract, selects the stream.
+        """
+
+        if frame_sn < 0:
             return 0
-        return self._sn_gap.record(src_code, frame_sn)
+        if not self._sn_contract_known:
+            if len(self._sn_replay_log) < SN_REPLAY_LIMIT:
+                self._sn_replay_log.append((src_code, frame_sn))
+            else:
+                self._sn_replay_lost = True
+        return self._record_sn(src_code, frame_sn)
+
+    def set_sequence_model(self, per_source: bool) -> None:
+        """Adopt the counter contract the firmware's records prove.
+
+        The frames recorded before the contract was proven are replayed under
+        it, in stream order, so both contracts are accounted exactly. A capture
+        that outran SN_REPLAY_LIMIT cannot be rebuilt; its windows are dropped
+        and the continuity reported unverified rather than recomputed wrong.
+        """
+
+        if self._sn_contract_known:
+            return
+        self._sn_contract_known = True
+        if per_source == self._sn_per_source:
+            self._sn_replay_log.clear()
+            return
+        self._sn_per_source = per_source
+        if self._sn_replay_lost:
+            self._sn_gap.set_per_source(per_source)
+            self._redir_sn_gap.set_per_source(per_source)
+            self._sn_replay_log.clear()
+            return
+        self._sn_gap, self._redir_sn_gap = self._new_trackers()
+        for src_code, frame_sn in self._sn_replay_log:
+            self._record_sn(src_code, frame_sn)
+        self._sn_replay_log.clear()
 
     @property
     def regular_frame_count(self) -> int:
         return sum(self._per_source_received_frames.values())
 
+    def expect_flushed_restart(self) -> None:
+        """Note that the firmware may restart its counters right after a FLUSH.
+
+        A legacy flush zeroes every source's counter (``ble_log_lbm_reset_stats``
+        in v6.0.1/v6.1), so the frames that follow start each source's numbering
+        over. The restart is the boundary, not the record: a v5 flush writes its
+        FINAL_STAT after the flush record with old-counter numbers, and a failed
+        flush resets nothing at all. Sealing on the record would cut a window
+        that is still running and hide what happens inside it.
+        """
+
+        if self._sn_per_source:
+            self._sn_reset_pending = True
+
     def sequence_snapshot(self) -> SequenceSummary:
-        return merge_sequence_summaries((self._sequence_total, self._sn_gap.snapshot()))
+        return merge_sequence_summaries((self._sequence_total, self._sn_gap.snapshot(), self._redir_sn_gap.snapshot()))
 
     def finalize_sequence(self) -> SequenceSummary:
         self.seal_sequence_segment()
         return self._sequence_total
 
     def seal_sequence_segment(self) -> SequenceSummary:
-        """Close the current FINAL_STAT interval and start a fresh SN window."""
+        """Close the current FINAL_STAT interval and start fresh SN windows.
 
-        summary = self._sn_gap.finalize()
+        A seal follows the firmware record that proved the contract, so the
+        replay log has served its purpose and starts empty for the next segment.
+        """
+
+        self._sn_replay_log.clear()
+        self._sn_replay_lost = False
+        self._sn_reset_pending = False
+        summary = merge_sequence_summaries((self._sn_gap.finalize(), self._redir_sn_gap.finalize()))
         if summary.sources:
             self._sequence_total = merge_sequence_summaries((self._sequence_total, summary))
-        self._sn_gap = SNGapTracker()
+        self._sn_gap, self._redir_sn_gap = self._new_trackers()
         return summary
+
+    def _new_trackers(self) -> tuple[SNGapTracker, SNGapTracker]:
+        return (
+            SNGapTracker(per_source=self._sn_per_source),
+            SNGapTracker(per_source=self._sn_per_source),
+        )
+
+    def _record_sn(self, src_code: SourceCode, frame_sn: int) -> int:
+        if self._sn_reset_pending and self._restarted(src_code, frame_sn):
+            # The counters really did start over: close the old window before
+            # this frame opens the new one.
+            self.seal_sequence_segment()
+        if self._sn_per_source or src_code != BleLogSource.REDIR:
+            return self._sn_gap.record(frame_sn, src_code)
+        return self._redir_sn_gap.record(frame_sn, src_code)
+
+    def _restarted(self, src_code: SourceCode, frame_sn: int) -> bool:
+        """Whether this number goes backwards for the source that sent it."""
+
+        previous = self._sn_gap.last_observed(src_code)
+        return previous is not None and frame_sn < previous
 
     def capture_firmware_loss(self) -> tuple[FirmwareLossSummary, ...]:
         return tuple(
@@ -182,8 +281,7 @@ class StatsAccumulator:
         if reason == "init":
             # INIT_DONE confirms a new firmware instance. FLUSH may be followed
             # by older asynchronously buffered frames, so it is not an SN cut.
-            self.seal_sequence_segment()
-            # ENH_STAT-coupled: full reset
+            self.seal_sequence_segment()  # ENH_STAT-coupled: full reset
             self._fw_loss.reset()
             self._fw_written.reset()
             self._enh_stat_prev.clear()
@@ -272,8 +370,32 @@ class StatsAccumulator:
 
 
 def merge_sequence_summaries(summaries: tuple[SequenceSummary, ...]) -> SequenceSummary:
+    """Merge per-stream and per-segment summaries into one capture-level view.
+
+    The merge sums continuity counters, but no single SN range describes the
+    result: it spans several streams (the shared counter plus REDIR's private
+    one) and several firmware segments, so the range stays on the per-source
+    entries instead.
+    """
+
     merged: dict[SourceCode, SequenceSourceSummary] = {}
+    observed = 0
+    missing = 0
+    segments = 0
+    late = 0
+    duplicates = 0
+    wraps = 0
+    uncertain = False
+    per_source = False
     for summary in summaries:
+        observed += summary.observed_frames
+        missing += summary.missing_frames
+        segments += summary.segments
+        late += summary.late_frames
+        duplicates += summary.duplicate_frames
+        wraps += summary.wraps
+        uncertain = uncertain or summary.uncertain
+        per_source = per_source or summary.per_source
         for current in summary.sources:
             previous = merged.get(current.source)
             if previous is None:
@@ -282,8 +404,8 @@ def merge_sequence_summaries(summaries: tuple[SequenceSummary, ...]) -> Sequence
             merged[current.source] = SequenceSourceSummary(
                 source=current.source,
                 observed_frames=previous.observed_frames + current.observed_frames,
-                first_sn=previous.first_sn,
-                last_sn=current.last_sn,
+                first_sn=previous.first_sn if previous.first_sn is not None else current.first_sn,
+                last_sn=current.last_sn if current.last_sn is not None else previous.last_sn,
                 missing_frames=previous.missing_frames + current.missing_frames,
                 segments=previous.segments + current.segments,
                 late_frames=previous.late_frames + current.late_frames,
@@ -291,4 +413,14 @@ def merge_sequence_summaries(summaries: tuple[SequenceSummary, ...]) -> Sequence
                 wraps=previous.wraps + current.wraps,
                 uncertain=previous.uncertain or current.uncertain,
             )
-    return SequenceSummary(tuple(merged[source] for source in sorted(merged)))
+    return SequenceSummary(
+        observed_frames=observed,
+        missing_frames=missing,
+        segments=segments,
+        late_frames=late,
+        duplicate_frames=duplicates,
+        wraps=wraps,
+        uncertain=uncertain,
+        per_source=per_source,
+        sources=tuple(merged[source] for source in sorted(merged)),
+    )

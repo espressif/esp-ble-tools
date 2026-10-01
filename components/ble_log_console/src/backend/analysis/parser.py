@@ -15,6 +15,7 @@ from ble_log_frame_decoder import (
     InternalLogEnhancedStat,
     InternalLogFinalStat,
     InternalLogInfo,
+    InternalLogTimestamp,
     parse_snapshot,
     parse_version_info_payload,
 )
@@ -136,7 +137,7 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
     source_code = frame.source_code
     frame_sn = frame.sequence_number
     if source_code == BleLogSource.INTERNAL:
-        events.extend(_decode_internal_events(frame_size, frame.payload))
+        events.extend(_decode_internal_events(frame_size, frame_sn, frame.payload))
         return
 
     if source_code == BleLogSource.REDIR:
@@ -154,12 +155,16 @@ def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_
     events.append(FrameEvent(frame_size=frame_size, source_code=source_code, frame_sn=frame_sn))
 
 
-def _decode_internal_events(frame_size: int, payload: bytes) -> list[BleLogEvent]:
+def _decode_internal_events(frame_size: int, frame_sn: int, payload: bytes) -> list[BleLogEvent]:
     """Map one esp-blfd INTERNAL record onto the console's event model.
 
-    Malformed payloads and the TIMESTAMP keep-alive are dropped, matching the
-    previous hand-written decoder.  TASK_BINDING is decoded by esp-blfd but not
-    consumed here yet (compressed-log task names are a separate work item).
+    Every decoded event carries the frame's SN, because INTERNAL frames take it
+    from the same counter as regular frames: the gap tracker needs them to tell
+    a consumed sequence number from a lost one. Two cases deliberately keep
+    their SN out of the stream instead of guessing — a frame whose subtype is
+    unreadable, and TASK_BINDING, which the firmware numbers from its own
+    private counter. The legacy TIMESTAMP keep-alive feeds nothing the report
+    shows, but it does consume an INTERNAL number, so it is decoded too.
     """
 
     if len(payload) < _MIN_INTERNAL_PAYLOAD_SIZE:
@@ -168,14 +173,17 @@ def _decode_internal_events(frame_size: int, payload: bytes) -> list[BleLogEvent
         int_src = InternalSource(payload[_INTERNAL_SUBTYPE_OFFSET])
     except ValueError:
         return []
+    if int_src is InternalSource.TASK_BINDING:
+        return []
     try:
         if int_src in (InternalSource.INIT_DONE, InternalSource.INFO, InternalSource.FLUSH):
             info = InternalLogInfo.from_payload(payload)
             if int_src is InternalSource.INIT_DONE and info.version == 0:
                 return []
-            return [InternalEvent(frame_size=frame_size, int_src=int_src, decoded=info)]
+            return [InternalEvent(frame_size=frame_size, int_src=int_src, decoded=info, frame_sn=frame_sn)]
         if int_src is InternalSource.ENHANCED_STAT:
-            return [EnhStatEvent(frame_size=frame_size, stat=InternalLogEnhancedStat.from_payload(payload))]
+            stat = InternalLogEnhancedStat.from_payload(payload)
+            return [EnhStatEvent(frame_size=frame_size, stat=stat, frame_sn=frame_sn)]
         if int_src is InternalSource.FINAL_STAT:
             final_stat = InternalLogFinalStat.from_payload(payload)
             return [
@@ -183,6 +191,7 @@ def _decode_internal_events(frame_size: int, payload: bytes) -> list[BleLogEvent
                     frame_size=frame_size,
                     os_ts_ms=final_stat.log_os_ts,
                     entries=tuple(final_stat.entries),
+                    frame_sn=frame_sn,
                 )
             ]
         if int_src is InternalSource.BUF_UTIL:
@@ -191,6 +200,19 @@ def _decode_internal_events(frame_size: int, payload: bytes) -> list[BleLogEvent
                     frame_size=frame_size,
                     int_src=int_src,
                     decoded=InternalLogBufferUtil.from_payload(payload),
+                    frame_sn=frame_sn,
+                )
+            ]
+        if int_src is InternalSource.TIMESTAMP:
+            # Legacy keep-alive: it consumes an INTERNAL sequence number, so
+            # dropping it would leave a hole the continuity check reads as a
+            # lost frame. Nothing in the report shows its payload.
+            return [
+                InternalEvent(
+                    frame_size=frame_size,
+                    int_src=int_src,
+                    decoded=InternalLogTimestamp.from_payload(payload),
+                    frame_sn=frame_sn,
                 )
             ]
         if int_src is InternalSource.VERSION_INFO:
@@ -199,10 +221,18 @@ def _decode_internal_events(frame_size: int, payload: bytes) -> list[BleLogEvent
                     frame_size=frame_size,
                     int_src=int_src,
                     decoded=parse_version_info_payload(payload),
+                    frame_sn=frame_sn,
                 )
             ]
         if int_src is InternalSource.SNAPSHOT:
-            return [InternalEvent(frame_size=frame_size, int_src=int_src, decoded=parse_snapshot(payload))]
+            return [
+                InternalEvent(
+                    frame_size=frame_size,
+                    int_src=int_src,
+                    decoded=parse_snapshot(payload),
+                    frame_sn=frame_sn,
+                )
+            ]
     except ValueError:
         return []
     return []

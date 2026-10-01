@@ -25,11 +25,16 @@ class FrameEvent(NamedTuple):
 
 
 class InternalEvent(NamedTuple):
-    """Decoded INTERNAL frame metadata."""
+    """Decoded INTERNAL frame metadata.
+
+    ``frame_sn`` is the frame's slot in the shared sequence stream, or -1 when
+    the producer did not supply one (the gap tracker ignores those).
+    """
 
     frame_size: int
     int_src: InternalSource
     decoded: InternalDecoderResult
+    frame_sn: int = -1
 
 
 class EnhStatEvent(NamedTuple):
@@ -37,6 +42,7 @@ class EnhStatEvent(NamedTuple):
 
     frame_size: int
     stat: InternalLogEnhancedStat
+    frame_sn: int = -1
 
 
 class FinalStatEvent(NamedTuple):
@@ -45,6 +51,7 @@ class FinalStatEvent(NamedTuple):
     frame_size: int
     os_ts_ms: int
     entries: tuple[FinalStatEntry, ...]
+    frame_sn: int = -1
 
 
 class RedirEvent(NamedTuple):

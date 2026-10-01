@@ -93,7 +93,7 @@ class TestResetPropagation:
         stats.reset("flush")
         stats.record_frame(100, 1, 0)
 
-        sequence = stats.finalize_sequence().sources[0]
+        sequence = stats.finalize_sequence()
         assert sequence.missing_frames == 0
         assert sequence.segments == 1
         assert sequence.duplicate_frames == 1

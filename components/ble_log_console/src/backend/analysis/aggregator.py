@@ -8,7 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
-from ble_log_frame_decoder import InternalLogBufferUtil, InternalSource
+from ble_log_frame_decoder import (
+    INIT,
+    BleLogVersionInfo,
+    InternalLogBufferUtil,
+    InternalSource,
+    Snapshot,
+    parse_snapshot_version_info,
+)
 
 from src.backend.analysis.parser_events import (
     BleLogEvent,
@@ -28,11 +35,19 @@ from src.backend.models import (
     FrameStats,
     FunnelSnapshot,
     InternalDecoderResult,
+    InternalLogInfo,
     SequenceSummary,
     TransportBitrate,
 )
 from src.backend.support.stats import StatsAccumulator
-from src.backend.support.stats.accumulator import merge_sequence_summaries
+
+# Firmware records that prove which counter owns frame numbers. The two
+# protocol generations barely overlap in what they write, so the record itself
+# is the evidence: protocol 8 numbers every frame from one counter and writes
+# SNAPSHOT/VERSION_INFO/TASK_BINDING, while protocol <= 7 numbers each source
+# from its own counter and writes the other records. The version number is only
+# reported alongside, never used to pick the contract.
+_GLOBAL_COUNTER_SOURCES = frozenset({InternalSource.SNAPSHOT, InternalSource.VERSION_INFO, InternalSource.TASK_BINDING})
 
 
 @dataclass(frozen=True)
@@ -69,6 +84,22 @@ class AggregatorSnapshot:
     capture_firmware_written_bytes: int = 0
     capture_firmware_lost_bytes: int = 0
     capture_segments: tuple[CaptureSegmentSummary, ...] = ()
+    firmware_version: int | None = None
+    firmware_contract_known: bool = True
+
+
+def _recorded_version(decoded: InternalDecoderResult) -> int | None:
+    """Firmware version a record carries, or None when it carries none."""
+
+    try:
+        if isinstance(decoded, Snapshot):
+            return int(parse_snapshot_version_info(decoded).version)
+        if isinstance(decoded, (BleLogVersionInfo, InternalLogInfo)):
+            return int(decoded.version)
+    except ValueError:
+        # A SNAPSHOT can pass shape validation with a corrupt embedded block.
+        return None
+    return None
 
 
 class CaptureAggregator:
@@ -93,7 +124,8 @@ class CaptureAggregator:
         self._final_stat_seen = False
         self._final_written_bytes = 0
         self._final_loss: dict[int, tuple[int, int]] = {}
-        self._complete_sequence = SequenceSummary()
+        self._firmware_version: int | None = None
+        self._firmware_contract_known = False
 
     @property
     def captured_bytes(self) -> int:
@@ -178,21 +210,39 @@ class CaptureAggregator:
                     redir_events.append(event)
             elif event_type is EnhStatEvent:
                 flush_regular_frames()
-                self._record_internal_frame(event.frame_size)
+                self._observe_firmware(per_source=True)
+                self._record_internal_frame(event.frame_size, event.frame_sn)
                 internal_frames.append(InternalFrameUpdate(int_src=InternalSource.ENHANCED_STAT, decoded=event.stat))
                 self._record_enh_stat(event)
             elif event_type is FinalStatEvent:
                 flush_regular_frames()
-                self._record_internal_frame(event.frame_size)
+                self._observe_firmware(per_source=True)
+                self._record_internal_frame(event.frame_size, event.frame_sn)
                 self._close_final_stat_segment(event)
             elif event_type is InternalEvent:
                 flush_regular_frames()
-                self._record_internal_frame(event.frame_size)
-                if event.int_src == InternalSource.INIT_DONE:
+                # Before sealing or feeding this frame's SN: a protocol 8 record
+                # re-keys the windows, and the frames already accounted under
+                # the other contract must not enter the segment they precede.
+                self._observe_firmware(
+                    per_source=event.int_src not in _GLOBAL_COUNTER_SOURCES,
+                    version=_recorded_version(event.decoded),
+                )
+                if self._starts_new_sn_epoch(event):
+                    # Cut the old segment over before feeding this frame's SN:
+                    # the marker belongs to the new firmware instance, not to
+                    # the window it replaces.
                     self._close_pending_segment()
                     self._segment_start_known = True
                 internal_frames.append(InternalFrameUpdate(int_src=event.int_src, decoded=event.decoded))
                 self._record_internal_effect(event)
+                self._record_internal_frame(event.frame_size, event.frame_sn)
+                if event.int_src == InternalSource.FLUSH:
+                    # The record itself belongs to the interval it closes; a
+                    # legacy firmware restarts its counters only afterwards (and
+                    # v5 does it past its FINAL_STAT), so the seal waits for the
+                    # restart instead of cutting here.
+                    self._stats.expect_flushed_restart()
 
         flush_regular_frames()
         return AggregatorUpdate(
@@ -215,7 +265,11 @@ class CaptureAggregator:
         else:
             firmware_written_bytes, firmware_lost_bytes = self._stats.capture_firmware_quality_bytes()
             firmware_loss = self._stats.capture_firmware_loss()
-        sequence = self._complete_sequence if self._final_stat_seen else self._stats.sequence_snapshot()
+        # Sequence continuity spans every sealed window plus the live one: a
+        # segment whose FINAL_STAT never arrived still holds real gaps, and
+        # dropping it would report a clean capture while the segment table shows
+        # missing frames.
+        sequence = self._stats.sequence_snapshot()
         return AggregatorSnapshot(
             stats=self._stats.snapshot(elapsed_sec),
             funnel_snapshots=tuple(self._stats.funnel_snapshot(elapsed_sec)),
@@ -230,14 +284,28 @@ class CaptureAggregator:
             capture_firmware_written_bytes=firmware_written_bytes,
             capture_firmware_lost_bytes=firmware_lost_bytes,
             capture_segments=tuple(self._segments) if include_segments else (),
+            firmware_version=self._firmware_version,
+            firmware_contract_known=self._firmware_contract_known,
         )
 
-    def _record_internal_frame(self, frame_size: int) -> None:
-        # INTERNAL frames count for transport FPS, but not per-source SN tracking.
+    def _observe_firmware(self, *, per_source: bool, version: int | None = None) -> None:
+        """Adopt the SN contract the firmware's records prove."""
+
+        if version is not None and self._firmware_version is None:
+            self._firmware_version = version
+        if self._firmware_contract_known:
+            return
+        self._firmware_contract_known = True
+        self._stats.set_sequence_model(per_source)
+
+    def _record_internal_frame(self, frame_size: int, frame_sn: int = -1) -> None:
+        # INTERNAL frames count for transport FPS and share the global SN stream
+        # with regular frames, but never for per-source byte accounting.
         self._stats.record_frame(frame_size=frame_size)
+        self._stats.record_frame_sn(0, frame_sn)
 
     def _record_internal_effect(self, event: InternalEvent) -> None:
-        if event.int_src == InternalSource.INIT_DONE:
+        if self._starts_new_sn_epoch(event):
             self._stats.reset("init")
         elif event.int_src == InternalSource.FLUSH:
             self._stats.reset("flush")
@@ -248,6 +316,22 @@ class CaptureAggregator:
                 trans_cnt=buf.trans_cnt,
                 inflight_peak=buf.inflight_peak,
             )
+
+    def _starts_new_sn_epoch(self, event: InternalEvent) -> bool:
+        """Whether this INTERNAL frame begins a new firmware instance's SN epoch.
+
+        INIT_DONE is the v4 marker. v8 marks it on a SNAPSHOT's reason_flags
+        instead; a FLUSH snapshot only resets ENH baselines and the Global SN
+        keeps running across it, so it must not cut the window.
+        """
+        if event.int_src == InternalSource.INIT_DONE:
+            return True
+        decoded = event.decoded
+        return (
+            event.int_src == InternalSource.SNAPSHOT
+            and isinstance(decoded, Snapshot)
+            and bool(decoded.reason_flags & INIT)
+        )
 
     def _record_enh_stat(self, event: EnhStatEvent) -> None:
         stat = event.stat.enhanced_stat
@@ -273,12 +357,13 @@ class CaptureAggregator:
             firmware_written_bytes=sum(entry.written_bytes_cnt for entry in entries),
             firmware_lost_frames=sum(entry.lost_frame_cnt for entry in entries),
             firmware_lost_bytes=sum(entry.lost_bytes_cnt for entry in entries),
-            sequence_missing_frames=sequence.total_missing_frames,
+            sequence_missing_frames=sequence.missing_frames,
             sequence_uncertain=sequence.uncertain,
         )
         self._segments.append(segment)
+        # Firmware counters only make sense for a segment that saw its FINAL_STAT;
+        # the sequence window is sealed either way and stays in the capture total.
         if segment.complete:
-            self._complete_sequence = merge_sequence_summaries((self._complete_sequence, sequence))
             for entry in entries:
                 self._final_written_bytes += entry.written_bytes_cnt
                 lost_frames, lost_bytes = self._final_loss.get(int(entry.log_source), (0, 0))
@@ -305,7 +390,7 @@ class CaptureAggregator:
                 firmware_written_bytes=0,
                 firmware_lost_frames=0,
                 firmware_lost_bytes=0,
-                sequence_missing_frames=sequence.total_missing_frames,
+                sequence_missing_frames=sequence.missing_frames,
                 sequence_uncertain=sequence.uncertain,
             )
         )

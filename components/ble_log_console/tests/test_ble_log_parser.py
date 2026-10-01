@@ -223,9 +223,9 @@ def test_feed_filters_false_init_done_version_zero() -> None:
 @pytest.mark.parametrize(
     "int_src, sub_payload",
     (
-        (InternalSource.TIMESTAMP, struct.pack("<BIII", 1, 100, 200, 300)),
         (99, b"\x00"),
         (InternalSource.ENHANCED_STAT, b"\x00" * 10),  # wrong length
+        (InternalSource.TIMESTAMP, b"\x00" * 4),  # wrong length
     ),
 )
 def test_feed_drops_unsupported_or_malformed_internal_payloads(int_src: int, sub_payload: bytes) -> None:
@@ -236,6 +236,23 @@ def test_feed_drops_unsupported_or_malformed_internal_payloads(int_src: int, sub
 
     assert batch.parsed_frames == 1
     assert batch.events == ()
+
+
+def test_feed_keeps_the_legacy_timestamp_sequence_number() -> None:
+    """A TIMESTAMP record is a keep-alive, but it still consumes an INTERNAL SN."""
+    parser = BleLogParser()
+    payload = internal_payload(
+        os_ts=1234,
+        int_src=InternalSource.TIMESTAMP,
+        sub_payload=struct.pack("<BIII", 1, 100, 200, 300),
+    )
+
+    batch = parser.feed(_make_frame(payload, src=BleLogSource.INTERNAL, sn=7))
+
+    (event,) = batch.events
+    assert isinstance(event, InternalEvent)
+    assert event.int_src is InternalSource.TIMESTAMP
+    assert event.frame_sn == 7
 
 
 def test_feed_emits_redir_payload_event() -> None:

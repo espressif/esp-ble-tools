@@ -3,10 +3,12 @@
 
 import errno
 import struct
+import threading
 from collections.abc import Callable
 from enum import Enum
 
-from src.backend.models import BleLogSource, InternalSource
+from src.backend.models import BleLogSource, InternalSource, TransportBitrate, TransportMode
+from src.backend.support.transport.base import TransportStatus
 
 
 def sum_checksum(data: bytes) -> int:
@@ -60,16 +62,20 @@ def snapshot_payload(
     chip_model: int = 13,
     chip_revision: int = 302,
     *,
+    reason_flags: int = 0b1011,
     version_block: bytes | None = None,
 ) -> bytes:
     """SNAPSHOT payload. The embedded VERSION_INFO block drops its timestamp.
 
-    Pass `version_block` to substitute a 58-byte block the console cannot interpret.
+    `reason_flags` defaults to the firmware's init snapshot (PERIODIC, TS_VALID
+    and INIT); pass `reason_flags=0b1010` for a periodic one that keeps the
+    sequence window running. Pass `version_block` to substitute a 58-byte block
+    the console cannot interpret.
     """
     stats = b"".join(struct.pack("<III", 5 + source, source, 50 + source) for source in range(7))
     block = version_block if version_block is not None else version_info_payload(os_ts, chip_model, chip_revision)[4:]
     body = (
-        struct.pack("<H", 0b1011)
+        struct.pack("<H", reason_flags)
         + (0x0201).to_bytes(3, "little")
         + block
         + struct.pack("<BIII", 2, 0x1111, 0x2222, 0x3333)
@@ -102,6 +108,67 @@ def build_frame(
     header = build_frame_header(len(payload), source_code, frame_sn)
     checksum_val = checksum_fn(header + payload)
     return header + payload + struct.pack("<I", checksum_val)
+
+
+class BytesReader:
+    """Feed a fixed byte stream through the capture pipeline in-process.
+
+    Stops the capture when the stream ends, so a scenario can replay bytes
+    without a transport or a child process.
+    """
+
+    def __init__(self, data: bytes, stop_event: threading.Event, *, block_size: int = 64 * 1024) -> None:
+        self._data = data
+        self._stop_event = stop_event
+        self._block_size = block_size
+        self._offset = 0
+        self.opened = False
+        self.rx_bytes = 0
+        self.rx_chunks = 0
+
+    @property
+    def display_name(self) -> str:
+        return "byte replay"
+
+    @property
+    def block_size(self) -> int:
+        return self._block_size
+
+    @property
+    def bitrate_config(self) -> TransportBitrate:
+        return TransportBitrate()
+
+    def open(self) -> None:
+        self.opened = True
+
+    def read(self, size: int | None = None) -> bytes:
+        block = self._data[self._offset : self._offset + self._block_size]
+        self._offset += len(block)
+        if not block:
+            self._stop_event.set()
+            return b""
+        self.rx_bytes += len(block)
+        self.rx_chunks += 1
+        return block
+
+    def drain(self, max_rounds: int = 10) -> list[bytes]:
+        return []
+
+    def close(self) -> None:
+        self.opened = False
+
+    def reset_target(self) -> bool:
+        return False
+
+    def status(self) -> TransportStatus:
+        return TransportStatus(
+            mode=TransportMode.USB_OUTPUT,
+            display_name=self.display_name,
+            opened=self.opened,
+            healthy=self.opened,
+            rx_bytes=self.rx_bytes,
+            rx_chunks=self.rx_chunks,
+        )
 
 
 class SerialHandleStub:
