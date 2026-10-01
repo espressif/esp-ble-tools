@@ -388,9 +388,16 @@ class BLELogApp(App):
 
     def action_reset_chip(self) -> None:
         capture_session = self._capture_session
-        if capture_session is None or not capture_session.reset_target():
+        if capture_session is None or capture_session.finished:
             self.query_one(LogView).write_warning(tr("Reset is not available because recording is not running"))
             return
+        # The USB Output contract offers no reset channel (the firmware's CDC
+        # line-state callback is NULL), so that transport refuses to reset.
+        if self._transport_config is not None and self._transport_config.mode is TransportMode.USB_OUTPUT:
+            message = tr("USB Output cannot reset the target; use the reset button on the board")
+            self.query_one(LogView).write_warning(message)
+            return
+        capture_session.reset_target()
 
     @on(Button.Pressed, "#stop-review")
     def stop_and_review(self) -> None:

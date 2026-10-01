@@ -128,6 +128,7 @@ _ZH_CN = {
     "Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.": "实时解析跳过了 {chunks} 个数据块（{bytes}）；原始数据已保存，但实时统计不完整。",
     "Backend stopped: {message}": "后端已停止：{message}",
     "Reset is not available because recording is not running": "当前没有正在进行的录制，无法复位设备",
+    "USB Output cannot reset the target; use the reset button on the board": "USB Output 无法复位目标设备，请按开发板上的复位键",
     "Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.": "正在结束录制：保存数据后，质量检查最多等待 20 秒。",
     "Live quality check did not finish within 20 seconds.": "实时质量检查未能在 20 秒内完成。",
 }

@@ -28,6 +28,7 @@ from src.backend.models import TransportMode
 from src.backend.support.transport import TransportReader
 from src.backend.support.transport.spi_usb_bridge_transport import SPI_USB_RX_BUFFER_SIZE, SpiUsbBridgeCdcTransport
 from src.backend.support.transport.uart_transport import UART_BLOCK_SIZE, UART_READ_TIMEOUT, UartTransport
+from src.backend.support.transport.usb_output_transport import USB_OUTPUT_BLOCK_SIZE, UsbOutputTransport
 
 pty = pytest.importorskip("pty", reason="POSIX-only virtual terminal; Windows has no pty module")
 
@@ -72,21 +73,33 @@ def _read_exactly(reader: TransportReader, size: int) -> bytes:
     return received
 
 
-def test_uart_open_falls_back_when_port_is_exclusively_locked(pty_port: PtyPort) -> None:
+def test_uart_open_rejects_a_port_held_by_another_reader(pty_port: PtyPort) -> None:
+    """A lock refusal is not a capability limit: falling back to a plain open
+    would let this reader race the holder for the same bytes."""
     holder = serial.Serial(pty_port.path, baudrate=PTY_BAUDRATE, timeout=0.1, exclusive=True)
     reader = UartTransport(pty_port.path, PTY_BAUDRATE)
     try:
-        # Precondition: the lock is real, so UartTransport's first attempt fails
-        # and its fallback to a plain open is what makes the test pass.
         with pytest.raises(serial.SerialException, match="Could not exclusively lock"):
-            serial.Serial(pty_port.path, baudrate=PTY_BAUDRATE, timeout=0.1, exclusive=True)
+            reader.open()
 
-        reader.open()
+        assert reader.status().opened is False
+        pty_port.feed(b"owned-by-holder")
+        assert holder.read(16) == b"owned-by-holder"
+    finally:
+        reader.close()
+        holder.close()
 
-        assert reader.status().opened is True
-        assert reader.status().last_error is None
-        pty_port.feed(b"uart")
-        assert _read_exactly(reader, 4) == b"uart"
+
+def test_usb_output_open_rejects_a_port_held_by_another_reader(pty_port: PtyPort) -> None:
+    holder = serial.Serial(pty_port.path, baudrate=PTY_BAUDRATE, timeout=0.1, exclusive=True)
+    reader = UsbOutputTransport(pty_port.path, PTY_BAUDRATE)
+    try:
+        with pytest.raises(RuntimeError, match="busy"):
+            reader.open()
+
+        assert reader.status().opened is False
+        pty_port.feed(b"owned-by-holder")
+        assert holder.read(16) == b"owned-by-holder"
     finally:
         reader.close()
         holder.close()
@@ -133,3 +146,41 @@ def test_cdc_reader_opens_reads_and_closes_on_a_real_port(pty_port: PtyPort) -> 
 
     assert reader.status().opened is False
     assert reader.status().rx_bytes == 3
+
+
+def test_usb_output_reader_opens_reads_and_closes_on_a_real_port(pty_port: PtyPort) -> None:
+    reader = UsbOutputTransport(pty_port.path, PTY_BAUDRATE)
+    assert reader.status().opened is False
+
+    reader.open()
+    try:
+        assert reader.block_size == USB_OUTPUT_BLOCK_SIZE
+        assert reader.mode is TransportMode.USB_OUTPUT
+        assert reader.status().opened is True
+        assert reader.status().display_name.endswith(pty_port.path)
+
+        pty_port.feed(b"usb")
+        assert _read_exactly(reader, 3) == b"usb"
+    finally:
+        reader.close()
+
+    assert reader.status().opened is False
+    assert reader.status().rx_bytes == 3
+
+
+def test_usb_output_keeps_reading_after_a_reset_request(pty_port: PtyPort) -> None:
+    """DTR is the DUT's 'host is listening' gate; a reset request must not be taken.
+
+    A pty refuses the modem-line ioctl, which is also the path a CDC port takes
+    when it has no RTS wiring: opening must survive it and keep the stream up.
+    """
+    reader = UsbOutputTransport(pty_port.path, PTY_BAUDRATE)
+    reader.open()
+    try:
+        assert reader.reset_target() is False
+        assert reader.status().healthy is True
+
+        pty_port.feed(b"still-connected")
+        assert _read_exactly(reader, 15) == b"still-connected"
+    finally:
+        reader.close()

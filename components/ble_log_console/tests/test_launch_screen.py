@@ -170,6 +170,20 @@ class TestConnect:
         assert config.transport_config.port == "usb:303a:4001"
         assert config.transport_config.baudrate == DEFAULT_BAUD_RATE
 
+    def test_connect_with_usb_output_passes_the_serial_device_through(self) -> None:
+        screen, _, _, _ = self._make_screen_with_mocks(
+            port_value="/dev/cu.usbmodem1234561",
+            dir_value="/tmp/logs",
+        )
+        screen._mode = TransportMode.USB_OUTPUT
+
+        screen.connect()
+
+        config = screen.dismiss.call_args[0][0]
+        assert config.transport_config.mode is TransportMode.USB_OUTPUT
+        assert config.transport_config.port == "/dev/cu.usbmodem1234561"
+        assert config.transport_config.baudrate == DEFAULT_BAUD_RATE
+
     def test_connect_with_blank_port_shows_error(self) -> None:
         """connect() should notify error and NOT dismiss when port is BLANK."""
         from textual.widgets import Select
@@ -206,6 +220,18 @@ class TestTransportModeHelpers:
     def test_mode_from_select_value_accepts_cli_value(self) -> None:
         screen = LaunchScreen()
         assert screen._mode_from_select_value("spi") is TransportMode.SPI_USB_BRIDGE
+
+    def test_usb_output_keeps_its_own_port_labels(self) -> None:
+        """The USB provider already names its ports, so nothing is prefixed."""
+        screen = LaunchScreen()
+        screen._mode = TransportMode.USB_OUTPUT
+        options = screen._display_port_options([("USB HS  /dev/ttyACM0", "/dev/ttyACM0")])
+        assert options == [("USB HS  /dev/ttyACM0", "/dev/ttyACM0")]
+
+    def test_mode_from_select_value_accepts_usb_output(self) -> None:
+        screen = LaunchScreen()
+        assert screen._mode_from_select_value("usb_output") is TransportMode.USB_OUTPUT
+        assert screen._mode_from_select_value("usb") is TransportMode.USB_OUTPUT
 
 
 # ---------------------------------------------------------------------------

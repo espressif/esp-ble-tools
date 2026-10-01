@@ -12,10 +12,12 @@ from src.backend.models import TransportConfig
 from src.backend.support.transport.base import TransportMode, TransportProvider, TransportReader
 from src.backend.support.transport.spi_usb_bridge_transport import PROVIDER as SPI_USB_BRIDGE_PROVIDER
 from src.backend.support.transport.uart_transport import PROVIDER as UART_PROVIDER
+from src.backend.support.transport.usb_output_transport import PROVIDER as USB_PROVIDER
 
 _PROVIDERS: tuple[TransportProvider, ...] = (
     UART_PROVIDER,
     SPI_USB_BRIDGE_PROVIDER,
+    USB_PROVIDER,
 )
 
 

@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+import errno
 import struct
 from collections.abc import Callable
 from enum import Enum
@@ -101,3 +102,36 @@ def build_frame(
     header = build_frame_header(len(payload), source_code, frame_sn)
     checksum_val = checksum_fn(header + payload)
     return header + payload + struct.pack("<I", checksum_val)
+
+
+class SerialHandleStub:
+    """Enough of a pyserial handle to observe DTR/RTS writes."""
+
+    def __init__(self, *, reject_dtr: bool = False) -> None:
+        self.is_open = True
+        self.dtr_writes: list[bool] = []
+        self.rts_writes: list[bool] = []
+        self._dtr = False
+        self._reject_dtr = reject_dtr
+
+    @property
+    def dtr(self) -> bool:
+        return self._dtr
+
+    @dtr.setter
+    def dtr(self, value: bool) -> None:
+        if self._reject_dtr:
+            raise OSError(errno.ENOTTY, "Inappropriate ioctl for device")
+        self._dtr = value
+        self.dtr_writes.append(value)
+
+    @property
+    def rts(self) -> bool:
+        return False
+
+    @rts.setter
+    def rts(self, value: bool) -> None:
+        self.rts_writes.append(value)
+
+    def close(self) -> None:
+        self.is_open = False

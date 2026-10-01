@@ -143,6 +143,7 @@ def resolve_source_name(src_code: int) -> str:
 class TransportMode(str, Enum):
     UART = "uart"
     SPI_USB_BRIDGE = "spi_usb_bridge"
+    USB_OUTPUT = "usb_output"
 
 
 @dataclass(frozen=True)
