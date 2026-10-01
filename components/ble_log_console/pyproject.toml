@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller"]
-test = ["pytest"]
+test = ["pytest", "pytest-bdd"]
 
 [project.scripts]
 ble-log-console = "console:cli"

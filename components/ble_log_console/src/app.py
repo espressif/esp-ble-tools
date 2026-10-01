@@ -268,6 +268,9 @@ class BLELogApp(App):
         self.query_one(LogView).clear()
         panel = self.query_one(StatusPanel)
         panel.stats = FrameStats()
+        # The previous recording's chip must not survive into this one: the next
+        # SNAPSHOT names the chip that is actually attached now.
+        panel.chip_label = ""
         panel.disconnected = False
         panel.finalizing = False
         stop_button = self.query_one("#stop-review", Button)
