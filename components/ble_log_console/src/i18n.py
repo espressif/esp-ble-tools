@@ -22,6 +22,10 @@ _ZH_CN = {
     "Recording": "录制信息",
     "Mode": "模式",
     "Port": "端口",
+    "Firmware protocol": "固件协议",
+    "one shared counter": "共用一套序号",
+    "per-source counters": "按来源各自编号",
+    "not identified": "未识别",
     "Baud rate": "波特率",
     "Started": "开始时间",
     "Ended": "结束时间",
@@ -45,6 +49,13 @@ _ZH_CN = {
     "No FINAL_STAT segments were decoded.": "没有解析到 FINAL_STAT 分段。",
     "Not enough data": "数据不足",
     "Sequence continuity": "序列号连续性",
+    "All frames": "全部帧",
+    "All sources": "全部来源",
+    "counter contract unproven": "序号契约未证明",
+    "Counter contract unproven: continuity is accounted with one shared counter.": (
+        "序号契约未证明：连续性按「共用一套序号」记账。"
+    ),
+    "Frames by source": "各来源观测帧数",
     "Source": "来源",
     "Observed": "观察帧数",
     "SN range": "SN 范围",
@@ -128,6 +139,7 @@ _ZH_CN = {
     "Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.": "实时解析跳过了 {chunks} 个数据块（{bytes}）；原始数据已保存，但实时统计不完整。",
     "Backend stopped: {message}": "后端已停止：{message}",
     "Reset is not available because recording is not running": "当前没有正在进行的录制，无法复位设备",
+    "USB Output cannot reset the target; use the reset button on the board": "USB Output 无法复位目标设备，请按开发板上的复位键",
     "Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.": "正在结束录制：保存数据后，质量检查最多等待 20 秒。",
     "Live quality check did not finish within 20 seconds.": "实时质量检查未能在 20 秒内完成。",
 }

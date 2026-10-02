@@ -11,10 +11,31 @@ parameterize the difference and may override ``reset_target``.
 
 from __future__ import annotations
 
+import errno
+
 import serial
 
 from src.backend.models import TransportBitrate
 from src.backend.support.transport.base import TransportMode, TransportStatus
+
+# pyserial reports a held port as SerialException carrying the flock()/CreateFile
+# errno, plus the text "Could not exclusively lock port ...". That is a refusal
+# by another owner, not a platform limitation.
+_LOCK_REFUSAL_ERRNOS = frozenset(
+    value
+    for value in (errno.EACCES, getattr(errno, "EAGAIN", None), getattr(errno, "EBUSY", None))
+    if value is not None
+)
+_LOCK_REFUSAL_TEXT = ("exclusively lock", "resource temporarily unavailable", "device or resource busy")
+
+
+def _is_lock_refusal(error: Exception) -> bool:
+    """Whether an exclusive open failed because the port is already held."""
+
+    if getattr(error, "errno", None) in _LOCK_REFUSAL_ERRNOS:
+        return True
+    text = str(error).lower()
+    return any(marker in text for marker in _LOCK_REFUSAL_TEXT)
 
 
 class SerialReader:
@@ -107,8 +128,13 @@ class SerialReader:
                     timeout=self.timeout,
                     exclusive=True,
                 )
-            except (ValueError, serial.SerialException):
-                pass
+            except (ValueError, serial.SerialException) as error:
+                if _is_lock_refusal(error):
+                    # A plain open would succeed and split the byte stream
+                    # between two readers, so propagate the refusal instead.
+                    raise
+                # The platform cannot express exclusive access; retry without
+                # the flag. A real open error surfaces unchanged from there.
         return serial.Serial(self._port, baudrate=self._baudrate, timeout=self.timeout)
 
     def _open_error(self, error: Exception) -> Exception:

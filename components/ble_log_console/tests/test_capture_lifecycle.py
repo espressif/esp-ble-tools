@@ -30,7 +30,9 @@ def _completed_result(path: Path) -> CapturePipelineResult:
         parser_frames=1,
         parser_carried_bytes=0,
         regular_frames=1,
-        sequence=SequenceSummary((SequenceSourceSummary(5, 1, 7, 7, 0, 1),)),
+        sequence=SequenceSummary(
+            observed_frames=7, first_sn=1, last_sn=7, segments=1, sources=(SequenceSourceSummary(5, 7, 1, 7),)
+        ),
     )
     return CapturePipelineResult(
         raw_paths=(path,),
@@ -176,6 +178,35 @@ def test_app_ignores_repeated_stop_while_finalizing() -> None:
     session.stop.assert_called_once_with()
     app.exit.assert_not_called()
     assert app._finalizing
+
+
+def _reset_key_app(mode: TransportMode, port: str) -> tuple[BLELogApp, MagicMock, MagicMock]:
+    app = BLELogApp(mode=mode, port=port)
+    session = MagicMock()
+    session.finished = False
+    app._capture_session = session
+    log_view = MagicMock()
+    app.query_one = MagicMock(return_value=log_view)  # type: ignore[method-assign]
+    return app, session, log_view
+
+
+def test_reset_key_on_usb_output_explains_instead_of_resetting() -> None:
+    """The USB Output contract has no reset channel, so the transport refuses."""
+    app, session, log_view = _reset_key_app(TransportMode.USB_OUTPUT, "/dev/cu.usbmodem1234561")
+
+    app.action_reset_chip()
+
+    session.reset_target.assert_not_called()
+    assert "USB Output" in log_view.write_warning.call_args[0][0]
+
+
+def test_reset_key_on_uart_still_resets_the_target() -> None:
+    app, session, log_view = _reset_key_app(TransportMode.UART, "/dev/ttyUSB0")
+
+    app.action_reset_chip()
+
+    session.reset_target.assert_called_once_with()
+    log_view.write_warning.assert_not_called()
 
 
 def test_capture_report_screen_mounts_with_actions(tmp_path: Path) -> None:

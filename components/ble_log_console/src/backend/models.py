@@ -12,8 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TypedDict
 
+from ble_log_frame_decoder import (
+    BleLogVersionInfo,
+    InternalLogBufferUtil,
+    InternalLogEnhancedStat,
+    InternalLogFinalStat,
+    InternalLogInfo,
+    InternalSource,
+    Snapshot,
+)
+from ble_log_frame_decoder import FinalStatEntry as FinalStatEntry  # noqa: PLC0414 - re-exported contract type
 from textual.message import Message
 
 # --- Common formatting helpers ---
@@ -87,58 +96,17 @@ class BleLogSource(int, Enum):
 SourceCode = int
 
 
-class InternalSource(int, Enum):
-    INIT_DONE = 0
-    TS = 1
-    ENH_STAT = 2
-    INFO = 3
-    FLUSH = 4
-    BUF_UTIL = 5
-    FINAL_STAT = 6
-
-
-class InfoResult(TypedDict):
-    int_src: InternalSource
-    version: int
-    os_ts_ms: int
-
-
-class EnhStatResult(TypedDict):
-    int_src: InternalSource
-    src_code: int
-    written_frame_cnt: int
-    lost_frame_cnt: int
-    written_bytes_cnt: int
-    lost_bytes_cnt: int
-    os_ts_ms: int
-
-
-class BufUtilResult(TypedDict):
-    int_src: InternalSource
-    lbm_id: int
-    pool: int
-    index: int
-    trans_cnt: int
-    inflight_peak: int
-    os_ts_ms: int
-
-
-@dataclass(frozen=True)
-class FinalStatEntry:
-    source_code: SourceCode
-    written_frame_cnt: int
-    failed_frame_cnt: int
-    written_bytes_cnt: int
-    failed_bytes_cnt: int
-
-
-class FinalStatResult(TypedDict):
-    int_src: InternalSource
-    entries: tuple[FinalStatEntry, ...]
-    os_ts_ms: int
-
-
-InternalDecoderResult = InfoResult | EnhStatResult | BufUtilResult | FinalStatResult
+# INTERNAL (source 0) payload records are owned by esp-blfd's internal module;
+# the console maps those records into its event types without re-declaring the
+# wire shapes.  This union is everything InternalEvent.decoded can carry.
+InternalDecoderResult = (
+    InternalLogInfo
+    | InternalLogEnhancedStat
+    | InternalLogBufferUtil
+    | InternalLogFinalStat
+    | BleLogVersionInfo
+    | Snapshot
+)
 
 
 # Sources written via ble_log_write_hex_ll() or stream_write have no 4-byte os_ts prefix.
@@ -175,6 +143,7 @@ def resolve_source_name(src_code: int) -> str:
 class TransportMode(str, Enum):
     UART = "uart"
     SPI_USB_BRIDGE = "spi_usb_bridge"
+    USB_OUTPUT = "usb_output"
 
 
 @dataclass(frozen=True)
@@ -287,14 +256,20 @@ class FrameStats:
 
 @dataclass(frozen=True)
 class SequenceSourceSummary:
-    """Capture-local sequence continuity for one BLE Log source."""
+    """Frames observed from one BLE Log source.
+
+    With one counter per source (protocol <= 7) the continuity counters describe
+    that source's own stream. With one counter for all regular frames and
+    snapshots (protocol 8) only the observations are meaningful, because a
+    single source's stream boundaries are not visible in it.
+    """
 
     source: SourceCode
     observed_frames: int
     first_sn: int | None
     last_sn: int | None
-    missing_frames: int
-    segments: int
+    missing_frames: int = 0
+    segments: int = 0
     late_frames: int = 0
     duplicate_frames: int = 0
     wraps: int = 0
@@ -303,17 +278,46 @@ class SequenceSourceSummary:
 
 @dataclass(frozen=True)
 class SequenceSummary:
-    """Sequence continuity across all regular BLE Log sources."""
+    """Sequence continuity for the capture as a whole.
 
+    Continuity is a property of the stream the firmware's counter ownership
+    defines. Protocol 8 takes one sequence number per frame from ``g_frame_sn``
+    (regular frames and internal snapshots share it; REDIR and TASK_BINDING keep
+    private counters), so the whole capture is one stream. Protocol <= 7 numbers
+    every source from its own counter, so each source is a stream and the totals
+    here are the sum of them. ``per_source`` records which contract produced
+    these numbers, and ``sources`` carries the per-source detail of the same
+    contract.
+
+    ``missing_frames`` counts sequence numbers the firmware consumed but never
+    delivered. ``uncertain`` means the accounting could not be trusted: the
+    start of the stream is unknown, the tracker hit its bound, or the firmware
+    contract was identified only after frames had already been accounted.
+    """
+
+    observed_frames: int = 0
+    first_sn: int | None = None
+    last_sn: int | None = None
+    missing_frames: int = 0
+    segments: int = 0
+    late_frames: int = 0
+    duplicate_frames: int = 0
+    wraps: int = 0
+    uncertain: bool = False
+    per_source: bool = False
     sources: tuple[SequenceSourceSummary, ...] = ()
 
     @property
-    def total_missing_frames(self) -> int:
-        return sum(source.missing_frames for source in self.sources)
+    def unique_frames(self) -> int:
+        """Distinct sequence numbers received: a duplicate is not a new SN."""
+
+        return self.observed_frames - self.duplicate_frames
 
     @property
-    def uncertain(self) -> bool:
-        return any(source.uncertain for source in self.sources)
+    def total_frames(self) -> int:
+        """Sequence numbers the capture accounts for: unique received plus missing."""
+
+        return self.unique_frames + self.missing_frames
 
 
 @dataclass(frozen=True)
@@ -384,6 +388,8 @@ class CaptureReport:
     errors: tuple[str, ...]
     warnings: tuple[str, ...]
     report_write_error: str | None = None
+    firmware_version: int | None = None
+    firmware_contract_known: bool = True
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {

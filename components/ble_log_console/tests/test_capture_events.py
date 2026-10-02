@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from ble_log_frame_decoder import InternalLogInfo
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, InternalFrameUpdate
 from src.backend.analysis.parser_events import RedirEvent
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
@@ -232,7 +233,7 @@ def test_aggregator_update_maps_to_existing_ui_messages(tmp_path: Path) -> None:
             internal_frames=(
                 InternalFrameUpdate(
                     int_src=InternalSource.INFO,
-                    decoded={"int_src": InternalSource.INFO, "version": 4, "os_ts_ms": 1},
+                    decoded=InternalLogInfo(log_os_ts=1, source=InternalSource.INFO, version=4),
                 ),
             ),
         )
@@ -240,7 +241,7 @@ def test_aggregator_update_maps_to_existing_ui_messages(tmp_path: Path) -> None:
 
     assert isinstance(messages[0], InternalFrameDecoded)
     assert messages[0].int_src == InternalSource.INFO
-    assert messages[0].payload["version"] == 4
+    assert messages[0].payload.version == 4
 
 
 def test_writer_events_update_capture_paths_and_messages(tmp_path: Path) -> None:

@@ -6,6 +6,15 @@ from __future__ import annotations
 import struct
 from typing import cast
 
+from ble_log_frame_decoder import (
+    FLUSH,
+    INIT,
+    EnhancedStat,
+    InternalLogBufferUtil,
+    InternalLogEnhancedStat,
+    InternalLogInfo,
+    parse_snapshot,
+)
 from src.backend.analysis.aggregator import CaptureAggregator, frame_size_from_payload
 from src.backend.analysis.parser_events import (
     EnhStatEvent,
@@ -16,15 +25,9 @@ from src.backend.analysis.parser_events import (
     ParseSummary,
     RedirEvent,
 )
-from src.backend.models import (
-    FRAME_OVERHEAD,
-    BleLogSource,
-    BufUtilResult,
-    EnhStatResult,
-    FinalStatEntry,
-    InfoResult,
-    InternalSource,
-)
+from src.backend.models import FRAME_OVERHEAD, BleLogSource, FinalStatEntry, InternalSource
+
+from tests.helpers import snapshot_payload
 
 
 def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
@@ -91,8 +94,8 @@ def test_redir_event_updates_stats_and_returns_text() -> None:
 
 def test_internal_info_event_sets_version_and_is_forwarded() -> None:
     aggregator = CaptureAggregator()
-    decoded = InfoResult(int_src=InternalSource.INFO, version=4, os_ts_ms=10)
-    payload = struct.pack("<I", 10) + bytes([InternalSource.INFO, 4])
+    decoded = InternalLogInfo(log_os_ts=10, source=InternalSource.INFO, version=4)
+    payload = struct.pack("<I", 10) + bytes([InternalSource.INFO.value, 4])
 
     update = aggregator.consume_events(
         (
@@ -107,22 +110,20 @@ def test_internal_info_event_sets_version_and_is_forwarded() -> None:
 
     assert update.frames_seen == 1
     assert update.internal_frames[0].int_src == InternalSource.INFO
-    assert cast(InfoResult, update.internal_frames[0].decoded)["version"] == 4
+    assert cast(InternalLogInfo, update.internal_frames[0].decoded).version == 4
     assert snapshot.stats.transport.rx_frames == 1
 
 
 def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
     aggregator = CaptureAggregator()
-    decoded = BufUtilResult(
-        int_src=InternalSource.BUF_UTIL,
+    decoded = InternalLogBufferUtil(
+        log_os_ts=11,
+        source=InternalSource.BUF_UTIL,
         lbm_id=0x21,
-        pool=2,
-        index=1,
         trans_cnt=9,
         inflight_peak=3,
-        os_ts_ms=11,
     )
-    payload = struct.pack("<I", 11) + bytes([InternalSource.BUF_UTIL, 0x21, 9, 3])
+    payload = struct.pack("<I", 11) + bytes([InternalSource.BUF_UTIL.value, 0x21, 9, 3])
 
     aggregator.consume_events(
         (
@@ -143,24 +144,28 @@ def test_buf_util_internal_event_updates_buf_util_snapshot() -> None:
 
 def test_enh_stat_event_updates_loss() -> None:
     aggregator = CaptureAggregator()
-    payload = struct.pack("<I", 12) + bytes([InternalSource.ENH_STAT]) + b"\x00" * 17
-    first = EnhStatResult(
-        int_src=InternalSource.ENH_STAT,
-        src_code=BleLogSource.HOST,
-        written_frame_cnt=10,
-        lost_frame_cnt=0,
-        written_bytes_cnt=1000,
-        lost_bytes_cnt=0,
-        os_ts_ms=12,
+    payload = struct.pack("<I", 12) + bytes([InternalSource.ENHANCED_STAT.value]) + b"\x00" * 17
+    first = InternalLogEnhancedStat(
+        log_os_ts=12,
+        source=InternalSource.ENHANCED_STAT,
+        enhanced_stat=EnhancedStat(
+            log_source=BleLogSource.HOST,
+            written_frame_cnt=10,
+            lost_frame_cnt=0,
+            written_bytes_cnt=1000,
+            lost_bytes_cnt=0,
+        ),
     )
-    second = EnhStatResult(
-        int_src=InternalSource.ENH_STAT,
-        src_code=BleLogSource.HOST,
-        written_frame_cnt=20,
-        lost_frame_cnt=2,
-        written_bytes_cnt=2000,
-        lost_bytes_cnt=128,
-        os_ts_ms=13,
+    second = InternalLogEnhancedStat(
+        log_os_ts=13,
+        source=InternalSource.ENHANCED_STAT,
+        enhanced_stat=EnhancedStat(
+            log_source=BleLogSource.HOST,
+            written_frame_cnt=20,
+            lost_frame_cnt=2,
+            written_bytes_cnt=2000,
+            lost_bytes_cnt=128,
+        ),
     )
 
     aggregator.consume_events((EnhStatEvent(frame_size=frame_size_from_payload(payload), stat=first),))
@@ -168,7 +173,7 @@ def test_enh_stat_event_updates_loss() -> None:
     snapshot = aggregator.snapshot(1.0)
 
     assert update.frames_seen == 1
-    assert update.internal_frames[0].int_src == InternalSource.ENH_STAT
+    assert update.internal_frames[0].int_src == InternalSource.ENHANCED_STAT
     assert snapshot.stats.loss.total_frames == 2
     assert snapshot.stats.loss.total_bytes == 128
 
@@ -186,7 +191,7 @@ def test_parser_summary_overwrites_final_parser_counters() -> None:
 
 def test_final_stat_closes_independent_capture_segments() -> None:
     aggregator = CaptureAggregator()
-    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
     aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
     final = FinalStatEvent(
         frame_size=169,
@@ -207,9 +212,8 @@ def test_final_stat_closes_independent_capture_segments() -> None:
     aggregator.consume_parser_summary(ParseSummary(raw_bytes=738, parsed_frames=7, carried_bytes=0))
 
     snapshot = aggregator.snapshot(1.0)
-    source = snapshot.sequence.sources[0]
-    assert source.segments == 2
-    assert source.duplicate_frames == 0
+    assert snapshot.sequence.segments == 2
+    assert snapshot.sequence.duplicate_frames == 0
     assert len(snapshot.capture_segments) == 2
     assert all(segment.complete for segment in snapshot.capture_segments)
     assert snapshot.capture_segments[0].received_frames == 2
@@ -241,7 +245,7 @@ def test_first_and_last_segments_are_marked_partial_without_boundaries() -> None
 
 def test_ambiguous_cross_segment_frame_is_retained_and_marked_uncertain() -> None:
     aggregator = CaptureAggregator()
-    init = InfoResult(int_src=InternalSource.INIT_DONE, version=4, os_ts_ms=0)
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
     aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init),))
     final = FinalStatEvent(
         frame_size=169,
@@ -261,6 +265,143 @@ def test_ambiguous_cross_segment_frame_is_retained_and_marked_uncertain() -> Non
     )
     aggregator.consume_parser_summary(ParseSummary(raw_bytes=738, parsed_frames=7, carried_bytes=0))
 
-    sequence = aggregator.snapshot(1.0).sequence.sources[0]
+    sequence = aggregator.snapshot(1.0).sequence
     assert sequence.observed_frames == 5
     assert sequence.uncertain
+
+
+def _snapshot_event(reason_flags: int, frame_sn: int) -> InternalEvent:
+    payload = bytearray(snapshot_payload())
+    struct.pack_into("<H", payload, 5, reason_flags)
+    raw = bytes(payload)
+    return InternalEvent(
+        frame_size=frame_size_from_payload(raw),
+        int_src=InternalSource.SNAPSHOT,
+        decoded=parse_snapshot(raw),
+        frame_sn=frame_sn,
+    )
+
+
+def test_init_done_sn_starts_the_new_epoch_before_it_is_recorded() -> None:
+    """A non-empty old segment must be sealed before the INIT SN is recorded.
+
+    Feeding the new instance's SN 0 into the old window counted it as a
+    backward jump, so the sealed segment carried a permanent duplicate/uncertain
+    mark into the capture total (review R2).
+    """
+    aggregator = CaptureAggregator()
+    aggregator.consume_events(tuple(FrameEvent(100, BleLogSource.HOST, sn) for sn in (1000, 1001, 1002)))
+
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
+    aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init, frame_sn=0),))
+    aggregator.consume_events(tuple(FrameEvent(100, BleLogSource.HOST, sn) for sn in (1, 2)))
+
+    sequence = aggregator.snapshot(1.0).sequence
+
+    assert not sequence.uncertain
+    assert sequence.duplicate_frames == 0
+    assert sequence.missing_frames == 0
+
+
+def test_v8_init_snapshot_starts_a_new_epoch() -> None:
+    """v8 marks the epoch on the SNAPSHOT's INIT flag, not on INIT_DONE (R5)."""
+    aggregator = CaptureAggregator()
+    aggregator.consume_events(tuple(FrameEvent(100, BleLogSource.HOST, sn) for sn in (1000, 1001, 1002)))
+
+    aggregator.consume_events((_snapshot_event(INIT, 0),))
+
+    sequence = aggregator.snapshot(1.0).sequence
+
+    assert not sequence.uncertain
+    assert sequence.duplicate_frames == 0
+    assert sequence.missing_frames == 0
+
+
+def test_flush_snapshot_does_not_cut_the_global_sn_window() -> None:
+    """FLUSH only resets ENH baselines; the Global SN keeps running across it."""
+    aggregator = CaptureAggregator()
+    aggregator.consume_events(
+        (
+            FrameEvent(100, BleLogSource.HOST, 0),
+            FrameEvent(100, BleLogSource.HOST, 1),
+            _snapshot_event(FLUSH, 2),
+            FrameEvent(100, BleLogSource.HOST, 3),
+        )
+    )
+
+    sequence = aggregator.snapshot(1.0).sequence
+
+    assert sequence.segments == 1
+    assert sequence.missing_frames == 0
+    assert not sequence.uncertain
+
+
+def test_redir_private_sn_cannot_fill_a_core_gap() -> None:
+    """REDIR numbers itself from redir->frame_sn, so it cannot fill a core hole (R1)."""
+    aggregator = CaptureAggregator()
+    aggregator.consume_events(
+        (
+            FrameEvent(100, BleLogSource.LL_TASK, 0),
+            FrameEvent(100, BleLogSource.LL_TASK, 2),
+            FrameEvent(100, BleLogSource.LL_TASK, 3),
+            RedirEvent(20, BleLogSource.REDIR, 0, "text\n", 1),
+            RedirEvent(20, BleLogSource.REDIR, 1, "text\n", 2),
+        )
+    )
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=420, parsed_frames=5, carried_bytes=0))
+
+    sequence = aggregator.snapshot(1.0).sequence
+
+    assert sequence.missing_frames == 1
+
+
+def test_a_gap_between_flush_and_final_stat_stays_in_the_segment() -> None:
+    """A legacy flush is not the segment boundary; its FINAL_STAT is.
+
+    v6.1 writes FLUSH, then drains, then its FINAL_STAT from the old counters, and
+    only then resets them. Sealing at the FLUSH record would cut the window the
+    FINAL_STAT still belongs to and report the gap inside it as zero.
+    """
+    aggregator = CaptureAggregator()
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=5)
+    flush = InternalLogInfo(log_os_ts=1, source=InternalSource.FLUSH, version=5)
+    aggregator.consume_events(
+        (
+            InternalEvent(16, InternalSource.INIT_DONE, init, frame_sn=0),
+            FrameEvent(100, BleLogSource.HOST, 0),
+            FrameEvent(100, BleLogSource.HOST, 1),
+            InternalEvent(16, InternalSource.FLUSH, flush, frame_sn=1),
+            # INTERNAL frame number 2 never arrived.
+            FinalStatEvent(
+                frame_size=169, os_ts_ms=1000, entries=(FinalStatEntry(BleLogSource.HOST, 2, 0, 200, 0),), frame_sn=3
+            ),
+        )
+    )
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert snapshot.sequence.missing_frames == 1
+    assert snapshot.capture_segments[0].sequence_missing_frames == 1
+
+
+def test_frames_without_a_firmware_record_leave_the_contract_unproven() -> None:
+    aggregator = CaptureAggregator()
+    aggregator.consume_events((FrameEvent(100, BleLogSource.HOST, 0), FrameEvent(100, BleLogSource.HOST, 1)))
+
+    assert aggregator.snapshot(1.0).firmware_contract_known is False
+
+
+def test_a_firmware_record_proves_the_contract() -> None:
+    aggregator = CaptureAggregator()
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=5)
+    aggregator.consume_events(
+        (
+            FrameEvent(100, BleLogSource.HOST, 0),
+            InternalEvent(16, InternalSource.INIT_DONE, init, frame_sn=1),
+        )
+    )
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert snapshot.firmware_contract_known is True
+    assert snapshot.firmware_version == 5

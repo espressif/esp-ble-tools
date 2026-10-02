@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from typing import NamedTuple, TypeAlias
 
-from src.backend.models import EnhStatResult, FinalStatEntry, InternalDecoderResult, InternalSource, SourceCode
+from src.backend.models import (
+    FinalStatEntry,
+    InternalDecoderResult,
+    InternalLogEnhancedStat,
+    InternalSource,
+    SourceCode,
+)
 
 
 class FrameEvent(NamedTuple):
@@ -19,18 +25,24 @@ class FrameEvent(NamedTuple):
 
 
 class InternalEvent(NamedTuple):
-    """Decoded INTERNAL frame metadata."""
+    """Decoded INTERNAL frame metadata.
+
+    ``frame_sn`` is the frame's slot in the shared sequence stream, or -1 when
+    the producer did not supply one (the gap tracker ignores those).
+    """
 
     frame_size: int
     int_src: InternalSource
     decoded: InternalDecoderResult
+    frame_sn: int = -1
 
 
 class EnhStatEvent(NamedTuple):
     """Firmware ENH_STAT counters decoded from an INTERNAL frame."""
 
     frame_size: int
-    stat: EnhStatResult
+    stat: InternalLogEnhancedStat
+    frame_sn: int = -1
 
 
 class FinalStatEvent(NamedTuple):
@@ -39,6 +51,7 @@ class FinalStatEvent(NamedTuple):
     frame_size: int
     os_ts_ms: int
     entries: tuple[FinalStatEntry, ...]
+    frame_sn: int = -1
 
 
 class RedirEvent(NamedTuple):

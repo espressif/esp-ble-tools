@@ -8,6 +8,7 @@ Usage:
     python console.py --port /dev/ttyUSB0  --baudrate 3000000   # direct connect
     python console.py --mode spi --port cdc:/dev/ttyACM0
     python console.py --mode spi --port 1:8:0:129
+    python console.py --mode usb --port /dev/ttyACM0          # USB Output (CDC-ACM)
     python console.py ports                  # list transport endpoints
     python console.py ls                     # list saved files
 """
@@ -29,7 +30,7 @@ from src.backend.support.transport.registry import (
 from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID, VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
 
-MODE_CHOICES = ("uart", "spi")
+MODE_CHOICES = ("uart", "spi", "usb")
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ble-log-spi-bridge.rules")
 UDEV_RULE = (
     f'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{VENDOR_ID:04x}", '
@@ -41,12 +42,16 @@ def _parse_transport_mode(mode: str) -> TransportMode:
     normalized = mode.lower()
     if normalized == "spi":
         return TransportMode.SPI_USB_BRIDGE
+    if normalized == "usb":
+        return TransportMode.USB_OUTPUT
     return TransportMode(normalized)
 
 
 def _mode_cli_name(mode: TransportMode) -> str:
     if mode is TransportMode.SPI_USB_BRIDGE:
         return "spi"
+    if mode is TransportMode.USB_OUTPUT:
+        return "usb"
     return mode.value
 
 
@@ -130,7 +135,8 @@ def _install_udev_rules() -> None:
     "--port",
     "-p",
     default=None,
-    help="Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or bus:addr:intf:ep.",
+    help="Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or bus:addr:intf:ep,"
+    " USB Output: /dev/ttyACM0 or /dev/cu.usbmodem*.",
 )
 @click.option("--baudrate", "-b", type=int, default=3_000_000, show_default=True, help="UART baud rate.")
 @click.option("--debug", is_flag=True, help="Show internal traffic and firmware state events in the log view.")

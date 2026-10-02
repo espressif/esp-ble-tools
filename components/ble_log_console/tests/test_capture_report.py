@@ -27,6 +27,7 @@ def _result(
     raw_bytes: int = 100,
     regular_frames: int = 2,
     missing_frames: int = 0,
+    duplicate_frames: int = 0,
     writer_error: str | None = None,
     parser_error: str | None = None,
     parse_backlog: bool = False,
@@ -37,18 +38,23 @@ def _result(
     firmware_lost_bytes: int = 0,
     firmware_loss_source: int = 5,
     sequence_uncertain: bool = False,
+    contract_known: bool = True,
 ) -> CapturePipelineResult:
     parser_raw_bytes = raw_bytes if parser_raw_bytes is None else parser_raw_bytes
     sequence = SequenceSummary(
+        observed_frames=regular_frames,
+        first_sn=1 if regular_frames else None,
+        last_sn=regular_frames if regular_frames else None,
+        missing_frames=missing_frames,
+        segments=1 if regular_frames else 0,
+        duplicate_frames=duplicate_frames,
+        uncertain=sequence_uncertain,
         sources=(
             SequenceSourceSummary(
                 source=5,
                 observed_frames=regular_frames,
                 first_sn=1 if regular_frames else None,
                 last_sn=regular_frames if regular_frames else None,
-                missing_frames=missing_frames,
-                segments=1 if regular_frames else 0,
-                uncertain=sequence_uncertain,
             ),
         )
         if regular_frames
@@ -75,6 +81,7 @@ def _result(
         else (),
         capture_firmware_written_bytes=firmware_written_bytes,
         capture_firmware_lost_bytes=firmware_lost_bytes,
+        firmware_contract_known=contract_known,
     )
     return CapturePipelineResult(
         raw_paths=(Path("capture.bin"),) if raw_bytes else (),
@@ -271,14 +278,105 @@ def test_check_configuration_verdict_uses_error_color() -> None:
     assert "#capture-report-verdict.check_configuration" in CaptureReportScreen.DEFAULT_CSS
 
 
-def test_sequence_rate_uses_only_frames_in_the_checked_segments() -> None:
-    result = _result(regular_frames=1000, missing_frames=10)
-    snapshot = result.final_snapshot
-    assert snapshot is not None
-    source = replace(snapshot.sequence.sources[0], observed_frames=90)
-    result = replace(result, final_snapshot=replace(snapshot, sequence=SequenceSummary((source,))))
+def test_duplicate_frames_do_not_dilute_the_loss_rate() -> None:
+    """The duplicate frames are not extra sequence numbers, so 10 of 190 stays 5.26%."""
+    result = _result(regular_frames=230, missing_frames=10, duplicate_frames=50)
 
     report = _report(result)
 
-    assert report.sequence_loss_rate == 0.1
+    assert report.sequence_loss_rate == 10 / 190
     assert report.verdict is CaptureVerdict.RECAPTURE
+
+
+def test_sequence_rate_counts_lost_frames_in_the_denominator() -> None:
+    """Lost frames belong in the denominator: 10 of (100 + 10), not of 100."""
+    result = _result(regular_frames=100, missing_frames=10)
+
+    report = _report(result)
+
+    assert report.sequence_loss_rate == 10 / 110
+    assert report.verdict is CaptureVerdict.RECAPTURE
+
+
+def _per_source_snapshot(result: CapturePipelineResult) -> AggregatorSnapshot:
+    """A capture whose firmware numbered each source from its own counter."""
+
+    sequence = SequenceSummary(
+        per_source=True,
+        observed_frames=4,
+        missing_frames=1,
+        segments=2,
+        sources=(
+            SequenceSourceSummary(
+                source=5,
+                observed_frames=3,
+                first_sn=0,
+                last_sn=3,
+                missing_frames=1,
+                segments=2,
+                late_frames=0,
+                duplicate_frames=0,
+                wraps=0,
+            ),
+            SequenceSourceSummary(source=7, observed_frames=1, first_sn=0, last_sn=0),
+        ),
+    )
+    return replace(result.final_snapshot, sequence=sequence, firmware_version=5)
+
+
+def _shared_counter_snapshot(result: CapturePipelineResult) -> AggregatorSnapshot:
+    """A capture whose firmware numbered every source from one counter."""
+
+    return replace(result.final_snapshot, firmware_version=8)
+
+
+def _sequence_section(text: str) -> str:
+    return text[text.index("Sequence continuity:") :]
+
+
+def test_shared_counter_report_keeps_one_totals_row_and_a_source_table() -> None:
+    text = format_capture_report(_report(replace(_result(), final_snapshot=_shared_counter_snapshot(_result()))))
+    section = _sequence_section(text)
+
+    assert "Firmware protocol: v8 (one shared counter)" in text
+    assert "All frames" in section and "All sources" not in section
+    # One counter means one continuity verdict, and the sources are only an
+    # observation table: their SN ranges belong to different streams.
+    assert "Missing  Segments" not in section
+    assert "Frames by source" in section
+
+
+def test_per_source_report_gives_every_source_its_own_continuity_row() -> None:
+    report = _report(replace(_result(), final_snapshot=_per_source_snapshot(_result())))
+    text = format_capture_report(report)
+
+    assert "Firmware protocol: v5 (per-source counters)" in text
+    section = _sequence_section(text)
+    assert "All sources" in section and "All frames" not in section
+    assert "Frames by source" not in section
+    source_rows = (line for line in section.splitlines() if line.startswith(("  HOST", "  ENCODE")))
+    rows = {line.split()[0]: line.rstrip() for line in source_rows}
+    assert set(rows) == {"HOST", "ENCODE"}
+    assert rows["HOST"].endswith("GAPS DETECTED")
+    assert rows["ENCODE"].endswith("CONTINUOUS")
+
+
+def test_an_unproven_counter_contract_marks_the_numbers_it_still_reports() -> None:
+    """A capture without any firmware record cannot prove how SNs are numbered.
+
+    The report keeps the numbers (they are the best available reading) and says
+    where they came from, instead of presenting the assumed contract as a fact.
+    """
+    result = _result(regular_frames=2, missing_frames=1, contract_known=False)
+    report = _report(result)
+    text = format_capture_report(report)
+
+    assert report.sequence.missing_frames == 1
+    assert "Firmware protocol: not identified (one shared counter, counter contract unproven)" in text
+    assert "Counter contract unproven: continuity is accounted with one shared counter." in text
+
+
+def test_a_proven_counter_contract_carries_no_such_remark() -> None:
+    text = format_capture_report(_report(_result()))
+
+    assert "unproven" not in text

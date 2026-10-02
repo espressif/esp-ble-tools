@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+import errno
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 import serial
 from src.backend.models import TransportConfig, TransportMode
 from src.backend.support.transport.uart_transport import PROVIDER, UartTransport, list_serial_ports, validate_uart_port
@@ -94,7 +96,24 @@ class TestUartTransportReader:
         assert serial_obj.dtr is False
         assert serial_obj.rts is False
 
-    def test_open_retries_without_exclusive_when_exclusive_open_fails(self) -> None:
+    def test_open_retries_without_exclusive_when_the_flag_is_unsupported(self) -> None:
+        serial_obj = MagicMock()
+        serial_obj.is_open = True
+
+        with patch(
+            "src.backend.support.transport.serial_reader.serial.Serial",
+            side_effect=[ValueError("exclusive access is not supported here"), serial_obj],
+        ) as mock_serial:
+            reader = UartTransport("/dev/ttyUSB0", 3_000_000)
+            reader.open()
+
+        assert mock_serial.call_count == 2
+        assert mock_serial.call_args_list[0].kwargs["exclusive"] is True
+        assert "exclusive" not in mock_serial.call_args_list[1].kwargs
+        assert reader.status().opened is True
+
+    def test_open_retries_without_exclusive_on_a_non_lock_failure(self) -> None:
+        """A plain retry lets any real open error surface unchanged."""
         serial_obj = MagicMock()
         serial_obj.is_open = True
 
@@ -106,6 +125,20 @@ class TestUartTransportReader:
             reader.open()
 
         assert mock_serial.call_count == 2
-        assert mock_serial.call_args_list[0].kwargs["exclusive"] is True
         assert "exclusive" not in mock_serial.call_args_list[1].kwargs
         assert reader.status().opened is True
+
+    def test_open_propagates_a_lock_refusal_instead_of_retrying(self) -> None:
+        """A port held by another reader must fail, not open a second handle."""
+        with patch(
+            "src.backend.support.transport.serial_reader.serial.Serial",
+            side_effect=serial.SerialException(
+                errno.EAGAIN, "Could not exclusively lock port /dev/ttyUSB0: Resource temporarily unavailable"
+            ),
+        ) as mock_serial:
+            reader = UartTransport("/dev/ttyUSB0", 3_000_000)
+            with pytest.raises(serial.SerialException, match="exclusively lock"):
+                reader.open()
+
+        assert mock_serial.call_count == 1
+        assert reader.status().opened is False

@@ -9,7 +9,7 @@ description = "BLE Log recording and review console"
 requires-python = ">=3.11"
 dependencies = [
     "click",
-    "esp-blfd==0.2.1",
+    "esp-blfd==0.4.0",
     "pyserial",
     "pyusb",
     "rich",
@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller"]
-test = ["pytest"]
+test = ["pytest", "pytest-bdd"]
 
 [project.scripts]
 ble-log-console = "console:cli"
@@ -33,7 +33,6 @@ packages = [
     "src.backend.io",
     "src.backend.pipeline",
     "src.backend.support",
-    "src.backend.support.parser_core",
     "src.backend.support.stats",
     "src.backend.support.transport",
     "src.frontend",

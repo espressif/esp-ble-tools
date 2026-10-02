@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, TextIO, cast
 
+from ble_log_frame_decoder import Snapshot, parse_snapshot_version_info
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -22,13 +23,14 @@ from textual.widgets import Button
 
 from src.backend.models import (
     BackendStopped,
+    BleLogVersionInfo,
     BufUtilEntry,
     CaptureFinished,
     CaptureReport,
     FrameStats,
     FunnelSnapshot,
-    InfoResult,
     InternalFrameDecoded,
+    InternalLogInfo,
     InternalSource,
     LaunchConfig,
     LogLine,
@@ -113,6 +115,22 @@ def unique_capture_path(log_dir: Path, now: datetime | None = None) -> Path:
         candidate = base.with_name(f"{base.stem}_{index:03d}{base.suffix}")
         index += 1
     return candidate
+
+
+def _chip_label(msg: InternalFrameDecoded) -> str:
+    """Chip name + revision from a VERSION_INFO or SNAPSHOT record, else ''."""
+
+    try:
+        if msg.int_src is InternalSource.VERSION_INFO:
+            info = cast(BleLogVersionInfo, msg.payload)
+        elif msg.int_src is InternalSource.SNAPSHOT:
+            info = parse_snapshot_version_info(cast(Snapshot, msg.payload))
+        else:
+            return ""
+    except ValueError:
+        # A SNAPSHOT can pass shape validation with a corrupt embedded block.
+        return ""
+    return f"{info.chip_name} {info.chip_revision_str}"
 
 
 class BLELogApp(App):
@@ -250,6 +268,9 @@ class BLELogApp(App):
         self.query_one(LogView).clear()
         panel = self.query_one(StatusPanel)
         panel.stats = FrameStats()
+        # The previous recording's chip must not survive into this one: the next
+        # SNAPSHOT names the chip that is actually attached now.
+        panel.chip_label = ""
         panel.disconnected = False
         panel.finalizing = False
         stop_button = self.query_one("#stop-review", Button)
@@ -302,12 +323,15 @@ class BLELogApp(App):
         self._buf_util_snapshots = msg.buf_util_snapshots
 
     def on_internal_frame_decoded(self, msg: InternalFrameDecoded) -> None:
+        chip_label = _chip_label(msg)
+        if chip_label:
+            self.query_one(StatusPanel).chip_label = chip_label
         if not self._debug:
             return
         if msg.int_src == InternalSource.INIT_DONE:
-            info = cast(InfoResult, msg.payload)
+            info = cast(InternalLogInfo, msg.payload)
             log_view = self.query_one(LogView)
-            log_view.write_info(f"BLE Log v{info['version']} initialized - starting a new SN segment")
+            log_view.write_info(f"BLE Log v{info.version} initialized - starting a new SN segment")
         elif msg.int_src == InternalSource.FLUSH:
             log_view = self.query_one(LogView)
             log_view.write_info("Firmware flush detected")
@@ -364,9 +388,16 @@ class BLELogApp(App):
 
     def action_reset_chip(self) -> None:
         capture_session = self._capture_session
-        if capture_session is None or not capture_session.reset_target():
+        if capture_session is None or capture_session.finished:
             self.query_one(LogView).write_warning(tr("Reset is not available because recording is not running"))
             return
+        # The USB Output contract offers no reset channel (the firmware's CDC
+        # line-state callback is NULL), so that transport refuses to reset.
+        if self._transport_config is not None and self._transport_config.mode is TransportMode.USB_OUTPUT:
+            message = tr("USB Output cannot reset the target; use the reset button on the board")
+            self.query_one(LogView).write_warning(message)
+            return
+        capture_session.reset_target()
 
     @on(Button.Pressed, "#stop-review")
     def stop_and_review(self) -> None:

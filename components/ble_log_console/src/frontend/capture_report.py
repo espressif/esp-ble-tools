@@ -74,9 +74,8 @@ def build_capture_report(
         firmware_lost_bytes / firmware_total_bytes if parser_complete and firmware_total_bytes else None
     )
     sequence_loss_rate = None
-    if parser_complete and sequence.sources and not sequence.uncertain:
-        sequence_total = sum(source.observed_frames for source in sequence.sources) + sequence.total_missing_frames
-        sequence_loss_rate = sequence.total_missing_frames / sequence_total if sequence_total else None
+    if parser_complete and sequence.observed_frames and not sequence.uncertain:
+        sequence_loss_rate = sequence.missing_frames / sequence.total_frames if sequence.total_frames else None
 
     errors = tuple(
         f"{label}: {message}"
@@ -109,10 +108,8 @@ def build_capture_report(
             warnings.append("The transport ended unexpectedly; the files saved before disconnection are retained.")
         if parser_complete and sequence.uncertain:
             warnings.append("Sequence continuity could not be verified within the bounded tracker.")
-        elif parser_complete and sequence.total_missing_frames > 0:
-            warnings.append(
-                f"Observed sequence discontinuity: {sequence.total_missing_frames} missing frame number(s)."
-            )
+        elif parser_complete and sequence.missing_frames > 0:
+            warnings.append(f"Observed sequence discontinuity: {sequence.missing_frames} missing frame number(s).")
         firmware_lost_frames = sum(item.frames for item in firmware_loss if item.source > 0)
         firmware_loss_observed_bytes = sum(item.bytes for item in firmware_loss if item.source > 0)
         if firmware_lost_frames > 0 or firmware_loss_observed_bytes > 0:
@@ -173,6 +170,8 @@ def build_capture_report(
         sequence_loss_rate=sequence_loss_rate,
         errors=errors,
         warnings=tuple(warnings),
+        firmware_version=snapshot.firmware_version if snapshot is not None else None,
+        firmware_contract_known=snapshot.firmware_contract_known if snapshot is not None else True,
     )
 
 
@@ -184,7 +183,7 @@ def _localized_reasons(report: CaptureReport, language: str) -> list[str]:
                 tr(
                     "Observed sequence discontinuity: {count} missing frame number(s).",
                     language=language,
-                    count=report.sequence.total_missing_frames,
+                    count=report.sequence.missing_frames,
                 )
             )
         elif reason.startswith("Observed firmware buffer loss during recording:"):
@@ -240,7 +239,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
     sequence_result = (
         tr("Unable to verify", language=language)
         if not report.parser_complete or report.sequence.uncertain
-        else f"{report.sequence.total_missing_frames} {frames}"
+        else f"{report.sequence.missing_frames} {frames}"
     )
     return "\n".join(
         (
@@ -297,6 +296,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         f"{tr('Recording', language=language)}{separator.rstrip()}",
         f"  {field('Mode', cfg.mode.value)}",
         f"  {field('Port', cfg.port)}",
+        f"  {field('Firmware protocol', _protocol_text(report, language))}",
         f"  {field('Baud rate', cfg.baudrate if cfg.mode.value == 'uart' else tr('N/A', language=language))}",
         f"  {field('Started', report.started_at.astimezone().isoformat(sep=' ', timespec='seconds'))}",
         f"  {field('Ended', report.ended_at.astimezone().isoformat(sep=' ', timespec='seconds'))}",
@@ -332,39 +332,12 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
             f"{tr('Sequence continuity', language=language)}{separator.rstrip()}",
         ]
     )
-    if report.sequence.sources:
-        if language == "zh_CN":
-            for source in report.sequence.sources:
-                lines.append(
-                    f"  {resolve_source_name(source.source)}："
-                    f"{tr('Observed', language=language)} {source.observed_frames}，"
-                    f"{tr('SN range', language=language)} {source.first_sn} -> {source.last_sn}，"
-                    f"{tr('Missing', language=language)} "
-                    f"{tr('Unable to verify', language=language) if source.uncertain else source.missing_frames}，"
-                    f"{tr('Segments', language=language)} {source.segments}，"
-                    f"{tr('Late', language=language)} {source.late_frames}，"
-                    f"{tr('Duplicates', language=language)} {source.duplicate_frames}，"
-                    f"{tr('Wraps', language=language)} {source.wraps}，"
-                    f"{tr('UNCERTAIN' if source.uncertain else 'GAPS DETECTED' if source.missing_frames else 'CONTINUOUS', language=language)}"
-                )
-        else:
-            lines.extend(
-                (
-                    "  Source       Observed  SN range                 Missing  Segments  Late  Duplicates  Wraps  Status",
-                    "  -----------  --------  -----------------------  -------  --------  ----  ----------  -----  -------------",
-                )
-            )
-            for source in report.sequence.sources:
-                sn_range = f"{source.first_sn} -> {source.last_sn}"
-                status = "UNCERTAIN" if source.uncertain else "GAPS DETECTED" if source.missing_frames else "CONTINUOUS"
-                missing = "N/A" if source.uncertain else str(source.missing_frames)
-                lines.append(
-                    f"  {resolve_source_name(source.source):<11}  {source.observed_frames:>8}  "
-                    f"{sn_range:<23}  {missing:>7}  {source.segments:>8}  "
-                    f"{source.late_frames:>4}  {source.duplicate_frames:>10}  {source.wraps:>5}  {status}"
-                )
+    if report.sequence.observed_frames:
+        lines.extend(_format_sequence(report.sequence, language, contract_known=report.firmware_contract_known))
     else:
-        lines.append(f"  {tr('No regular source frames were available for sequence verification.', language=language)}")
+        lines.append(
+            f"  {tr('No frames carrying a sequence number were available for sequence verification.', language=language)}"
+        )
 
     lines.extend(
         ("", f"{tr('Firmware buffer loss observed during this recording', language=language)}{separator.rstrip()}")
@@ -398,6 +371,115 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _status(sequence: SequenceSummary) -> str:
+    if sequence.uncertain:
+        return "UNCERTAIN"
+    return "GAPS DETECTED" if sequence.missing_frames else "CONTINUOUS"
+
+
+def _protocol_text(report: CaptureReport, language: str) -> str:
+    """Firmware version and the counter contract the sequence numbers were read with."""
+
+    model = tr("per-source counters" if report.sequence.per_source else "one shared counter", language=language)
+    version = (
+        tr("not identified", language=language) if report.firmware_version is None else f"v{report.firmware_version}"
+    )
+    if not report.firmware_contract_known:
+        # The numbers below still rest on the assumed shared counter; say so where
+        # the assumption is stated instead of presenting it as a fact.
+        return f"{version} ({model}, {tr('counter contract unproven', language=language)})"
+    return f"{version} ({model})"
+
+
+def _sequence_totals(sequence: SequenceSummary, language: str) -> str:
+    missing: int | str = tr("Unable to verify", language=language) if sequence.uncertain else sequence.missing_frames
+    fields = (
+        ("Observed", sequence.observed_frames),
+        ("Missing", missing),
+        ("Segments", sequence.segments),
+        ("Late", sequence.late_frames),
+        ("Duplicates", sequence.duplicate_frames),
+        ("Wraps", sequence.wraps),
+        ("Status", tr(_status(sequence), language=language)),
+    )
+    joiner = "，" if language == "zh_CN" else "  "
+    return joiner.join(f"{tr(label, language=language)} {value}" for label, value in fields)
+
+
+def _format_sequence(sequence: SequenceSummary, language: str, *, contract_known: bool = True) -> list[str]:
+    """Render continuity the way the firmware's counter contract reads.
+
+    One shared counter makes the capture a single stream, so one totals row and
+    a per-source observation table describe it, and no capture-wide SN range
+    exists because the per-source ranges span different streams. Per-source
+    counters make every source a stream of its own, so each source gets a row
+    with its own continuity counters.
+    """
+
+    if language == "zh_CN":
+        totals = f"  {tr('All sources' if sequence.per_source else 'All frames', language=language)}：{_sequence_totals(sequence, language)}"
+    else:
+        label = "All sources" if sequence.per_source else "All frames"
+        totals = f"  {tr(label, language=language)}: {_sequence_totals(sequence, language)}"
+    lines = [totals]
+    if not contract_known:
+        lines.append(
+            f"  {tr('Counter contract unproven: continuity is accounted with one shared counter.', language=language)}"
+        )
+    if not sequence.per_source:
+        if language == "zh_CN":
+            lines.append(f"  {tr('Frames by source', language=language)}：")
+        else:
+            lines.extend(
+                (
+                    "",
+                    f"  {tr('Frames by source', language=language)}:",
+                    "  Source       Observed  SN range",
+                    "  -----------  --------  -----------------------",
+                )
+            )
+        for source in sequence.sources:
+            sn_range = f"{source.first_sn} -> {source.last_sn}"
+            if language == "zh_CN":
+                lines.append(
+                    f"  {resolve_source_name(source.source)}：{tr('Observed', language=language)} "
+                    f"{source.observed_frames}，{tr('SN range', language=language)} {sn_range}"
+                )
+            else:
+                lines.append(f"  {resolve_source_name(source.source):<11}  {source.observed_frames:>8}  {sn_range}")
+        return lines
+    if language != "zh_CN":
+        lines.extend(
+            (
+                "",
+                "  Source       Observed  SN range                 Missing  Segments  Late  Duplicates  Wraps  Status",
+                "  -----------  --------  -----------------------  -------  --------  ----  ----------  -----  -------------",
+            )
+        )
+        for source in sequence.sources:
+            missing = "N/A" if source.uncertain else str(source.missing_frames)
+            lines.append(
+                f"  {resolve_source_name(source.source):<11}  {source.observed_frames:>8}  "
+                f"{f'{source.first_sn} -> {source.last_sn}':<23}  {missing:>7}  {source.segments:>8}  "
+                f"{source.late_frames:>4}  {source.duplicate_frames:>10}  {source.wraps:>5}  {_status(source)}"
+            )
+        return lines
+    for source in sequence.sources:
+        missing = tr("Unable to verify", language=language) if source.uncertain else source.missing_frames
+        lines.append(
+            f"  {resolve_source_name(source.source)}："
+            f"{tr('Observed', language=language)} {source.observed_frames}，"
+            f"{tr('SN range', language=language)} {source.first_sn} -> {source.last_sn}，"
+            f"{tr('Missing', language=language)} {missing}，"
+            f"{tr('Segments', language=language)} {source.segments}，"
+            f"{tr('Late', language=language)} {source.late_frames}，"
+            f"{tr('Duplicates', language=language)} {source.duplicate_frames}，"
+            f"{tr('Wraps', language=language)} {source.wraps}，"
+            f"{tr('Status', language=language)} {tr(_status(source), language=language)}"
+        )
+    return lines
 
 
 def _format_rate(rate: float | None, language: str) -> str:

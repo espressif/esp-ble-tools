@@ -39,6 +39,8 @@ MAX_PORT_LABEL_LEN = 36
 def _mode_select_value(mode: TransportMode) -> str:
     if mode is TransportMode.SPI_USB_BRIDGE:
         return "spi"
+    if mode is TransportMode.USB_OUTPUT:
+        return "usb"
     return mode.value
 
 
