@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from src.backend.models import (
     BleLogSource,
     BufUtilEntry,
-    FirmwareLossSummary,
     FrameByteCount,
     FrameStats,
     FunnelSnapshot,
@@ -23,6 +24,16 @@ from src.backend.support.stats.firmware_loss import FirmwareLossTracker
 from src.backend.support.stats.firmware_written import FirmwareWrittenTracker
 from src.backend.support.stats.sn_gap import SNGapTracker
 from src.backend.support.stats.transport import TransportMetrics
+
+
+class EnhStatDelta(NamedTuple):
+    """Deltas accepted from one ENH_STAT report; all zero when the guard drops it."""
+
+    written_frames: int
+    written_bytes: int
+    lost_frames: int
+    lost_bytes: int
+
 
 # Frames kept for a replay while the firmware's counter contract is not proven.
 # The log only has to outlast the gap between attaching to a running device and
@@ -57,8 +68,6 @@ class StatsAccumulator:
         self._per_source_received_bytes: dict[SourceCode, int] = {}
         self._enh_stat_prev: dict[SourceCode, tuple[int, int, int, int]] = {}
         self._enh_zero_baseline = False
-        self._capture_loss: dict[SourceCode, tuple[int, int]] = {}
-        self._capture_written: dict[SourceCode, tuple[int, int]] = {}
         self._total_elapsed: float = 0.0
         self._prev_written: dict[SourceCode, tuple[int, int]] = {}
 
@@ -182,20 +191,6 @@ class StatsAccumulator:
         previous = self._sn_gap.last_observed(src_code)
         return previous is not None and frame_sn < previous
 
-    def capture_firmware_loss(self) -> tuple[FirmwareLossSummary, ...]:
-        return tuple(
-            FirmwareLossSummary(source=source, frames=frames, bytes=byte_count)
-            for source, (frames, byte_count) in sorted(self._capture_loss.items())
-            if frames > 0 or byte_count > 0
-        )
-
-    def capture_firmware_quality_bytes(self) -> tuple[int, int]:
-        """Return comparable ENH written/lost byte deltas for regular sources."""
-
-        written = sum(value[1] for source, value in self._capture_written.items() if source > 0)
-        lost = sum(value[1] for source, value in self._capture_loss.items() if source > 0)
-        return written, lost
-
     def record_regular_frame_summary(
         self,
         frame_count: int,
@@ -240,8 +235,8 @@ class StatsAccumulator:
         lost_frames: int,
         written_bytes: int,
         lost_bytes: int,
-    ) -> tuple[int, int]:
-        """Record firmware ENH_STAT report. Returns (loss_delta_frames, loss_delta_bytes).
+    ) -> EnhStatDelta:
+        """Record firmware ENH_STAT report. Returns the deltas that were accepted.
 
         Torn-read guard: discards reports where byte deltas exceed 2s of wire
         capacity (non-atomic enh_stat_t reads under concurrent ISR/task updates).
@@ -255,21 +250,15 @@ class StatsAccumulator:
             if d_written_bytes > max_bytes_delta or d_lost_bytes > max_bytes_delta:
                 # Update prev to avoid cascading discards on next report
                 self._enh_stat_prev[src_code] = (written_frames, lost_frames, written_bytes, lost_bytes)
-                return (0, 0)
+                return EnhStatDelta(0, 0, 0, 0)
 
         self._enh_stat_prev[src_code] = (written_frames, lost_frames, written_bytes, lost_bytes)
         if prev is None and self._enh_zero_baseline:
             self._fw_written.record(src_code, 0, 0)
             self._fw_loss.record(src_code, 0, 0)
         new_written_frames, new_written_bytes = self._fw_written.record(src_code, written_frames, written_bytes)
-        if new_written_frames > 0 or new_written_bytes > 0:
-            old_frames, old_bytes = self._capture_written.get(src_code, (0, 0))
-            self._capture_written[src_code] = (old_frames + new_written_frames, old_bytes + new_written_bytes)
         new_frames, new_bytes = self._fw_loss.record(src_code, lost_frames, lost_bytes)
-        if new_frames > 0 or new_bytes > 0:
-            old_frames, old_bytes = self._capture_loss.get(src_code, (0, 0))
-            self._capture_loss[src_code] = (old_frames + new_frames, old_bytes + new_bytes)
-        return new_frames, new_bytes
+        return EnhStatDelta(new_written_frames, new_written_bytes, new_frames, new_bytes)
 
     # -- Reset -------------------------------------------------------------------
 

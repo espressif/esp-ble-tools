@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +9,7 @@ from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.models import (
     CaptureSegmentSummary,
     CaptureVerdict,
+    FirmwareCounterSource,
     FirmwareLossSummary,
     FrameStats,
     SequenceSourceSummary,
@@ -37,6 +41,7 @@ def _result(
     firmware_written_bytes: int = 0,
     firmware_lost_bytes: int = 0,
     firmware_loss_source: int = 5,
+    firmware_loss_rows: tuple[FirmwareLossSummary, ...] | None = None,
     sequence_uncertain: bool = False,
     contract_known: bool = True,
 ) -> CapturePipelineResult:
@@ -71,14 +76,21 @@ def _result(
         regular_frames=regular_frames,
         sequence=sequence,
         capture_firmware_loss=(
-            FirmwareLossSummary(
-                source=firmware_loss_source,
-                frames=firmware_loss,
-                bytes=firmware_lost_bytes or 64,
-            ),
-        )
-        if firmware_loss
-        else (),
+            firmware_loss_rows
+            if firmware_loss_rows is not None
+            else (
+                (
+                    FirmwareLossSummary(
+                        source=firmware_loss_source,
+                        frames=firmware_loss,
+                        bytes=firmware_lost_bytes or 64,
+                        written_bytes=firmware_written_bytes,
+                    ),
+                )
+                if firmware_loss
+                else ()
+            )
+        ),
         capture_firmware_written_bytes=firmware_written_bytes,
         capture_firmware_lost_bytes=firmware_lost_bytes,
         firmware_contract_known=contract_known,
@@ -170,8 +182,8 @@ def test_detailed_report_lists_final_stat_segments() -> None:
         final_snapshot=replace(
             result.final_snapshot,
             capture_segments=(
-                CaptureSegmentSummary(1, False, True, 2, 200, 10, 1000, 1, 50, 0, True),
-                CaptureSegmentSummary(2, True, True, 2, 200, 2, 200, 0, 0, 0, False),
+                CaptureSegmentSummary(1, False, True, 2, 200, 10, 1000, 1, 50, 0, True, FirmwareCounterSource.ENH_STAT),
+                CaptureSegmentSummary(2, True, True, 2, 200, 2, 200, 0, 0, 0, False, FirmwareCounterSource.FINAL_STAT),
                 CaptureSegmentSummary(3, False, False, 1, 100, 0, 0, 0, 0, 0, False),
             ),
         ),
@@ -185,10 +197,23 @@ def test_detailed_report_lists_final_stat_segments() -> None:
     assert "第 3 段（结尾不完整）" in text
     assert "固件写入 10 帧" not in text
     assert "接收 2 帧 /" not in text
+    # The segment's own ENH_STAT accrual is labelled as such, and a segment with
+    # neither counter source says so instead of claiming a FINAL_STAT it has not seen.
+    assert "固件缓冲丢帧（ENH_STAT）1 帧" in text
+    assert "固件写入失败 0 帧" in text
+    assert "无固件统计" in text
 
 
 def test_sequence_gap_and_firmware_loss_produce_warning() -> None:
-    report = _report(_result(regular_frames=100, missing_frames=2, firmware_loss=1))
+    report = _report(
+        _result(
+            regular_frames=100,
+            missing_frames=2,
+            firmware_loss=1,
+            firmware_written_bytes=999,
+            firmware_lost_bytes=1,
+        )
+    )
 
     assert report.verdict is CaptureVerdict.WARNING
     assert any("sequence discontinuity" in reason for reason in report.reasons)
@@ -262,12 +287,70 @@ def test_experimental_quality_threshold_is_detailed_only() -> None:
     assert "固件日志写入失败" not in format_capture_summary(report, language="zh_CN")
 
 
-def test_internal_firmware_loss_is_detailed_but_does_not_grade_customer_data() -> None:
-    report = _report(_result(firmware_loss=7, firmware_loss_source=0))
+def test_internal_firmware_loss_is_scored_on_its_own_row() -> None:
+    """INTERNAL (source 0) loss is scored on its own rate, never as customer data."""
 
-    assert report.verdict is CaptureVerdict.READY
+    report = _report(
+        _result(
+            firmware_loss=7,
+            firmware_loss_source=0,
+            firmware_written_bytes=2000,
+            firmware_lost_bytes=7,
+        )
+    )
+
+    assert report.verdict is CaptureVerdict.READY  # 7 of 2007 bytes is 0.35% of INTERNAL's own traffic
     assert "Firmware log write failures" not in format_capture_summary(report)
     assert "INTERNAL: 7 frame(s)" in format_capture_report(report)
+    assert "INTERNAL: 0.3488%" in format_capture_report(report)
+
+
+def test_a_source_that_lost_nothing_still_yields_a_rate() -> None:
+    """A clean source is a 0% data point, not a missing one.
+
+    The aggregator emits a row for every source that reported counters, so a
+    source with written frames and no loss keeps the capture's rate a number.
+    When only lossy sources produced rows, a clean capture reported
+    "Not enough data" instead of 0.0000%.
+    """
+
+    report = _report(
+        _result(
+            firmware_loss_rows=(
+                FirmwareLossSummary(source=5, frames=0, bytes=0, written_frames=1000, written_bytes=100_000),
+            ),
+        )
+    )
+
+    assert report.firmware_write_loss_rate == 0.0
+    assert report.verdict is CaptureVerdict.READY
+    assert "0.0000%" in format_capture_report(report)
+    # The loss list itself still lists only the sources that lost something.
+    assert "None observed after baseline." in format_capture_report(report)
+
+
+def test_one_source_over_the_threshold_fails_on_its_own_evidence() -> None:
+    """A nearly clean customer source does not excuse an INTERNAL source over 5%.
+
+    The blended rate is exactly 5%, which single-rate scoring accepted; per-source
+    scoring fails the capture on the INTERNAL row alone.
+    """
+
+    report = _report(
+        _result(
+            firmware_loss_rows=(
+                FirmwareLossSummary(source=2, frames=1, bytes=10, written_frames=1000, written_bytes=100_000),
+                FirmwareLossSummary(source=0, frames=100, bytes=9_990, written_frames=900, written_bytes=90_000),
+            ),
+            firmware_written_bytes=190_000,
+            firmware_lost_bytes=10_000,
+        )
+    )
+
+    assert report.firmware_write_loss_rate == 9_990 / 99_990
+    assert report.verdict is CaptureVerdict.RECAPTURE
+    assert "LL_TASK: 0.0100%" in format_capture_report(report)
+    assert "INTERNAL: 9.9910%" in format_capture_report(report)
 
 
 def test_warning_verdict_uses_bright_yellow() -> None:

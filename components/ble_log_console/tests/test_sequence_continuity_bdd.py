@@ -14,7 +14,14 @@ from types import SimpleNamespace
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 from src.backend.io.writer import WriterConfig
-from src.backend.models import BleLogSource, CaptureVerdict, InternalSource, TransportConfig, TransportMode
+from src.backend.models import (
+    BleLogSource,
+    CaptureVerdict,
+    FirmwareCounterSource,
+    InternalSource,
+    TransportConfig,
+    TransportMode,
+)
 from src.backend.pipeline import run_capture_pipeline_inprocess
 from src.frontend.capture_report import CaptureReport, build_capture_report
 
@@ -22,6 +29,7 @@ from tests.helpers import (
     BytesReader,
     _int_value,
     build_frame,
+    enh_stat_payload,
     final_stat_payload,
     internal_payload,
     snapshot_payload,
@@ -33,6 +41,15 @@ scenarios("features/sequence_continuity.feature", "features/sequence_continuity_
 _ORDINARY_SOURCES = {
     "LL_TASK": BleLogSource.LL_TASK,
     "ENCODE": BleLogSource.ENCODE,
+    "INTERNAL": BleLogSource.INTERNAL,
+}
+
+# A segment's firmware numbers come from FINAL_STAT interval totals or from the
+# segment's own ENH_STAT deltas; the report labels which one.
+_COUNTER_SOURCES = {
+    "FINAL_STAT": FirmwareCounterSource.FINAL_STAT,
+    "ENH_STAT": FirmwareCounterSource.ENH_STAT,
+    "无": FirmwareCounterSource.NONE,
 }
 
 # Payloads for the INTERNAL frames a scenario names. TASK_BINDING's number comes
@@ -89,6 +106,69 @@ def start_firmware(world: SimpleNamespace, version: int) -> None:
     world.frames.append(_frame_internal("INIT_DONE", 0, bytes([version])))
 
 
+@when(
+    parsers.parse(
+        "设备发送一帧 ENH_STAT，累计写入 {written_frames:d} 帧 {written_bytes:d} 字节、丢失 {lost_frames:d} 帧 {lost_bytes:d} 字节"
+    )
+)
+def send_enh_stat(
+    world: SimpleNamespace, written_frames: int, written_bytes: int, lost_frames: int, lost_bytes: int
+) -> None:
+    send_enh_stat_from(
+        world,
+        source="LL_TASK",
+        written_frames=written_frames,
+        written_bytes=written_bytes,
+        lost_frames=lost_frames,
+        lost_bytes=lost_bytes,
+    )
+
+
+@when(
+    parsers.parse(
+        "设备从 {source} 来源发送一帧 ENH_STAT，累计写入 {written_frames:d} 帧 {written_bytes:d} 字节、丢失 {lost_frames:d} 帧 {lost_bytes:d} 字节"
+    )
+)
+def send_enh_stat_from(
+    world: SimpleNamespace,
+    source: str,
+    written_frames: int,
+    written_bytes: int,
+    lost_frames: int,
+    lost_bytes: int,
+) -> None:
+    payload = enh_stat_payload(0, _ORDINARY_SOURCES[source], written_frames, lost_frames, written_bytes, lost_bytes)
+    world.frames.append(build_frame(payload, _int_value(BleLogSource.INTERNAL), 0, xor_checksum))
+
+
+@when(
+    parsers.parse(
+        "设备发送一帧 FINAL_STAT，写入 {written_frames:d} 帧 {written_bytes:d} 字节、丢失 {lost_frames:d} 帧 {lost_bytes:d} 字节"
+    )
+)
+def send_final_stat(
+    world: SimpleNamespace, written_frames: int, written_bytes: int, lost_frames: int, lost_bytes: int
+) -> None:
+    payload = final_stat_payload(0, (written_frames, lost_frames, written_bytes, lost_bytes))
+    world.frames.append(build_frame(payload, _int_value(BleLogSource.INTERNAL), 2, xor_checksum))
+
+
+@when(
+    parsers.parse(
+        "设备发送同一帧 FINAL_STAT 两次，写入 {written_frames:d} 帧 {written_bytes:d} 字节、丢失 {lost_frames:d} 帧 {lost_bytes:d} 字节"
+    )
+)
+def send_duplicate_final_stat(
+    world: SimpleNamespace, written_frames: int, written_bytes: int, lost_frames: int, lost_bytes: int
+) -> None:
+    """A byte-identical repeat, as a transport duplicate would deliver it."""
+
+    payload = final_stat_payload(0, (written_frames, lost_frames, written_bytes, lost_bytes))
+    frame = build_frame(payload, _int_value(BleLogSource.INTERNAL), 2, xor_checksum)
+    world.frames.append(frame)
+    world.frames.append(frame)
+
+
 @when(parsers.parse("设备从 {source} 来源按序号 {sns} 发送帧"))
 def send_frames_from_source(world: SimpleNamespace, source: str, sns: str) -> None:
     for sn in _parse_sns(sns):
@@ -111,6 +191,27 @@ def report_shows_missing(world: SimpleNamespace, count: int) -> None:
     assert _report(world).sequence.missing_frames == count
 
 
+@then(parsers.parse("报告显示固件缓冲丢帧 {count:d} 帧"))
+def report_shows_firmware_loss(world: SimpleNamespace, count: int) -> None:
+    report = _report(world)
+    assert sum(item.frames for item in report.firmware_loss if item.source > 0) == count
+
+
+@then(parsers.parse("报告显示固件写入 {count:d} 字节"))
+def report_shows_firmware_written_bytes(world: SimpleNamespace, count: int) -> None:
+    assert _report(world).firmware_written_bytes == count
+
+
+@then(parsers.parse("报告显示第 {index:d} 段固件统计来自 {counters}"))
+def report_segment_firmware_counters(world: SimpleNamespace, index: int, counters: str) -> None:
+    assert _report(world).segments[index - 1].firmware_counters is _COUNTER_SOURCES[counters]
+
+
+@then(parsers.parse("报告显示第 {index:d} 段固件丢帧 {count:d} 帧"))
+def report_segment_firmware_loss(world: SimpleNamespace, index: int, count: int) -> None:
+    assert _report(world).segments[index - 1].firmware_lost_frames == count
+
+
 @then(parsers.parse("报告显示固件版本 {version:d}"))
 def report_shows_firmware_version(world: SimpleNamespace, version: int) -> None:
     assert _report(world).firmware_version == version
@@ -124,6 +225,11 @@ def report_is_ready(world: SimpleNamespace) -> None:
 @then("报告判定为需要重录")
 def report_needs_recapture(world: SimpleNamespace) -> None:
     assert _report(world).verdict is CaptureVerdict.RECAPTURE
+
+
+@then("报告判定不为可分析")
+def report_is_not_ready(world: SimpleNamespace) -> None:
+    assert _report(world).verdict is not CaptureVerdict.READY
 
 
 def _parse_sns(sns: str) -> list[int]:

@@ -21,6 +21,8 @@ from src.backend.models import (
     CaptureReport,
     CaptureSegmentSummary,
     CaptureVerdict,
+    FirmwareCounterSource,
+    FirmwareLossSummary,
     SequenceSummary,
     TransportConfig,
     format_bitrate,
@@ -32,6 +34,17 @@ from src.frontend.rendering import terminal_border_style
 from src.i18n import get_language, tr
 
 _QUALITY_RECAPTURE_THRESHOLD = 0.05
+
+
+def _firmware_source_rates(firmware_loss: tuple[FirmwareLossSummary, ...]) -> tuple[tuple[int, float], ...]:
+    """Loss rate of each source that reported firmware counters, worst last."""
+
+    rates = []
+    for row in firmware_loss:
+        total = row.written_bytes + row.bytes
+        if total:
+            rates.append((row.source, row.bytes / total))
+    return tuple(sorted(rates, key=lambda item: item[1]))
 
 
 def report_path_for_capture(output_path: Path) -> Path:
@@ -69,9 +82,12 @@ def build_capture_report(
         and result.parser_lag_bytes == 0
         and result.parser_raw_bytes == result.raw_bytes
     )
-    firmware_total_bytes = firmware_written_bytes + firmware_lost_bytes
+    firmware_source_rates = _firmware_source_rates(firmware_loss)
+    # Every source is scored on its own loss rate, so a source that lost more
+    # than 5% of its own frames fails the capture on its own evidence: INTERNAL
+    # loss never dilutes, and is never diluted by, the customer log's number.
     firmware_write_loss_rate = (
-        firmware_lost_bytes / firmware_total_bytes if parser_complete and firmware_total_bytes else None
+        max(rate for _, rate in firmware_source_rates) if parser_complete and firmware_source_rates else None
     )
     sequence_loss_rate = None
     if parser_complete and sequence.observed_frames and not sequence.uncertain:
@@ -316,6 +332,10 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         "",
         f"{tr('Experimental quality metrics', language=language)}{separator.rstrip()}",
         f"  {field('Firmware write failure rate', _format_rate(report.firmware_write_loss_rate, language))}",
+        *(
+            f"    {resolve_source_name(source)}: {_format_rate(rate, language)}"
+            for source, rate in _firmware_source_rates(report.firmware_loss)
+        ),
         f"  {field('Sequence discontinuity rate', _format_rate(report.sequence_loss_rate, language))}",
         f"  {field('Record-again threshold', '5%')}",
         "",
@@ -342,8 +362,9 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     lines.extend(
         ("", f"{tr('Firmware buffer loss observed during this recording', language=language)}{separator.rstrip()}")
     )
-    if report.firmware_loss:
-        for loss in report.firmware_loss:
+    observed_loss = tuple(row for row in report.firmware_loss if row.frames or row.bytes)
+    if observed_loss:
+        for loss in observed_loss:
             if language == "zh_CN":
                 lines.append(f"  {resolve_source_name(loss.source)}：{loss.frames} 帧，{format_bytes(loss.bytes)}")
             else:
@@ -508,16 +529,20 @@ def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
         sequence_text = "连续" if language == "zh_CN" else "continuous"
 
     if language == "zh_CN":
-        firmware = (
-            f"固件写入失败 {segment.firmware_lost_frames} 帧" if segment.final_stat_seen else "无 FINAL_STAT 固件统计"
-        )
+        if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
+            firmware = f"固件写入失败 {segment.firmware_lost_frames} 帧"
+        elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
+            firmware = f"固件缓冲丢帧（ENH_STAT）{segment.firmware_lost_frames} 帧"
+        else:
+            firmware = "无固件统计"
         return f"  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；{firmware}；SN {sequence_text}"
 
-    firmware = (
-        f"firmware failed {segment.firmware_lost_frames} frame(s)"
-        if segment.final_stat_seen
-        else "no FINAL_STAT firmware counters"
-    )
+    if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
+        firmware = f"firmware failed {segment.firmware_lost_frames} frame(s)"
+    elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
+        firmware = f"firmware buffer loss (ENH_STAT) {segment.firmware_lost_frames} frame(s)"
+    else:
+        firmware = "no firmware counters"
     return (
         f"  Segment {segment.index} ({status}): received {segment.received_frames} frame(s); "
         f"{firmware}; SN {sequence_text}"

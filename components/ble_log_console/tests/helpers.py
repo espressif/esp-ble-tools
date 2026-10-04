@@ -31,13 +31,38 @@ def internal_payload(os_ts: int, int_src: int | Enum, sub_payload: bytes) -> byt
     return struct.pack("<I", os_ts) + bytes([_int_value(int_src)]) + sub_payload
 
 
-def final_stat_payload(os_ts: int, host: tuple[int, int, int, int]) -> bytes:
+def final_stat_payload(
+    os_ts: int,
+    host: tuple[int, int, int, int],
+    internal: tuple[int, int, int, int] = (0, 0, 0, 0),
+) -> bytes:
     """Canonical FINAL_STAT payload: one 17-byte entry per source code 0..8."""
     payload = struct.pack("<IBB", os_ts, _int_value(InternalSource.FINAL_STAT), 9)
     for source in range(9):
-        counts = host if source == _int_value(BleLogSource.HOST) else (0, 0, 0, 0)
+        if source == _int_value(BleLogSource.HOST):
+            counts = host
+        elif source == _int_value(BleLogSource.INTERNAL):
+            counts = internal
+        else:
+            counts = (0, 0, 0, 0)
         payload += struct.pack("<BIIII", source, *counts)
     return payload
+
+
+def enh_stat_payload(
+    os_ts: int,
+    source: int | Enum,
+    written_frames: int,
+    lost_frames: int,
+    written_bytes: int,
+    lost_bytes: int,
+) -> bytes:
+    """ENH_STAT payload: one source's cumulative write/loss counters."""
+    return internal_payload(
+        os_ts,
+        InternalSource.ENHANCED_STAT,
+        struct.pack("<BIIII", _int_value(source), written_frames, lost_frames, written_bytes, lost_bytes),
+    )
 
 
 def version_info_payload(os_ts: int, chip_model: int = 13, chip_revision: int = 302) -> bytes:

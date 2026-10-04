@@ -31,6 +31,8 @@ from src.backend.models import (
     FRAME_OVERHEAD,
     BufUtilEntry,
     CaptureSegmentSummary,
+    FinalStatEntry,
+    FirmwareCounterSource,
     FirmwareLossSummary,
     FrameStats,
     FunnelSnapshot,
@@ -102,6 +104,22 @@ def _recorded_version(decoded: InternalDecoderResult) -> int | None:
     return None
 
 
+def _accumulate(target: dict[int, tuple[int, int]], source: int, delta: tuple[int, int]) -> None:
+    """Add one (frames, bytes) delta to a per-source total in place."""
+
+    frames, byte_count = delta
+    if not frames and not byte_count:
+        return
+    old_frames, old_bytes = target.get(source, (0, 0))
+    target[source] = (old_frames + frames, old_bytes + byte_count)
+
+
+def _totals(totals: dict[int, tuple[int, int]]) -> tuple[int, int]:
+    """(frames, bytes) summed across the sources of a per-source total."""
+
+    return sum(frames for frames, _ in totals.values()), sum(byte_count for _, byte_count in totals.values())
+
+
 class CaptureAggregator:
     """Consume BLE log parser events and update shared statistics components.
 
@@ -121,9 +139,16 @@ class CaptureAggregator:
         self._segment_regular_frames = 0
         self._segment_regular_bytes = 0
         self._segment_start_known = False
-        self._final_stat_seen = False
-        self._final_written_bytes = 0
+        self._final_written: dict[int, tuple[int, int]] = {}
         self._final_loss: dict[int, tuple[int, int]] = {}
+        # Firmware loss accrues per segment from ENH_STAT deltas. A segment that
+        # closes with FINAL_STAT replaces its own accrual with that interval's
+        # terminal totals, so no interval is ever counted from both sources.
+        self._segment_enh_written: dict[int, tuple[int, int]] = {}
+        self._segment_enh_loss: dict[int, tuple[int, int]] = {}
+        self._partial_written: dict[int, tuple[int, int]] = {}
+        self._partial_loss: dict[int, tuple[int, int]] = {}
+        self._last_final_stat: tuple[int, tuple[FinalStatEntry, ...]] | None = None
         self._firmware_version: int | None = None
         self._firmware_contract_known = False
 
@@ -216,6 +241,12 @@ class CaptureAggregator:
                 self._record_enh_stat(event)
             elif event_type is FinalStatEvent:
                 flush_regular_frames()
+                if self._is_duplicate_final_stat(event):
+                    # The same record delivered twice: the transport still carried
+                    # the bytes, but its SN and its interval were already
+                    # accounted for by the first arrival.
+                    self._stats.record_frame(frame_size=event.frame_size)
+                    continue
                 self._observe_firmware(per_source=True)
                 self._record_internal_frame(event.frame_size, event.frame_sn)
                 self._close_final_stat_segment(event)
@@ -234,6 +265,11 @@ class CaptureAggregator:
                     # the window it replaces.
                     self._close_pending_segment()
                     self._segment_start_known = True
+                    # The dedup identity is scoped to the epoch that recorded
+                    # it. A later instance can report the same timestamp and
+                    # the same counters, and that is a new interval rather
+                    # than a repeat of the previous one.
+                    self._last_final_stat = None
                 internal_frames.append(InternalFrameUpdate(int_src=event.int_src, decoded=event.decoded))
                 self._record_internal_effect(event)
                 self._record_internal_frame(event.frame_size, event.frame_sn)
@@ -254,17 +290,25 @@ class CaptureAggregator:
     def snapshot(self, elapsed_sec: float, *, include_segments: bool = True) -> AggregatorSnapshot:
         """Harvest periodic stats for UI/log sinks."""
 
-        if self._final_stat_seen:
-            firmware_written_bytes = self._final_written_bytes
-            firmware_lost_bytes = sum(value[1] for value in self._final_loss.values())
-            firmware_loss = tuple(
-                FirmwareLossSummary(source=source, frames=frames, bytes=byte_count)
-                for source, (frames, byte_count) in sorted(self._final_loss.items())
-                if frames or byte_count
+        # Every segment contributes its own evidence, and the live window is a
+        # segment that has not been sealed yet: complete segments report their
+        # FINAL_STAT interval totals, the rest report accrued ENH_STAT deltas.
+        # Counters stay per source, so each source is scored on its own loss rate.
+        firmware_written, firmware_loss_totals = self._firmware_totals()
+        # One row per source that reported any counter, including the ones that
+        # lost nothing: the rate is scored per source, so a source with written
+        # frames and no loss is a 0% data point rather than a missing one.
+        # Which of these rows count as observed loss is the report's decision.
+        firmware_loss = tuple(
+            FirmwareLossSummary(
+                source=source,
+                frames=firmware_loss_totals.get(source, (0, 0))[0],
+                bytes=firmware_loss_totals.get(source, (0, 0))[1],
+                written_frames=firmware_written.get(source, (0, 0))[0],
+                written_bytes=firmware_written.get(source, (0, 0))[1],
             )
-        else:
-            firmware_written_bytes, firmware_lost_bytes = self._stats.capture_firmware_quality_bytes()
-            firmware_loss = self._stats.capture_firmware_loss()
+            for source in sorted(set(firmware_written) | set(firmware_loss_totals))
+        )
         # Sequence continuity spans every sealed window plus the live one: a
         # segment whose FINAL_STAT never arrived still holds real gaps, and
         # dropping it would report a clean capture while the segment table shows
@@ -281,8 +325,8 @@ class CaptureAggregator:
             regular_frames=self._stats.regular_frame_count,
             sequence=sequence,
             capture_firmware_loss=firmware_loss,
-            capture_firmware_written_bytes=firmware_written_bytes,
-            capture_firmware_lost_bytes=firmware_lost_bytes,
+            capture_firmware_written_bytes=_totals(firmware_written)[1],
+            capture_firmware_lost_bytes=_totals(firmware_loss_totals)[1],
             capture_segments=tuple(self._segments) if include_segments else (),
             firmware_version=self._firmware_version,
             firmware_contract_known=self._firmware_contract_known,
@@ -335,42 +379,108 @@ class CaptureAggregator:
 
     def _record_enh_stat(self, event: EnhStatEvent) -> None:
         stat = event.stat.enhanced_stat
-        self._stats.record_enh_stat(
-            src_code=int(stat.log_source),
+        source = int(stat.log_source)
+        delta = self._stats.record_enh_stat(
+            src_code=source,
             written_frames=stat.written_frame_cnt,
             lost_frames=stat.lost_frame_cnt,
             written_bytes=stat.written_bytes_cnt,
             lost_bytes=stat.lost_bytes_cnt,
         )
+        # Accrued for the current segment; a FINAL_STAT closing it replaces this
+        # accrual with the interval's own totals (see _close_final_stat_segment).
+        _accumulate(self._segment_enh_written, source, (delta.written_frames, delta.written_bytes))
+        _accumulate(self._segment_enh_loss, source, (delta.lost_frames, delta.lost_bytes))
+
+    def _take_segment_enh_totals(self) -> tuple[dict[int, tuple[int, int]], dict[int, tuple[int, int]]]:
+        """Take the ENH_STAT accrual of the segment that is being sealed."""
+
+        written, loss = self._segment_enh_written, self._segment_enh_loss
+        self._segment_enh_written = {}
+        self._segment_enh_loss = {}
+        return written, loss
+
+    def _firmware_totals(self) -> tuple[dict[int, tuple[int, int]], dict[int, tuple[int, int]]]:
+        """Per-source written and lost counters of every segment, sealed or live."""
+
+        written = dict(self._final_written)
+        loss = dict(self._final_loss)
+        for source, delta in self._partial_written.items():
+            _accumulate(written, source, delta)
+        for source, delta in self._partial_loss.items():
+            _accumulate(loss, source, delta)
+        for source, delta in self._segment_enh_written.items():
+            _accumulate(written, source, delta)
+        for source, delta in self._segment_enh_loss.items():
+            _accumulate(loss, source, delta)
+        return written, loss
+
+    def _final_stat_identity(self, event: FinalStatEvent) -> tuple[int, tuple[FinalStatEntry, ...]]:
+        """What makes two FINAL_STAT arrivals the same record: its own content."""
+
+        return event.os_ts_ms, tuple(event.entries)
+
+    def _is_duplicate_final_stat(self, event: FinalStatEvent) -> bool:
+        """Whether this arrival repeats the record already accounted for.
+
+        The transport can deliver the same bytes twice. The record carries its
+        own firmware timestamp and every counter, so a repeat is recognised by
+        content, with no timing assumption. The comparison is against the most
+        recent identity of the current SN epoch: a replay separated from its
+        original by another FINAL_STAT is not recognised, and a repeat that
+        arrives after a new epoch has begun belongs to that epoch.
+        """
+
+        return self._last_final_stat is not None and self._last_final_stat == self._final_stat_identity(event)
 
     def _close_final_stat_segment(self, event: FinalStatEvent) -> None:
-        self._final_stat_seen = True
+        # INTERNAL (source 0) is a source like any other here: its loss is scored
+        # on its own row instead of being dropped or merged into customer data.
+        entries = tuple(event.entries)
+        self._last_final_stat = self._final_stat_identity(event)
         sequence = self._stats.seal_sequence_segment()
-        entries = tuple(entry for entry in event.entries if int(entry.log_source) > 0)
-        segment = CaptureSegmentSummary(
-            index=len(self._segments) + 1,
-            complete=self._segment_start_known,
-            final_stat_seen=True,
-            received_frames=self._segment_regular_frames,
-            received_bytes=self._segment_regular_bytes,
-            firmware_written_frames=sum(entry.written_frame_cnt for entry in entries),
-            firmware_written_bytes=sum(entry.written_bytes_cnt for entry in entries),
-            firmware_lost_frames=sum(entry.lost_frame_cnt for entry in entries),
-            firmware_lost_bytes=sum(entry.lost_bytes_cnt for entry in entries),
-            sequence_missing_frames=sequence.missing_frames,
-            sequence_uncertain=sequence.uncertain,
-        )
-        self._segments.append(segment)
-        # Firmware counters only make sense for a segment that saw its FINAL_STAT;
-        # the sequence window is sealed either way and stays in the capture total.
-        if segment.complete:
+        enh_written, enh_loss = self._take_segment_enh_totals()
+        if self._segment_start_known:
+            # The segment covers the whole interval, so its terminal counters are
+            # the authority for it.
+            firmware_written = _totals(
+                {int(entry.log_source): (entry.written_frame_cnt, entry.written_bytes_cnt) for entry in entries}
+            )
+            firmware_lost = _totals(
+                {int(entry.log_source): (entry.lost_frame_cnt, entry.lost_bytes_cnt) for entry in entries}
+            )
+            counters = FirmwareCounterSource.FINAL_STAT
             for entry in entries:
-                self._final_written_bytes += entry.written_bytes_cnt
-                lost_frames, lost_bytes = self._final_loss.get(int(entry.log_source), (0, 0))
-                self._final_loss[int(entry.log_source)] = (
-                    lost_frames + entry.lost_frame_cnt,
-                    lost_bytes + entry.lost_bytes_cnt,
-                )
+                source = int(entry.log_source)
+                _accumulate(self._final_written, source, (entry.written_frame_cnt, entry.written_bytes_cnt))
+                _accumulate(self._final_loss, source, (entry.lost_frame_cnt, entry.lost_bytes_cnt))
+        else:
+            # The capture never saw this interval start, so FINAL_STAT has no
+            # baseline to be read against; the segment's OWN ENH_STAT deltas are
+            # the evidence, exactly as for a segment that has no FINAL_STAT.
+            firmware_written = _totals(enh_written)
+            firmware_lost = _totals(enh_loss)
+            counters = FirmwareCounterSource.ENH_STAT if (enh_written or enh_loss) else FirmwareCounterSource.NONE
+            for source, delta in enh_written.items():
+                _accumulate(self._partial_written, source, delta)
+            for source, delta in enh_loss.items():
+                _accumulate(self._partial_loss, source, delta)
+        self._segments.append(
+            CaptureSegmentSummary(
+                index=len(self._segments) + 1,
+                complete=self._segment_start_known,
+                final_stat_seen=True,
+                received_frames=self._segment_regular_frames,
+                received_bytes=self._segment_regular_bytes,
+                firmware_written_frames=firmware_written[0],
+                firmware_written_bytes=firmware_written[1],
+                firmware_lost_frames=firmware_lost[0],
+                firmware_lost_bytes=firmware_lost[1],
+                sequence_missing_frames=sequence.missing_frames,
+                sequence_uncertain=sequence.uncertain,
+                firmware_counters=counters,
+            )
+        )
         self._segment_regular_frames = 0
         self._segment_regular_bytes = 0
         self._segment_start_known = True
@@ -379,6 +489,13 @@ class CaptureAggregator:
         sequence = self._stats.seal_sequence_segment()
         if not self._segment_regular_frames and not sequence.sources:
             return
+        enh_written, enh_loss = self._take_segment_enh_totals()
+        firmware_written = _totals(enh_written)
+        firmware_lost = _totals(enh_loss)
+        for source, delta in enh_written.items():
+            _accumulate(self._partial_written, source, delta)
+        for source, delta in enh_loss.items():
+            _accumulate(self._partial_loss, source, delta)
         self._segments.append(
             CaptureSegmentSummary(
                 index=len(self._segments) + 1,
@@ -386,12 +503,15 @@ class CaptureAggregator:
                 final_stat_seen=False,
                 received_frames=self._segment_regular_frames,
                 received_bytes=self._segment_regular_bytes,
-                firmware_written_frames=0,
-                firmware_written_bytes=0,
-                firmware_lost_frames=0,
-                firmware_lost_bytes=0,
+                firmware_written_frames=firmware_written[0],
+                firmware_written_bytes=firmware_written[1],
+                firmware_lost_frames=firmware_lost[0],
+                firmware_lost_bytes=firmware_lost[1],
                 sequence_missing_frames=sequence.missing_frames,
                 sequence_uncertain=sequence.uncertain,
+                firmware_counters=(
+                    FirmwareCounterSource.ENH_STAT if (enh_written or enh_loss) else FirmwareCounterSource.NONE
+                ),
             )
         )
         self._segment_regular_frames = 0

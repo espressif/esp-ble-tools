@@ -53,9 +53,6 @@ class TestResetPropagation:
         for snap in funnel:
             if snap.source == 1:
                 assert snap.buffer_loss.frames == 3  # first report absolute value
-        capture_loss = stats.capture_firmware_loss()
-        assert capture_loss[0].frames == 8
-        assert capture_loss[0].bytes == 400
 
     def test_init_resets_firmware_written(self) -> None:
         stats = StatsAccumulator()

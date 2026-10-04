@@ -320,6 +320,19 @@ class SequenceSummary:
         return self.unique_frames + self.missing_frames
 
 
+class FirmwareCounterSource(str, Enum):
+    """Which firmware counters a segment's numbers were taken from.
+
+    A segment that starts inside the capture closes with the FINAL_STAT interval
+    totals. A segment whose start the capture never saw has no interval baseline,
+    so it reports its own ENH_STAT deltas instead.
+    """
+
+    NONE = "none"
+    FINAL_STAT = "final_stat"
+    ENH_STAT = "enh_stat"
+
+
 @dataclass(frozen=True)
 class CaptureSegmentSummary:
     """One firmware flush interval observed during a capture."""
@@ -335,15 +348,29 @@ class CaptureSegmentSummary:
     firmware_lost_bytes: int
     sequence_missing_frames: int
     sequence_uncertain: bool
+    firmware_counters: FirmwareCounterSource = FirmwareCounterSource.NONE
 
 
 @dataclass(frozen=True)
 class FirmwareLossSummary:
-    """Firmware buffer loss observed after this capture established a baseline."""
+    """Firmware counters of one source, as observed in this capture.
+
+    ``frames``/``bytes`` are what the firmware reported lost; ``written_*`` is
+    the same source's written counter, so this row carries both sides of that
+    source's loss rate. Sources are never merged: INTERNAL (0) loss is its own
+    row, not part of the customer log's numbers.
+
+    A source that reported written counters and lost nothing still gets a row:
+    it is the 0% end of the scale, and dropping it would make the capture's
+    rate unknowable instead of zero. Listing the rows that represent *observed*
+    loss is the report's job, not this record's.
+    """
 
     source: SourceCode
     frames: int
     bytes: int
+    written_frames: int = 0
+    written_bytes: int = 0
 
 
 class CaptureVerdict(str, Enum):

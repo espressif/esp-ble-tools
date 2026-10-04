@@ -51,13 +51,14 @@ class TestStatsAccumulator:
         self, stats: StatsAccumulator, src_code: int, lost_frames: int, lost_bytes: int
     ) -> tuple[int, int]:
         """Helper: call record_enh_stat with dummy written counters, return loss delta."""
-        return stats.record_enh_stat(  # type: ignore[no-any-return]
+        delta = stats.record_enh_stat(
             src_code=src_code,
             written_frames=0,
             lost_frames=lost_frames,
             written_bytes=0,
             lost_bytes=lost_bytes,
         )
+        return (delta.lost_frames, delta.lost_bytes)
 
     def test_firmware_loss_first_report_zero_delta(self) -> None:
         """First ENH_STAT initializes prev (delta=0); subsequent reports show delta."""
@@ -232,34 +233,13 @@ class TestRecordEnhStat:
 
     def test_returns_loss_delta(self) -> None:
         stats = StatsAccumulator()
-        d_f, d_b = stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        assert (d_f, d_b) == (0, 0)
+        delta = stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
+        assert (delta.lost_frames, delta.lost_bytes) == (0, 0)
+        assert (delta.written_frames, delta.written_bytes) == (0, 0)
 
-        d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250
-        )
-        assert (d_f, d_b) == (5, 250)
-
-    def test_capture_loss_preserves_deltas_across_flush_baselines(self) -> None:
-        stats = StatsAccumulator()
-        stats.record_enh_stat(1, 10, 5, 1000, 500)
-        stats.record_enh_stat(1, 20, 7, 2000, 700)
-        stats.reset("flush")
-        stats.record_enh_stat(1, 5, 1, 500, 100)
-        stats.record_enh_stat(1, 10, 3, 1000, 300)
-
-        capture_loss = stats.capture_firmware_loss()
-
-        assert capture_loss[0].frames == 4
-        assert capture_loss[0].bytes == 400
-
-    def test_quality_bytes_use_capture_deltas_and_exclude_internal(self) -> None:
-        stats = StatsAccumulator()
-        stats.reset("init")
-        stats.record_enh_stat(0, 5, 2, 500, 200)
-        stats.record_enh_stat(1, 10, 1, 1000, 100)
-
-        assert stats.capture_firmware_quality_bytes() == (1000, 100)
+        delta = stats.record_enh_stat(src_code=1, written_frames=50, lost_frames=5, written_bytes=2500, lost_bytes=250)
+        assert (delta.lost_frames, delta.lost_bytes) == (5, 250)
+        assert (delta.written_frames, delta.written_bytes) == (50, 2500)
 
     def test_torn_read_guard_rejects_implausible_written_bytes(self) -> None:
         stats = StatsAccumulator()
@@ -267,10 +247,11 @@ class TestRecordEnhStat:
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
         stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        d_f, d_b = stats.record_enh_stat(
+        delta = stats.record_enh_stat(
             src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0
         )
-        assert (d_f, d_b) == (0, 0)
+        assert (delta.lost_frames, delta.lost_bytes) == (0, 0)
+        assert (delta.written_frames, delta.written_bytes) == (0, 0)
         assert stats._fw_written.totals()[1] == (0, 0)
 
     def test_torn_read_guard_rejects_implausible_lost_bytes(self) -> None:
@@ -279,10 +260,10 @@ class TestRecordEnhStat:
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
         stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        d_f, d_b = stats.record_enh_stat(
+        delta = stats.record_enh_stat(
             src_code=1, written_frames=10, lost_frames=5, written_bytes=500, lost_bytes=max_delta + 1
         )
-        assert (d_f, d_b) == (0, 0)
+        assert (delta.lost_frames, delta.lost_bytes) == (0, 0)
         assert stats._fw_loss.per_source_totals()[1] == (0, 0)
 
     def test_torn_read_guard_accepts_plausible_delta(self) -> None:
@@ -291,11 +272,12 @@ class TestRecordEnhStat:
         _set_uart_bitrate(stats, baudrate)
         max_delta = baudrate * 2 // 10
         stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
-        d_f, d_b = stats.record_enh_stat(
+        delta = stats.record_enh_stat(
             src_code=1, written_frames=10, lost_frames=2, written_bytes=max_delta, lost_bytes=100
         )
-        assert d_f == 2
-        assert d_b == 100
+        assert delta.lost_frames == 2
+        assert delta.lost_bytes == 100
+        assert delta.written_frames == 10
 
     def test_torn_read_recovery_uses_last_good_prev(self) -> None:
         stats = StatsAccumulator()
@@ -304,11 +286,9 @@ class TestRecordEnhStat:
         max_delta = baudrate * 2 // 10
         stats.record_enh_stat(src_code=1, written_frames=0, lost_frames=0, written_bytes=0, lost_bytes=0)
         stats.record_enh_stat(src_code=1, written_frames=10, lost_frames=0, written_bytes=max_delta + 1, lost_bytes=0)
-        d_f, d_b = stats.record_enh_stat(
-            src_code=1, written_frames=20, lost_frames=3, written_bytes=1000, lost_bytes=150
-        )
-        assert d_f == 3
-        assert d_b == 150
+        delta = stats.record_enh_stat(src_code=1, written_frames=20, lost_frames=3, written_bytes=1000, lost_bytes=150)
+        assert delta.lost_frames == 3
+        assert delta.lost_bytes == 150
 
 
 class TestRecordFrameReturnsGap:
@@ -369,10 +349,10 @@ class TestReset:
         assert snapshot.loss.total_frames == 5
 
         # Next ENH_STAT re-baselines (first report = 0 delta)
-        d_f, d_b = stats.record_enh_stat(
+        delta = stats.record_enh_stat(
             src_code=1, written_frames=100, lost_frames=10, written_bytes=5000, lost_bytes=500
         )
-        assert (d_f, d_b) == (0, 0)
+        assert (delta.lost_frames, delta.lost_bytes) == (0, 0)
 
 
 class TestFunnelSnapshot:

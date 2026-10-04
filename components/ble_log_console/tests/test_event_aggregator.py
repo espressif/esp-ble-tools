@@ -25,7 +25,7 @@ from src.backend.analysis.parser_events import (
     ParseSummary,
     RedirEvent,
 )
-from src.backend.models import FRAME_OVERHEAD, BleLogSource, FinalStatEntry, InternalSource
+from src.backend.models import FRAME_OVERHEAD, BleLogSource, FinalStatEntry, FirmwareCounterSource, InternalSource
 
 from tests.helpers import snapshot_payload
 
@@ -405,3 +405,155 @@ def test_a_firmware_record_proves_the_contract() -> None:
 
     assert snapshot.firmware_contract_known is True
     assert snapshot.firmware_version == 5
+
+
+def _enh_stat_event(
+    os_ts: int, written_frames: int, lost_frames: int, written_bytes: int, lost_bytes: int
+) -> EnhStatEvent:
+    payload = struct.pack("<I", os_ts) + bytes([InternalSource.ENHANCED_STAT.value]) + b"\x00" * 17
+    return EnhStatEvent(
+        frame_size=frame_size_from_payload(payload),
+        stat=InternalLogEnhancedStat(
+            log_os_ts=os_ts,
+            source=InternalSource.ENHANCED_STAT,
+            enhanced_stat=EnhancedStat(
+                log_source=BleLogSource.HOST,
+                written_frame_cnt=written_frames,
+                lost_frame_cnt=lost_frames,
+                written_bytes_cnt=written_bytes,
+                lost_bytes_cnt=lost_bytes,
+            ),
+        ),
+    )
+
+
+def test_segment_without_a_known_start_reports_its_own_enh_stat_loss() -> None:
+    """A capture attached mid-interval never saw the interval start.
+
+    FINAL_STAT has no baseline that segment could be read against, so its own
+    ENH_STAT deltas are the loss evidence; the capture total is the sum over the
+    segments instead of a separate whole-capture number.
+    """
+
+    aggregator = CaptureAggregator()
+    aggregator.consume_events(
+        (
+            _enh_stat_event(1, written_frames=10, lost_frames=0, written_bytes=1000, lost_bytes=0),
+            FrameEvent(100, BleLogSource.HOST, 0),
+            _enh_stat_event(2, written_frames=20, lost_frames=2, written_bytes=2000, lost_bytes=128),
+        )
+    )
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=3000,
+        entries=(FinalStatEntry(BleLogSource.HOST, 3, 5, 300, 500),),
+    )
+    aggregator.consume_events((FrameEvent(100, BleLogSource.HOST, 1), final))
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=738, parsed_frames=3, carried_bytes=0))
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert not snapshot.capture_segments[0].complete
+    assert snapshot.capture_segments[0].firmware_counters is FirmwareCounterSource.ENH_STAT
+    assert snapshot.capture_segments[0].firmware_lost_frames == 2
+    # The segment's own ENH_STAT deltas are in the total; its FINAL_STAT entry is not.
+    assert snapshot.capture_firmware_written_bytes == 1000
+    assert snapshot.capture_firmware_lost_bytes == 128
+    assert snapshot.capture_firmware_loss[0].frames == 2
+
+
+def test_duplicate_final_stat_is_not_counted_twice() -> None:
+    """INTERNAL frames have no SN dedup behind them.
+
+    The same FINAL_STAT delivered twice describes one interval. The repeat must
+    not add a second segment, a second set of counters, or its SN to the window
+    the first arrival already closed — hence the real parser's frame_sn here.
+    """
+
+    aggregator = CaptureAggregator()
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=1000,
+        entries=(FinalStatEntry(BleLogSource.HOST, 2, 1, 200, 50),),
+        frame_sn=100,
+    )
+    aggregator.consume_events(
+        (InternalEvent(16, InternalSource.INIT_DONE, init), FrameEvent(100, BleLogSource.HOST, 0), final, final)
+    )
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=200, parsed_frames=3, carried_bytes=0))
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert len(snapshot.capture_segments) == 1
+    assert snapshot.capture_firmware_written_bytes == 200
+    assert snapshot.capture_firmware_lost_bytes == 50
+    assert snapshot.capture_firmware_loss[0].frames == 1
+    # SN 0 and the FINAL_STAT's own SN 100: the repeat is not a third frame.
+    assert snapshot.sequence.observed_frames == 2
+
+
+def test_the_same_final_stat_in_a_new_epoch_is_a_new_interval() -> None:
+    """The dedup identity is scoped to the SN epoch that recorded it.
+
+    Two firmware instances can report the same timestamp and the same counters.
+    That is a second interval, not a repeat of the first one, so both must be
+    counted.
+    """
+
+    aggregator = CaptureAggregator()
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=1000,
+        entries=(FinalStatEntry(BleLogSource.HOST, 200, 50, 2000, 500),),
+        frame_sn=100,
+    )
+    aggregator.consume_events(
+        (
+            InternalEvent(16, InternalSource.INIT_DONE, init),
+            final,
+            InternalEvent(16, InternalSource.INIT_DONE, init),
+            final,
+        )
+    )
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert len(snapshot.capture_segments) == 2
+    assert snapshot.capture_firmware_written_bytes == 4000
+    assert snapshot.capture_firmware_lost_bytes == 1000
+
+
+def test_internal_final_stat_entry_is_kept_for_its_own_score() -> None:
+    """A legacy FINAL_STAT carries an INTERNAL entry like every other source.
+
+    Dropping it would leave INTERNAL loss unscored; merging it into the customer
+    rows would score it as customer data.
+    """
+
+    aggregator = CaptureAggregator()
+    init = InternalLogInfo(log_os_ts=0, source=InternalSource.INIT_DONE, version=4)
+    final = FinalStatEvent(
+        frame_size=169,
+        os_ts_ms=1000,
+        entries=(
+            FinalStatEntry(BleLogSource.LL_TASK, 100, 0, 10_000, 0),
+            FinalStatEntry(BleLogSource.INTERNAL, 900, 100, 90_000, 10_000),
+        ),
+        frame_sn=100,
+    )
+    aggregator.consume_events((InternalEvent(16, InternalSource.INIT_DONE, init), final))
+    aggregator.consume_parser_summary(ParseSummary(raw_bytes=200, parsed_frames=2, carried_bytes=0))
+
+    snapshot = aggregator.snapshot(1.0)
+
+    rows = {int(row.source): row for row in snapshot.capture_firmware_loss}
+    assert rows[int(BleLogSource.INTERNAL)].frames == 100
+    assert rows[int(BleLogSource.INTERNAL)].written_bytes == 90_000
+    # A source that lost nothing still gets a row: it is the 0% data point that
+    # lets the capture's rate be a number instead of "not enough data".
+    assert rows[int(BleLogSource.LL_TASK)].frames == 0
+    assert rows[int(BleLogSource.LL_TASK)].written_bytes == 10_000
+    assert snapshot.capture_firmware_written_bytes == 100_000
+    assert snapshot.capture_firmware_lost_bytes == 10_000
