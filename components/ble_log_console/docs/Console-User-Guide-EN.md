@@ -370,6 +370,8 @@ The report separately states whether the raw data was saved completely and how m
 
 The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. Confirmed loss from both complete and partial segments contributes to the overall quality statistics. An incomplete segment boundary alone does not cause a warning. If continuity cannot be determined, it is shown as unverified.
 
+If file synchronization fails when closing a recording file or rotating to another part, the report cannot confirm that raw data was saved completely and recommends another recording. Existing raw files are retained for troubleshooting, but their survival after a power failure is not guaranteed.
+
 Sequence checks follow the counter model identified by supported firmware records. A standalone VERSION_INFO declaring BLE Log protocol 6 selects separate counters per source, including when recording starts mid-stream. Supported protocol 8 records use a shared counter for regular frames and SNAPSHOT; its standalone VERSION_INFO retains that model.
 
 Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another recording is needed.
