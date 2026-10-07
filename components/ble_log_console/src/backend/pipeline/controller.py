@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import math
 import multiprocessing
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
@@ -20,6 +22,12 @@ from src.backend.io.worker import run_io_loop, run_io_process
 from src.backend.io.writer import Clock, FileFactory, WriterConfig, WriterEvent
 from src.backend.models import ChecksumMode, TransportConfig
 from src.backend.support.transport import TransportReader, create_transport_reader
+from src.i18n import tr
+
+# hint: match the analysis grace period; tune io_shutdown_timeout_sec for slower storage.
+IO_SHUTDOWN_TIMEOUT_SEC = 20.0
+PROCESS_POLL_INTERVAL_SEC = 0.1
+PROCESS_TERMINATE_TIMEOUT_SEC = 1.0
 
 PARSE_QUEUE_SIZE = 512
 # ui_queue still carries critical reader/writer status. Keep it unbounded by
@@ -200,6 +208,23 @@ def run_capture_pipeline_inprocess(
     return _result_from_events(_drain_events(ui_queue))
 
 
+def _terminate_process(process: Any | None) -> bool:
+    """Attempt bounded cleanup of an owned process; report whether it exited."""
+    if process is None or not process.is_alive():
+        return True
+    for stop in (process.terminate, process.kill):
+        try:
+            stop()
+            process.join(PROCESS_TERMINATE_TIMEOUT_SEC)
+        except OSError:
+            # A refused signal is not completion; keep ownership and let the
+            # caller report that cleanup remains pending.
+            pass
+        if not process.is_alive():
+            return True
+    return False
+
+
 class CapturePipeline:
     """Process-based BLE log capture pipeline."""
 
@@ -213,7 +238,16 @@ class CapturePipeline:
         queue_put_timeout: float = QUEUE_PUT_TIMEOUT_SEC,
         drain_rounds: int = 10,
         parser_checksum_mode: ChecksumMode | None = None,
+        io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
+        clock: Clock = time.monotonic,
     ) -> None:
+        if not math.isfinite(io_shutdown_timeout_sec) or io_shutdown_timeout_sec < 0:
+            raise ValueError("io_shutdown_timeout_sec must be finite and nonnegative")
+        self._io_shutdown_timeout_sec = io_shutdown_timeout_sec
+        self._clock = clock
+        self._io_shutdown_deadline: float | None = None
+        self._io_aborted = False
+        self._events_abandoned = False
         self._transport_config = transport_config
         self._writer_config = writer_config
         self._parse_queue_size = parse_queue_size
@@ -276,13 +310,17 @@ class CapturePipeline:
         self._io_process.start()
 
     def stop(self) -> None:
-        if self._stop_requested is not None:
+        """Request graceful shutdown, arming the IO deadline only once."""
+        if self._stop_requested is not None and not self._io_aborted:
+            if self._io_shutdown_deadline is None:
+                self._io_shutdown_deadline = self._clock() + self._io_shutdown_timeout_sec
             self._stop_requested.set()
 
     def reset_target(self) -> None:
         if self._command_queue is None:
             raise RuntimeError("recording pipeline is not started")
-        self._command_queue.put(ReaderCommand(kind="reset_target"))
+        if not self._events_abandoned:
+            self._command_queue.put(ReaderCommand(kind="reset_target"))
 
     def is_alive(self) -> bool:
         return any(process is not None and process.is_alive() for process in (self._io_process, self._analysis_process))
@@ -296,22 +334,83 @@ class CapturePipeline:
     def abort_analysis(self, message: str) -> None:
         """Stop a live quality check after raw capture has safely finished."""
 
-        process = self._analysis_process
-        if process is not None and process.is_alive():
-            process.terminate()
-            process.join(1.0)
-            if process.is_alive():
-                process.kill()
-                process.join(1.0)
+        if self.analysis_is_alive():
+            self.drain_events()
+            self._abandon_ipc()
+            _terminate_process(self._analysis_process)
         self._result_events.append(ParserStatus(kind="error", message=message))
+
+    def _abandon_ipc(self) -> None:
+        """Freeze observed evidence before a producer can corrupt shared IPC."""
+        if self._events_abandoned:
+            return
+        self._events_abandoned = True
+        # Pending IPC is not raw preservation. In particular, a parent command
+        # feeder must not hold application exit waiting for the stopped reader.
+        for queue in (self._parse_queue, self._raw_stats_queue, self._ui_queue, self._command_queue):
+            cancel_join = getattr(queue, "cancel_join_thread", None)
+            if cancel_join is not None:
+                cancel_join()
+                queue.close()
+
+    def check_io_shutdown(self) -> list[Any]:
+        """Abort stalled IO after its grace period, without claiming a successful save.
+
+        Accepted blocks may still be queued or buffered. Keep observed evidence,
+        mark saving unconfirmed, and terminate both owned processes. A process
+        which survives terminate/kill remains owned and must not be treated as
+        finished by the caller.
+        """
+        if (
+            self._io_aborted
+            or self._io_shutdown_deadline is None
+            or not self.io_is_alive()
+            or self._clock() < self._io_shutdown_deadline
+        ):
+            return []
+
+        events = self.drain_events()
+        if not self.io_is_alive():
+            return events
+        # A killed producer can leave an incomplete queue message or a locked
+        # pipe. Never read this shared queue again after forced termination.
+        self._io_aborted = True
+        self._abandon_ipc()
+        error = WriterEvent(
+            kind="error",
+            message=tr(
+                "Recording I/O did not finish within {seconds:g} seconds; raw saving cannot be confirmed.",
+                seconds=self._io_shutdown_timeout_sec,
+            ),
+        )
+        self._result_events.append(error)
+        events.append(error)
+        io_stopped = _terminate_process(self._io_process)
+        analysis_stopped = _terminate_process(self._analysis_process)
+        if not (io_stopped and analysis_stopped):
+            error = ReaderProcessEvent(
+                kind="error",
+                message=tr("Recording processes could not be stopped; completion is still pending."),
+            )
+            self._result_events.append(error)
+            events.append(error)
+        return events
 
     def drain_events(self) -> list[Any]:
         """Drain events for UI consumption without losing final result state."""
 
         if self._ui_queue is None:
             raise RuntimeError("recording pipeline is not started")
+        if self._events_abandoned:
+            return []
         events = _drain_events(self._ui_queue)
         self._result_events.extend(_events_for_result(events))
+        if any(
+            (isinstance(event, ReaderProcessEvent) and event.kind == "stopping")
+            or (isinstance(event, WriterEvent) and event.kind == "error")
+            for event in events
+        ):
+            self.stop()
         snapshots = [event for event in self._result_events if isinstance(event, AggregatorSnapshot)]
         if snapshots:
             latest = snapshots[-1]
@@ -319,17 +418,34 @@ class CapturePipeline:
             self._result_events.append(latest)
         return events
 
+    def _join_io_with_watchdog(self, timeout: float | None) -> list[Any]:
+        events: list[Any] = []
+        wait_deadline = None if timeout is None else self._clock() + max(0.0, timeout)
+        while self.io_is_alive():
+            events.extend(self.drain_events())
+            events.extend(self.check_io_shutdown())
+            if self._io_aborted or not self.io_is_alive():
+                break
+            remaining = None if wait_deadline is None else wait_deadline - self._clock()
+            if remaining is not None and remaining <= 0:
+                break
+            interval = PROCESS_POLL_INTERVAL_SEC if remaining is None else min(PROCESS_POLL_INTERVAL_SEC, remaining)
+            if self._io_shutdown_deadline is not None:
+                interval = min(interval, max(0.0, self._io_shutdown_deadline - self._clock()))
+            self._io_process.join(interval)
+        return events
+
     def wait_with_events(self, timeout: float | None = None) -> tuple[list[Any], CapturePipelineResult]:
         if self._io_process is None or self._analysis_process is None or self._ui_queue is None:
             raise RuntimeError("recording pipeline is not started")
 
-        self._io_process.join(timeout)
-        if self._io_process.is_alive():
+        events = self._join_io_with_watchdog(timeout)
+        if self._io_process.is_alive() and not self._io_aborted:
             self.stop()
-            self._io_process.join(timeout)
+            events.extend(self._join_io_with_watchdog(timeout))
 
-        self._analysis_process.join(timeout)
-        events = self.drain_events()
+        self._analysis_process.join(0 if self._io_aborted else timeout)
+        events.extend(self.drain_events())
         result = _result_from_events(self._result_events)
 
         if self._io_process.is_alive() or self._analysis_process.is_alive():

@@ -288,6 +288,8 @@ def run_reader_loop(
     except Exception as e:
         _put_event(ui_queue, ReaderProcessEvent(kind="error", message=str(e)))
     finally:
+        # Tell the parent that IO shutdown has begun before any close can stall.
+        _put_event(ui_queue, ReaderProcessEvent(kind="stopping"))
         try:
             reader.close()
         except Exception as e:

@@ -142,6 +142,9 @@ _ZH_CN = {
     "USB Output cannot reset the target; use the reset button on the board": "USB Output 无法复位目标设备，请按开发板上的复位键",
     "Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.": "正在结束录制：保存数据后，质量检查最多等待 20 秒。",
     "Live quality check did not finish within 20 seconds.": "实时质量检查未能在 20 秒内完成。",
+    "Live quality check did not finish within {seconds:g} seconds.": "实时质量检查未能在 {seconds:g} 秒内完成。",
+    "Recording I/O did not finish within {seconds:g} seconds; raw saving cannot be confirmed.": "录制 IO 未能在 {seconds:g} 秒内完成收尾；无法确认原始数据已完整保存。",
+    "Recording processes could not be stopped; completion is still pending.": "录制进程未能停止；收尾仍未完成。",
 }
 
 

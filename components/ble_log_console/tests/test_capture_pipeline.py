@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from threading import Event
 from typing import IO
 from unittest.mock import MagicMock
 
+import pytest
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
 from src.backend.analysis.worker import ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
@@ -269,8 +270,10 @@ def test_abort_analysis_stops_process_and_records_incomplete_check(tmp_path: Pat
         WriterConfig(tmp_path / "capture.bin"),
     )
     process = MagicMock()
-    process.is_alive.side_effect = (True, False)
+    process.is_alive.return_value = True
+    process.terminate.side_effect = lambda: setattr(process.is_alive, "return_value", False)
     pipeline._analysis_process = process  # type: ignore[attr-defined]
+    pipeline._ui_queue = Queue()
 
     pipeline.abort_analysis("quality check timed out")
 
@@ -308,3 +311,240 @@ def test_reader_error_marks_pipeline_incomplete_but_finalizes_written_data(tmp_p
     assert result.raw_paths == (output_path,)
     assert result.raw_bytes == len(b"one")
     assert output_path.read_bytes() == b"one"
+
+
+def _stalled_pipeline(tmp_path: Path, now: list[float], *, grace: float = 20) -> CapturePipeline:
+    pipeline = CapturePipeline(
+        TransportConfig(TransportMode.USB_OUTPUT, "replay", "replay"),
+        WriterConfig(tmp_path / "recording.bin"),
+        io_shutdown_timeout_sec=grace,
+        clock=lambda: now[0],
+    )
+    pipeline._ui_queue = Queue()
+    pipeline._stop_requested = Event()
+    for name in ("_io_process", "_analysis_process"):
+        process = MagicMock()
+        process.is_alive.return_value = True
+        process.terminate.side_effect = lambda p=process: setattr(p.is_alive, "return_value", False)
+        setattr(pipeline, name, process)
+    return pipeline
+
+
+def test_io_watchdog_does_not_limit_running_recordings(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    now[0] = 100
+
+    assert pipeline.check_io_shutdown() == []
+    assert pipeline.io_is_alive()
+    pipeline._io_process.terminate.assert_not_called()
+    pipeline._analysis_process.terminate.assert_not_called()
+
+
+def test_repeated_stop_does_not_extend_io_grace(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline.stop()
+    now[0] = 19.9
+    pipeline.stop()
+    assert pipeline.check_io_shutdown() == []
+    now[0] = 20
+
+    events = pipeline.check_io_shutdown()
+    _, result = pipeline.wait_with_events(0)
+
+    assert any(isinstance(event, WriterEvent) and event.kind == "error" for event in events)
+    assert result.writer_error is not None
+    assert not result.writer_finalized
+    assert not result.completed
+    assert not pipeline.io_is_alive()
+    assert not pipeline.analysis_is_alive()
+
+
+@pytest.mark.parametrize("event", [ReaderProcessEvent(kind="stopping"), WriterEvent(kind="error", message="disk full")])
+def test_io_terminal_events_arm_shutdown_without_user_stop(tmp_path: Path, event: object) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline._ui_queue.put(event)
+    pipeline.drain_events()
+    assert pipeline._stop_requested.is_set()
+    now[0] = 20
+
+    pipeline.check_io_shutdown()
+
+    assert not pipeline.io_is_alive()
+    assert not pipeline.analysis_is_alive()
+
+
+def test_nonterminal_reader_error_does_not_arm_shutdown(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline._ui_queue.put(ReaderProcessEvent(kind="error", message="unknown reader command: invalid"))
+    pipeline.drain_events()
+    now[0] = 100
+
+    assert pipeline.check_io_shutdown() == []
+    assert not pipeline._stop_requested.is_set()
+    assert pipeline.io_is_alive()
+
+
+def test_forced_shutdown_preserves_evidence_without_reusing_ipc(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    path = tmp_path / "recording.bin"
+    path.write_bytes(b"prefix")
+    pipeline._ui_queue.put(WriterEvent("opened", status=WriterStatus(path, (path,), 6, 1, 1, False)))
+    pipeline.drain_events()
+    pipeline.stop()
+    now[0] = 20
+    pipeline.check_io_shutdown()
+    broken_queue = MagicMock()
+    broken_queue.get_nowait.side_effect = AssertionError("damaged queue must not be read")
+    broken_signal = MagicMock()
+    broken_signal.set.side_effect = AssertionError("damaged semaphore must not be reused")
+    broken_commands = MagicMock()
+    broken_commands.put.side_effect = AssertionError("damaged command queue must not be reused")
+    pipeline._ui_queue = broken_queue
+    pipeline._stop_requested = broken_signal
+    pipeline._command_queue = broken_commands
+
+    assert pipeline.drain_events() == []
+    pipeline.stop()
+    pipeline.reset_target()
+    _, result = pipeline.wait_with_events(None)
+
+    assert result.raw_paths == (path,)
+    assert result.raw_bytes == 6
+    assert path.read_bytes() == b"prefix"
+    assert result.writer_error is not None
+    assert not result.writer_finalized
+    broken_queue.get_nowait.assert_not_called()
+    broken_signal.set.assert_not_called()
+    broken_commands.put.assert_not_called()
+
+
+def test_watchdog_escalates_to_kill_if_terminate_does_not_stop_io(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline._io_process.terminate.side_effect = None
+    pipeline._io_process.kill.side_effect = lambda: setattr(pipeline._io_process.is_alive, "return_value", False)
+    pipeline.stop()
+    now[0] = 20
+
+    pipeline.check_io_shutdown()
+
+    pipeline._io_process.kill.assert_called_once_with()
+    assert not pipeline.io_is_alive()
+    assert [call.args for call in pipeline._io_process.join.call_args_list] == [(1.0,), (1.0,)]
+
+
+def test_failed_process_termination_remains_owned_and_wait_does_not_block(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline._io_process.terminate.side_effect = None
+    pipeline.stop()
+    now[0] = 20
+
+    events = pipeline.check_io_shutdown()
+    _, result = pipeline.wait_with_events(None)
+
+    assert pipeline.io_is_alive()
+    assert not result.completed
+    assert result.writer_error is not None
+    assert any(isinstance(event, ReaderProcessEvent) and event.kind == "error" for event in events)
+    assert all(call.args[0] is not None for call in pipeline._io_process.join.call_args_list)
+
+
+def test_refused_process_signals_are_reported_without_losing_ownership(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline._io_process.terminate.side_effect = PermissionError("terminate refused")
+    pipeline._io_process.kill.side_effect = PermissionError("kill refused")
+    pipeline.stop()
+    now[0] = 20
+
+    events = pipeline.check_io_shutdown()
+    _, result = pipeline.wait_with_events(None)
+
+    assert pipeline.io_is_alive()
+    assert not result.completed
+    assert result.writer_error is not None
+    assert any(isinstance(event, ReaderProcessEvent) and event.kind == "error" for event in events)
+
+
+def test_wait_without_observation_timeout_still_obeys_io_shutdown_grace(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now, grace=0.3)
+    pipeline._io_process.join.side_effect = lambda timeout: now.__setitem__(0, now[0] + timeout)
+    pipeline.stop()
+
+    _, result = pipeline.wait_with_events(None)
+
+    assert not pipeline.io_is_alive()
+    assert not result.completed
+    assert result.writer_error is not None
+    assert all(call.args[0] is not None for call in pipeline._io_process.join.call_args_list)
+
+
+def test_analysis_abort_preserves_saved_raw_evidence_without_reading_killed_producer(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    path = tmp_path / "recording.bin"
+    path.write_bytes(b"prefix")
+    pipeline._ui_queue.put(WriterEvent("finalized", status=WriterStatus(path, (path,), 6, 1, 1, True)))
+    pipeline._io_process.is_alive.return_value = False
+    broken_queue = MagicMock()
+    broken_queue.get_nowait.side_effect = AssertionError("killed analysis queue must not be read")
+
+    def stopped() -> None:
+        pipeline._analysis_process.is_alive.return_value = False
+        pipeline._ui_queue = broken_queue
+
+    pipeline._analysis_process.terminate.side_effect = stopped
+    pipeline.abort_analysis("quality check timed out")
+
+    assert pipeline.drain_events() == []
+    _, result = pipeline.wait_with_events(0)
+
+    assert result.raw_paths == (path,)
+    assert result.writer_finalized
+    assert result.writer_error is None
+    assert result.parser_error == "quality check timed out"
+    assert not result.completed
+    assert path.read_bytes() == b"prefix"
+    broken_queue.get_nowait.assert_not_called()
+
+
+def test_watchdog_does_not_abort_io_that_exits_while_pending_events_are_drained(tmp_path: Path) -> None:
+    now = [0.0]
+    pipeline = _stalled_pipeline(tmp_path, now)
+    pipeline.stop()
+    now[0] = 20
+    queue = MagicMock()
+    path = tmp_path / "recording.bin"
+    finalized = WriterEvent("finalized", status=WriterStatus(path, (path,), 6, 1, 1, True))
+    reads = [finalized]
+
+    def get_nowait():
+        if reads:
+            pipeline._io_process.is_alive.return_value = False
+            return reads.pop()
+        raise Empty
+
+    queue.get_nowait.side_effect = get_nowait
+    pipeline._ui_queue = queue
+
+    events = pipeline.check_io_shutdown()
+    pipeline._analysis_process.is_alive.return_value = False
+    _, result = pipeline.wait_with_events(0)
+
+    assert finalized in events
+    assert result.writer_error is None
+    assert result.writer_finalized
+    pipeline._io_process.terminate.assert_not_called()
+
+
+@pytest.mark.parametrize("grace", [-1, float("inf"), float("nan")])
+def test_invalid_io_shutdown_grace_is_rejected(tmp_path: Path, grace: float) -> None:
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        _stalled_pipeline(tmp_path, [0.0], grace=grace)

@@ -178,7 +178,9 @@ The first line of each group of console log messages includes the PC receive tim
 
 #### 4.3.1 Stop & Review
 
-To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves the remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit.
+To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool allows up to 20 seconds for the recording IO process to finish reception and saving, then up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit.
+
+If the IO process exceeds its shutdown grace period, the tool attempts to stop the recording processes and reports saving as unconfirmed. Already-written raw files are retained, but queued or buffered data may be missing. The report is shown only after the recording processes have exited; if the operating system cannot stop them, completion remains pending. These deadlines cover the background recording and quality check, not the application's own console-log or report-file writes, which still depend on the storage system responding.
 
 > Note: While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
 
@@ -370,7 +372,7 @@ The report separately states whether the raw data was saved completely and how m
 
 The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. Confirmed loss from both complete and partial segments contributes to the overall quality statistics. An incomplete segment boundary alone does not cause a warning. If continuity cannot be determined, it is shown as unverified.
 
-If file synchronization fails when closing a recording file or rotating to another part, the report cannot confirm that raw data was saved completely and recommends another recording. Existing raw files are retained for troubleshooting, but their survival after a power failure is not guaranteed.
+If file synchronization fails when closing a recording file or rotating to another part, the report cannot confirm that raw data was saved completely and recommends another recording. Existing raw files are retained for troubleshooting, but their survival after a power failure is not guaranteed. A recording IO shutdown timeout also leaves saving unconfirmed, even if some valid frames were decoded; data accepted by the writer queue is not proof that those bytes reached storage.
 
 Sequence checks follow the counter model identified by supported firmware records. A standalone VERSION_INFO declaring BLE Log protocol 6 selects separate counters per source, including when recording starts mid-stream. Supported protocol 8 records use a shared counter for regular frames and SNAPSHOT; its standalone VERSION_INFO retains that model.
 
