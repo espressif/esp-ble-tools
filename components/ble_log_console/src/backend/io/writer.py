@@ -73,10 +73,7 @@ def _default_file_factory(path: Path) -> IO[bytes]:
 def _flush_and_close_file(file_obj: IO[bytes]) -> None:
     try:
         file_obj.flush()
-        try:
-            os.fsync(file_obj.fileno())
-        except OSError:
-            pass
+        os.fsync(file_obj.fileno())
     finally:
         file_obj.close()
 
@@ -201,7 +198,10 @@ class Writer:
             return
         if self._current_part_bytes < self._config.part_max_bytes:
             return
-        _flush_and_close_file(self._file)
+        # The close helper owns the handle even if flushing or syncing fails.
+        file_obj = self._file
+        self._file = None
+        _flush_and_close_file(file_obj)
         self._current_part += 1
         self._current_part_bytes = 0
         path = capture_part_path(self._config.base_path, self._current_part)
