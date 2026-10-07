@@ -43,12 +43,10 @@ from src.backend.models import (
 )
 from src.backend.support.stats import StatsAccumulator
 
-# Firmware records that prove which counter owns frame numbers. The two
-# protocol generations barely overlap in what they write, so the record itself
-# is the evidence: protocol 8 numbers every frame from one counter and writes
-# SNAPSHOT/VERSION_INFO/TASK_BINDING, while protocol <= 7 numbers each source
-# from its own counter and writes the other records. The version number is only
-# reported alongside, never used to pick the contract.
+# Protocol 8 shares one counter; legacy firmware numbers each source separately.
+# Most record subtypes identify the contract, but VERSION_INFO is shared with
+# protocol 6: its decoded version must identify that legacy record before the
+# first contract is frozen. Other VERSION_INFO keeps the global default.
 _GLOBAL_COUNTER_SOURCES = frozenset({InternalSource.SNAPSHOT, InternalSource.VERSION_INFO, InternalSource.TASK_BINDING})
 
 
@@ -252,13 +250,13 @@ class CaptureAggregator:
                 self._close_final_stat_segment(event)
             elif event_type is InternalEvent:
                 flush_regular_frames()
-                # Before sealing or feeding this frame's SN: a protocol 8 record
-                # re-keys the windows, and the frames already accounted under
-                # the other contract must not enter the segment they precede.
-                self._observe_firmware(
-                    per_source=event.int_src not in _GLOBAL_COUNTER_SOURCES,
-                    version=_recorded_version(event.decoded),
-                )
+                # Decide the contract before sealing or feeding this frame's SN,
+                # so replay can regroup earlier frames before a segment boundary.
+                version = _recorded_version(event.decoded)
+                per_source = event.int_src not in _GLOBAL_COUNTER_SOURCES
+                if event.int_src == InternalSource.VERSION_INFO and version == 6:
+                    per_source = True
+                self._observe_firmware(per_source=per_source, version=version)
                 if self._starts_new_sn_epoch(event):
                     # Cut the old segment over before feeding this frame's SN:
                     # the marker belongs to the new firmware instance, not to

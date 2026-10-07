@@ -33,6 +33,7 @@ from tests.helpers import (
     final_stat_payload,
     internal_payload,
     snapshot_payload,
+    version_info_payload,
     xor_checksum,
 )
 
@@ -97,6 +98,20 @@ def send_internal_frame(world: SimpleNamespace, kind: str, sn: int) -> None:
 @when(parsers.parse("设备发送一帧 INIT SNAPSHOT，序号为 {sn:d}"))
 def send_init_snapshot(world: SimpleNamespace, sn: int) -> None:
     world.frames.append(_frame("INIT SNAPSHOT", sn))
+
+
+@when(parsers.parse("设备以序号 {sn:d} 发送固件版本 {version:d} 的 VERSION_INFO"))
+def send_version_info(world: SimpleNamespace, version: int, sn: int) -> None:
+    payload = version_info_payload(0, version=version)
+    world.frames.append(build_frame(payload, _int_value(BleLogSource.INTERNAL), sn, xor_checksum))
+
+
+@when("设备发送一轮覆盖全部来源的 ENH_STAT，序号从 1 开始")
+def send_periodic_enh_stats(world: SimpleNamespace) -> None:
+    """Legacy firmware emits VERSION_INFO before one ENH_STAT per source."""
+    for source in range(9):
+        payload = enh_stat_payload(0, source, 0, 0, 0, 0)
+        world.frames.append(build_frame(payload, _int_value(BleLogSource.INTERNAL), source + 1, xor_checksum))
 
 
 @when(parsers.parse("设备启动，固件版本为 {version:d}"))
@@ -210,6 +225,21 @@ def report_segment_firmware_counters(world: SimpleNamespace, index: int, counter
 @then(parsers.parse("报告显示第 {index:d} 段固件丢帧 {count:d} 帧"))
 def report_segment_firmware_loss(world: SimpleNamespace, index: int, count: int) -> None:
     assert _report(world).segments[index - 1].firmware_lost_frames == count
+
+
+@then("报告按来源统计序号")
+def report_uses_per_source_counters(world: SimpleNamespace) -> None:
+    assert _report(world).sequence.per_source
+
+
+@then("报告按共用序号统计")
+def report_uses_shared_counter(world: SimpleNamespace) -> None:
+    assert not _report(world).sequence.per_source
+
+
+@then("报告的序号契约已证明")
+def report_contract_is_proven(world: SimpleNamespace) -> None:
+    assert _report(world).firmware_contract_known
 
 
 @then(parsers.parse("报告显示固件版本 {version:d}"))
