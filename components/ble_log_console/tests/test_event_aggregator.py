@@ -6,6 +6,7 @@ from __future__ import annotations
 import struct
 from typing import cast
 
+import pytest
 from ble_log_frame_decoder import (
     FLUSH,
     INIT,
@@ -16,6 +17,7 @@ from ble_log_frame_decoder import (
     parse_snapshot,
 )
 from src.backend.analysis.aggregator import CaptureAggregator, frame_size_from_payload
+from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser_events import (
     EnhStatEvent,
     FinalStatEvent,
@@ -27,7 +29,7 @@ from src.backend.analysis.parser_events import (
 )
 from src.backend.models import FRAME_OVERHEAD, BleLogSource, FinalStatEntry, FirmwareCounterSource, InternalSource
 
-from tests.helpers import snapshot_payload
+from tests.helpers import build_frame, snapshot_payload, version_info_payload, xor_checksum
 
 
 def test_raw_bytes_are_recorded_from_reliable_path_not_parser_batch() -> None:
@@ -405,6 +407,60 @@ def test_a_firmware_record_proves_the_contract() -> None:
 
     assert snapshot.firmware_contract_known is True
     assert snapshot.firmware_version == 5
+
+
+def test_v6_version_info_replays_frames_per_source_before_enh_stat() -> None:
+    """VERSION_INFO is shared with v8; version 6 proves legacy per-source SNs."""
+    version = 6
+    stream = b"".join(
+        (
+            build_frame(b"log", int(BleLogSource.LL_TASK), 0, xor_checksum),
+            build_frame(b"log", int(BleLogSource.LL_TASK), 2, xor_checksum),
+            build_frame(b"log", int(BleLogSource.ENCODE), 0, xor_checksum),
+            build_frame(b"log", int(BleLogSource.ENCODE), 1, xor_checksum),
+            build_frame(version_info_payload(0, version=version), int(BleLogSource.INTERNAL), 0, xor_checksum),
+        )
+    )
+    parser = BleLogParser()
+    aggregator = CaptureAggregator()
+    aggregator.consume_parser_batch(parser.feed(stream))
+    aggregator.consume_parser_summary(parser.finalize())
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert snapshot.firmware_version == version
+    assert snapshot.firmware_contract_known
+    assert snapshot.sequence.per_source
+    assert snapshot.sequence.missing_frames == 1
+    assert snapshot.sequence.observed_frames == 5
+    assert snapshot.sequence.duplicate_frames == 0
+
+
+@pytest.mark.parametrize("version", [7, 8])
+def test_non_v6_version_info_keeps_global_accounting(version: int) -> None:
+    """A legacy correction must not reclassify other accepted VERSION_INFO records."""
+    stream = b"".join(
+        (
+            build_frame(b"log", int(BleLogSource.LL_TASK), 0, xor_checksum),
+            build_frame(b"log", int(BleLogSource.ENCODE), 1, xor_checksum),
+            build_frame(version_info_payload(0, version=version), int(BleLogSource.INTERNAL), 2, xor_checksum),
+            build_frame(b"log", int(BleLogSource.LL_TASK), 3, xor_checksum),
+            build_frame(b"log", int(BleLogSource.ENCODE), 4, xor_checksum),
+        )
+    )
+    parser = BleLogParser()
+    aggregator = CaptureAggregator()
+    aggregator.consume_parser_batch(parser.feed(stream))
+    aggregator.consume_parser_summary(parser.finalize())
+
+    snapshot = aggregator.snapshot(1.0)
+
+    assert snapshot.firmware_version == version
+    assert snapshot.firmware_contract_known
+    assert not snapshot.sequence.per_source
+    assert snapshot.sequence.missing_frames == 0
+    assert snapshot.sequence.observed_frames == 5
+    assert snapshot.sequence.duplicate_frames == 0
 
 
 def _enh_stat_event(

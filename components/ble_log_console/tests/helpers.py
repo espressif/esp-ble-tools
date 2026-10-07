@@ -65,13 +65,13 @@ def enh_stat_payload(
     )
 
 
-def version_info_payload(os_ts: int, chip_model: int = 13, chip_revision: int = 302) -> bytes:
-    """VERSION_INFO payload. The chip identity is what the status bar surfaces."""
+def version_info_payload(os_ts: int, chip_model: int = 13, chip_revision: int = 302, *, version: int = 8) -> bytes:
+    """VERSION_INFO payload, shared by legacy and global-counter firmware."""
     return struct.pack(
         "<IBB12s10s10s10s10sHH",
         os_ts,
         _int_value(InternalSource.VERSION_INFO),
-        8,
+        version,
         b"a" * 12,
         b"b" * 10,
         b"c" * 10,

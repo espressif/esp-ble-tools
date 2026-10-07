@@ -2,11 +2,11 @@
 
 # 观察边界：与 sequence_continuity.feature 相同（parser → aggregator → 录制质量报告）。
 #
-# 旧固件（协议版本 <= 7，例如 release v6.0 的版本 3 与 release v6.1 的版本 5）
+# 已核对的 per-source 旧固件（协议版本 3/5/6）
 # 用每个来源自己的计数器 stat_mgr_ctx[src]->frame_sn 编号，来源之间互不相干：
 # 一个来源的号码不能用来判断另一个来源是否丢号，跨来源的号码更不是丢号。
-# Console 从固件写下的记录判断固件属于哪一代（INIT_DONE／FLUSH／ENH_STAT／
-# FINAL_STAT 属于旧固件，SNAPSHOT／TASK_BINDING 属于当前固件）。
+# Console 从 INIT_DONE／FLUSH／ENH_STAT／FINAL_STAT 判断旧固件的按来源计数方式；
+# VERSION_INFO 在两代间共用，解码版本为 6 时按来源记账。TASK_BINDING 不证明契约。
 
 功能: 旧固件的按来源序号连续性
 
@@ -34,6 +34,18 @@
     并且 设备从 LL_TASK 来源按序号 0、2 发送帧
     并且 设备从 ENCODE 来源按序号 0、1 发送帧
     那么 报告显示缺失 1 个序号
+
+  场景: 中途接入 v6 且 VERSION_INFO 先于 ENH_STAT 时保留真实缺号
+    # VERSION_INFO 的结构也用于旧固件；随后 ENH_STAT 不能被错误的首次 global 判定挡住。
+    当 设备从 LL_TASK 来源按序号 0、2 发送帧
+    并且 设备从 ENCODE 来源按序号 0、1 发送帧
+    并且 设备以序号 0 发送固件版本 6 的 VERSION_INFO
+    并且 设备发送一轮覆盖全部来源的 ENH_STAT，序号从 1 开始
+    那么 报告显示固件版本 6
+    并且 报告的序号契约已证明
+    并且 报告按来源统计序号
+    并且 报告显示缺失 1 个序号
+    并且 报告判定不为可分析
 
   场景: FINAL_STAT 之前与之后的两段都计入总账
     # FINAL_STAT 结束一次 flush 区间；它后面没有分段记录的那一段只在收尾时封账。

@@ -368,6 +368,8 @@ If you missed the startup log, press the reset button on the development board. 
 
 The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
 
-The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. When firmware segment statistics are available, overall quality statistics use only complete segments. If continuity cannot be determined, it is shown as unverified.
+The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. Confirmed loss from both complete and partial segments contributes to the overall quality statistics. An incomplete segment boundary alone does not cause a warning. If continuity cannot be determined, it is shown as unverified.
+
+Sequence checks follow the counter model identified by supported firmware records. A standalone VERSION_INFO declaring BLE Log protocol 6 selects separate counters per source, including when recording starts mid-stream. Supported protocol 8 records use a shared counter for regular frames and SNAPSHOT; its standalone VERSION_INFO retains that model.
 
 Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another recording is needed.
