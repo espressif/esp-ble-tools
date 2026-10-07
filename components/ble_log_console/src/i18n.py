@@ -199,6 +199,9 @@ _ZH_CN = {
         "USJ {port}：没有读写权限。请把当前用户加入 dialout 组（sudo usermod -aG dialout $USER），然后重新登录。"
     ),
     "USJ {port} cannot be opened: {detail}": "USJ {port} 无法打开：{detail}",
+    "Live quality check did not finish within {seconds:g} seconds.": "实时质量检查未能在 {seconds:g} 秒内完成。",
+    "Recording I/O did not finish within {seconds:g} seconds; raw saving cannot be confirmed.": "录制 IO 未能在 {seconds:g} 秒内完成收尾；无法确认原始数据已完整保存。",
+    "Recording processes could not be stopped; completion is still pending.": "录制进程未能停止；收尾仍未完成。",
 }
 
 

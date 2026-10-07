@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from src.app import BLELogApp, unique_capture_path
 from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.io.writer import WriterEvent
 from src.backend.models import (
     CaptureFinished,
     FrameStats,
@@ -123,6 +124,7 @@ def test_session_stops_partial_analysis_after_twenty_seconds(tmp_path: Path) -> 
         pipeline.drain_events.return_value = []
         pipeline.io_is_alive.return_value = False
         pipeline.analysis_is_alive.return_value = True
+        pipeline.abort_analysis.side_effect = lambda message: setattr(pipeline.analysis_is_alive, "return_value", False)
         pipeline.wait_with_events.return_value = ([], result)
         session = CaptureSession(
             config,
@@ -248,3 +250,45 @@ def test_capture_report_screen_mounts_with_actions(tmp_path: Path) -> None:
             assert not pilot.app.screen.query("#capture-report-language")
 
     asyncio.run(run())
+
+
+def test_session_does_not_finish_while_failed_io_termination_remains_live(tmp_path: Path) -> None:
+    config = TransportConfig(TransportMode.USB_OUTPUT, "replay", "replay")
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
+        pipeline = pipeline_type.return_value
+        pipeline.drain_events.return_value = []
+        pipeline.check_io_shutdown.return_value = [WriterEvent("error", message="process termination failed")]
+        pipeline.io_is_alive.return_value = True
+        session = CaptureSession(config, tmp_path / "recording.bin")
+        session.start()
+        session.stop()
+
+        messages = session.poll()
+
+        assert not session.finished
+        assert session.report is None
+        assert not any(isinstance(message, CaptureFinished) for message in messages)
+        pipeline.wait_with_events.assert_not_called()
+
+
+def test_session_keeps_analysis_process_owned_if_termination_fails(tmp_path: Path) -> None:
+    config = TransportConfig(TransportMode.USB_OUTPUT, "replay", "replay")
+    now = [0.0]
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
+        pipeline = pipeline_type.return_value
+        pipeline.drain_events.return_value = []
+        pipeline.check_io_shutdown.return_value = []
+        pipeline.io_is_alive.return_value = False
+        pipeline.analysis_is_alive.return_value = True
+        session = CaptureSession(config, tmp_path / "recording.bin", clock=lambda: now[0])
+        session.start()
+        session.poll()
+        now[0] = 20
+
+        messages = session.poll()
+
+        assert not session.finished
+        assert session.report is None
+        assert messages and messages[-1].level == "warning"
+        assert not any(isinstance(message, CaptureFinished) for message in messages)
+        pipeline.wait_with_events.assert_not_called()

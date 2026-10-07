@@ -153,7 +153,7 @@ class TestReaderProcessLoop:
         assert parse_queue.get_nowait() == ReceivedChunk(b"one", 100)
         assert parse_queue.get_nowait() == ReceivedChunk(b"two", 200)
         assert parse_queue.get_nowait() is None
-        assert [event.kind for event in _events(ui_queue)] == ["opened", "opened", "finalized", "stopped"]
+        assert [event.kind for event in _events(ui_queue)] == ["opened", "opened", "stopping", "finalized", "stopped"]
         # Two blocks plus the read that found the replay exhausted, and one more while checking for trailing data.
         assert reader.read_calls == 4
 
@@ -198,7 +198,7 @@ class TestReaderProcessLoop:
         run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event)
 
         kinds = [event.kind for event in _events(ui_queue)]
-        assert kinds == ["opened", "error", "stopped"]
+        assert kinds == ["opened", "error", "stopping", "stopped"]
         assert writer.blocks == []
 
     def test_parse_queue_full_reports_backlog_without_stopping_raw(self) -> None:
@@ -213,11 +213,19 @@ class TestReaderProcessLoop:
 
         events = _events(ui_queue)
         kinds = [event.kind for event in events]
-        assert kinds == ["opened", "opened", "parse_backlog", "finalized", "parse_backlog_summary", "stopped"]
+        assert kinds == [
+            "opened",
+            "opened",
+            "parse_backlog",
+            "stopping",
+            "finalized",
+            "parse_backlog_summary",
+            "stopped",
+        ]
         assert events[2].parse_dropped_chunks == 1
         assert events[2].parse_dropped_bytes == len(b"one")
-        assert events[4].parse_dropped_chunks == 1
-        assert events[4].parse_dropped_bytes == len(b"one")
+        assert events[5].parse_dropped_chunks == 1
+        assert events[5].parse_dropped_bytes == len(b"one")
         assert writer.blocks == [b"one"]
 
     def test_reader_command_resets_target(self) -> None:
@@ -232,7 +240,7 @@ class TestReaderProcessLoop:
         run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event, command_queue=command_queue)
 
         events = _events(ui_queue)
-        assert [event.kind for event in events] == ["opened", "reset_done", "finalized", "stopped"]
+        assert [event.kind for event in events] == ["opened", "reset_done", "stopping", "finalized", "stopped"]
         assert reader.reset_calls == 1
 
     def test_reader_command_reports_reset_unsupported(self) -> None:
@@ -247,5 +255,5 @@ class TestReaderProcessLoop:
         run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event, command_queue=command_queue)
 
         events = _events(ui_queue)
-        assert [event.kind for event in events] == ["opened", "reset_unsupported", "finalized", "stopped"]
+        assert [event.kind for event in events] == ["opened", "reset_unsupported", "stopping", "finalized", "stopped"]
         assert reader.reset_calls == 1
