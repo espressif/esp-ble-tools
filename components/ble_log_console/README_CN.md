@@ -37,11 +37,11 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 ```bash
 # Windows
-ble_log_console_windows_v1.0.5.exe
+ble_log_console_windows_v1.1.0.exe
 
 # Linux
-chmod +x ./ble_log_console_ubuntu_v1.0.5
-./ble_log_console_ubuntu_v1.0.5
+chmod +x ./ble_log_console_ubuntu_v1.1.0
+./ble_log_console_ubuntu_v1.1.0
 ```
 
 3. 在界面中选择语言、传输模式、端口、UART 波特率和日志保存目录，然后点击 **Connect** 开始接收日志。
@@ -50,7 +50,7 @@ chmod +x ./ble_log_console_ubuntu_v1.0.5
 Linux 下首次使用 SPI Bridge 时，请先用 `sudo` 运行一次工具，然后重新拔插 Bridge 设备：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.5
+sudo ./ble_log_console_ubuntu_v1.1.0
 ```
 
 日志会保存到选择的目录。接线方式、固件配置和基本操作请查看 [中文用户指南](./docs/Console-User-Guide-CN.md)。
@@ -174,12 +174,12 @@ python console.py --mode spi --port <PORT>
 
 | 操作 | Linux | Windows |
 | --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu_v1.0.5 --help` | `ble_log_console_windows_v1.0.5.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu_v1.0.5 ports` | `ble_log_console_windows_v1.0.5.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu_v1.0.5` | `ble_log_console_windows_v1.0.5.exe` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.0.5 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.5.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.0.5 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.5.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu_v1.0.5 ls` | `ble_log_console_windows_v1.0.5.exe ls` |
+| 查看帮助 | `./ble_log_console_ubuntu_v1.1.0 --help` | `ble_log_console_windows_v1.1.0.exe --help` |
+| 列出端口 | `./ble_log_console_ubuntu_v1.1.0 ports` | `ble_log_console_windows_v1.1.0.exe ports` |
+| 启动交互模式 | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
+| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
+| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
+| 查看已保存日志 | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### 命令行参数
 
