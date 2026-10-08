@@ -1,5 +1,5 @@
 # BLE Log Console User Guide
-Version: v1.0.5
+Version: v1.1.0
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
@@ -108,22 +108,22 @@ The tool package provides applications for different operating systems. Download
 
 #### 4.1.1 Windows System
 
-On Windows, use `ble_log_console_windows_v1.0.5.exe`. The recommended way to start it is to double-click the icon.
+On Windows, use `ble_log_console_windows_v1.1.0.exe`. The recommended way to start it is to double-click the icon.
 
 > Note: This tool package currently supports `Windows 10` and later.
 
 #### 4.1.2 Linux System
 
-On Linux, use `ble_log_console_ubuntu_v1.0.5`. If the file does not have execute permission, enter the corresponding directory first and run:
+On Linux, use `ble_log_console_ubuntu_v1.1.0`. If the file does not have execute permission, enter the corresponding directory first and run:
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.5
+chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
 If you plan to use SPI Bridge on Linux, run the following command before the first use:
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.5
+sudo ./ble_log_console_ubuntu_v1.1.0
 ```
 
 This command installs the USB access permission rules required by SPI Bridge. After the command finishes, unplug and reconnect the SPI Bridge device once. After that, `sudo` is no longer required for normal use.
@@ -131,7 +131,7 @@ This command installs the USB access permission rules required by SPI Bridge. Af
 Then run the following command to start the program:
 
 ```bash
-./ble_log_console_ubuntu_v1.0.5
+./ble_log_console_ubuntu_v1.1.0
 ```
 
 > Note: This tool package currently supports `Ubuntu 22.04` and later.
@@ -315,7 +315,7 @@ Please check:
 - Whether the device is powered on.
 - Whether the correct firmware is running on the device.
 - Whether the port is already occupied by another program.
-- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.0.5` once and unplugged/reconnected the device after running it.
+- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.1.0` once and unplugged/reconnected the device after running it.
 
 <a id="faq-no-logs"></a>
 

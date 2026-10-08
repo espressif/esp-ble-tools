@@ -43,11 +43,11 @@ The [BLE Log intake skill](./docs/skills/ble-log-intake/SKILL.md) provides a que
 
 ```bash
 # Windows
-ble_log_console_windows_v1.0.5.exe
+ble_log_console_windows_v1.1.0.exe
 
 # Linux
-chmod +x ./ble_log_console_ubuntu_v1.0.5
-./ble_log_console_ubuntu_v1.0.5
+chmod +x ./ble_log_console_ubuntu_v1.1.0
+./ble_log_console_ubuntu_v1.1.0
 ```
 
 3. Select the language, transport mode, port, UART baud rate, and log save directory, then click **Connect**.
@@ -56,7 +56,7 @@ chmod +x ./ble_log_console_ubuntu_v1.0.5
 If you use SPI Bridge on Linux for the first time, run the tool once with `sudo`, then replug the Bridge device:
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.5
+sudo ./ble_log_console_ubuntu_v1.1.0
 ```
 
 Logs are saved to the selected directory. For wiring, firmware configuration, and basic operation, see the [User Guide](./docs/Console-User-Guide-EN.md).
@@ -177,12 +177,12 @@ This section provides additional command-line usage for the tool package. Common
 
 | Operation | Linux | Windows |
 | --- | --- | --- |
-| View help | `./ble_log_console_ubuntu_v1.0.5 --help` | `ble_log_console_windows_v1.0.5.exe --help` |
-| List ports | `./ble_log_console_ubuntu_v1.0.5 ports` | `ble_log_console_windows_v1.0.5.exe ports` |
-| Start interactive mode | `./ble_log_console_ubuntu_v1.0.5` | `ble_log_console_windows_v1.0.5.exe` |
-| Start UART mode | `./ble_log_console_ubuntu_v1.0.5 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.0.5.exe --mode uart --port COM3` |
-| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.0.5 --mode spi --port <PORT>` | `ble_log_console_windows_v1.0.5.exe --mode spi --port <PORT>` |
-| View saved logs | `./ble_log_console_ubuntu_v1.0.5 ls` | `ble_log_console_windows_v1.0.5.exe ls` |
+| View help | `./ble_log_console_ubuntu_v1.1.0 --help` | `ble_log_console_windows_v1.1.0.exe --help` |
+| List ports | `./ble_log_console_ubuntu_v1.1.0 ports` | `ble_log_console_windows_v1.1.0.exe ports` |
+| Start interactive mode | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
+| Start UART mode | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
+| Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
+| View saved logs | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### Command-Line Options
 

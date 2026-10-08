@@ -1,5 +1,5 @@
 # BLE Log Console 使用指南
-版本：v1.0.5
+版本：v1.1.0
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
@@ -107,22 +107,22 @@ Bridge 设备用于将**目标设备产生的 BLE SPI Log** 转发到 PC，目�
 
 #### 4.1.1 Windows 系统
 
-Windows 下使用 `ble_log_console_windows_v1.0.5.exe`。推荐直接双击图标启动。
+Windows 下使用 `ble_log_console_windows_v1.1.0.exe`。推荐直接双击图标启动。
 
 > 注意：本工具包现支持 `Windows 10` 及以上版本。
 
 #### 4.1.2 Linux 系统
 
-Linux 下使用 `ble_log_console_ubuntu_v1.0.5`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+Linux 下使用 `ble_log_console_ubuntu_v1.1.0`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
 
 ```bash
-chmod +x ./ble_log_console_ubuntu_v1.0.5
+chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
 如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
 
 ```bash
-sudo ./ble_log_console_ubuntu_v1.0.5
+sudo ./ble_log_console_ubuntu_v1.1.0
 ```
 
 该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
@@ -130,7 +130,7 @@ sudo ./ble_log_console_ubuntu_v1.0.5
 随后执行以下命令即可启动本程序：
 
 ```bash
-./ble_log_console_ubuntu_v1.0.5
+./ble_log_console_ubuntu_v1.1.0
 ```
 
 > 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
@@ -319,7 +319,7 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.0.5`，并在执行后拔插过设备。
+- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.1.0`，并在执行后拔插过设备。
 
 <a id="faq-no-logs"></a>
 
