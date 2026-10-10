@@ -9,7 +9,7 @@ def test_cli_help_exposes_only_user_transport_modes() -> None:
     result = CliRunner().invoke(cli, ["--help"])
 
     assert result.exit_code == 0
-    assert "[uart|spi|usb]" in result.output
+    assert "[uart|spi|usb|usj]" in result.output
     assert "spi_usb_bridge" not in result.output
 
 
@@ -17,5 +17,5 @@ def test_ports_help_exposes_only_user_transport_modes() -> None:
     result = CliRunner().invoke(cli, ["ports", "--help"])
 
     assert result.exit_code == 0
-    assert "[uart|spi|usb]" in result.output
+    assert "[uart|spi|usb|usj]" in result.output
     assert "spi_usb_bridge" not in result.output

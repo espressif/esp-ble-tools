@@ -4,7 +4,7 @@
 """Shared pyserial plumbing for BLE log transports.
 
 Every transport that receives its bytes from a serial port (UART, USB-SPI
-bridge CDC, USB Output) differs only in identity, tuning and error text; the
+bridge CDC, USB Output, USB Serial/JTAG) differs only in identity, tuning and error text; the
 open/read/drain/close/status cycle and the rx counters are the same. Subclasses
 parameterize the difference and may override ``reset_target``.
 """
@@ -122,12 +122,7 @@ class SerialReader:
     def _open_serial(self) -> serial.Serial:
         if self.open_exclusive:
             try:
-                return serial.Serial(
-                    self._port,
-                    baudrate=self._baudrate,
-                    timeout=self.timeout,
-                    exclusive=True,
-                )
+                return self._open_handle(exclusive=True)
             except (ValueError, serial.SerialException) as error:
                 if _is_lock_refusal(error):
                     # A plain open would succeed and split the byte stream
@@ -135,6 +130,12 @@ class SerialReader:
                     raise
                 # The platform cannot express exclusive access; retry without
                 # the flag. A real open error surfaces unchanged from there.
+        return self._open_handle(exclusive=False)
+
+    def _open_handle(self, *, exclusive: bool) -> serial.Serial:
+        """Open one pyserial handle; subclasses override how the handle is prepared."""
+        if exclusive:
+            return serial.Serial(self._port, baudrate=self._baudrate, timeout=self.timeout, exclusive=True)
         return serial.Serial(self._port, baudrate=self._baudrate, timeout=self.timeout)
 
     def _open_error(self, error: Exception) -> Exception:

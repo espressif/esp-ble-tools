@@ -144,6 +144,7 @@ class TransportMode(str, Enum):
     UART = "uart"
     SPI_USB_BRIDGE = "spi_usb_bridge"
     USB_OUTPUT = "usb_output"
+    USJ = "usj"
 
 
 @dataclass(frozen=True)
