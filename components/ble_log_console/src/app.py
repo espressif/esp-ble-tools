@@ -35,6 +35,7 @@ from src.backend.models import (
     LaunchConfig,
     LogLine,
     StatsUpdated,
+    StreamKindChanged,
     TransportConfig,
     TransportMode,
     UserNotice,
@@ -271,6 +272,7 @@ class BLELogApp(App):
         # The previous recording's chip must not survive into this one: the next
         # SNAPSHOT names the chip that is actually attached now.
         panel.chip_label = ""
+        panel.stream_kind = None
         panel.disconnected = False
         panel.finalizing = False
         stop_button = self.query_one("#stop-review", Button)
@@ -335,6 +337,9 @@ class BLELogApp(App):
         elif msg.int_src == InternalSource.FLUSH:
             log_view = self.query_one(LogView)
             log_view.write_info("Firmware flush detected")
+
+    def on_stream_kind_changed(self, msg: StreamKindChanged) -> None:
+        self.query_one(StatusPanel).stream_kind = msg.kind
 
     def on_log_line(self, msg: LogLine) -> None:
         self.query_one(LogView).write_ascii(msg.text)

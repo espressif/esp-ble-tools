@@ -11,6 +11,7 @@ import sys
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
 SGR_ANSI_RE = re.compile(r"\x1b\[[0-9;:]*m")
+LONE_ESC_RE = re.compile(r"\x1b(?!\[[0-9;:]*m)")
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 WINDOWS_TEXT_TRANSLATION = str.maketrans(
     {
@@ -173,8 +174,9 @@ def normalize_display_text(text: str) -> str:
 
 
 def keep_sgr_ansi_sequences(text: str) -> str:
-    """Keep ANSI SGR styling while removing cursor/control escape sequences."""
-    return ANSI_ESCAPE_RE.sub(lambda match: match.group(0) if SGR_ANSI_RE.fullmatch(match.group(0)) else "", text)
+    """Keep ANSI SGR styling while removing cursor/control escape sequences and any ESC that starts no SGR."""
+    kept = ANSI_ESCAPE_RE.sub(lambda match: match.group(0) if SGR_ANSI_RE.fullmatch(match.group(0)) else "", text)
+    return LONE_ESC_RE.sub("", kept)
 
 
 def strip_ansi_sequences(text: str) -> str:
