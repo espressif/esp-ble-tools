@@ -7,7 +7,7 @@ Version: v1.1.0
 
 ## Introduction
 
-BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports UART and SPI Bridge transport modes.
+BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports the UART, SPI Bridge, USJ (the chip's built-in USB Serial/JTAG port), and USB Output transport modes. This guide walks through UART and SPI Bridge. [4.2.1](#421-select-the-mode-and-port) explains how to select USJ, and the [Configuration Guide](Config-Guide-EN.md#usj) covers its firmware setup. USB Output is described in the [repository README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md).
 
 **Before first use, download the latest stable BLE Log Console tool package:**
 
@@ -146,7 +146,9 @@ After startup, the application displays the following screen:
   <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 60%; max-width: 900px;">
 </p>
 
-First, choose the display language for long messages such as warnings and quality reports, then select the transport mode. Select UART to receive logs through a serial port, or SPI Bridge to receive logs through an SPI Bridge device. After the mode is selected, the application automatically scans the available ports.
+First, choose the display language for long messages such as warnings and quality reports, then select the transport mode. Select UART to receive logs through a serial port, or SPI Bridge to receive logs through an SPI Bridge device. Select USJ when the firmware sends BLE Log through the chip's built-in USB Serial/JTAG port; only ports with USB ID `303A:1001` are listed, and the baud rate does not apply. After the mode is selected, the application automatically scans the available ports.
+
+> In USJ mode, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, the tool releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released, never changes them afterwards, and cannot reset the target with `r`. The operating system or its USB driver can still change these lines while opening the device, so check on your PC whether connecting resets the board.
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
@@ -158,11 +160,13 @@ The recording screen is shown below:
   <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 70%; max-width: 900px;">
 </p>
 
-During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received and saved by the PC. `Frames` is the number of valid log frames recognized by the tool.
+During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received and saved by the PC. `Frames` is the number of valid frames recognized by the tool, including the firmware's periodic status records (INTERNAL frames) as well as regular log frames.
 
 - **Normal:** Both `RX` and `Frames` keep increasing, which means the tool is receiving and recognizing logs normally.
 - **No data received:** `RX` remains 0. The tool shows a warning every 10 seconds. Check the port, cable, and firmware logging configuration.
-- **Received data cannot be decoded:** `RX` increases, but `Frames` remains 0 or stops increasing for 10 seconds. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
+- **Received data cannot be decoded:** `RX` increases, but no regular log frames are decoded for 10 seconds; `Frames` usually remains 0 or stops increasing. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
+- **Plain text instead of BLE Log (UART and USJ):** The status bar shows `PLAIN TEXT`, and a warning appears at once, then every 10 seconds while the text continues. The text is shown and saved, and recording continues. Plain text usually means that the firmware does not send BLE Log to this port. Text at startup, such as boot messages, is expected; the status changes to `BLE LOG` when BLE Log data arrives.
+- **BLE Log identified without regular frames (UART and USJ):** The status bar shows `BLE LOG`, and `Frames` can keep increasing because the firmware's periodic status records are counted too. The warning that no regular log frames were decoded, and the final quality report, show that the recording has no log data to analyze. Check the firmware log configuration instead of the transport.
 
 > During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
 
@@ -172,7 +176,9 @@ During recording, first check `RX` and `Frames` at the bottom of the screen. `RX
 
 When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 in a serial monitor are sent to BLE Log Console together with BLE Log data. The tool displays them in the log area and automatically saves them in the selected log directory. The `_console.log` file is created only when the tool actually receives console-log content.
 
-The first line of each group of console log messages includes the PC receive time, for example `[15:14:54.367]`. When saving the file, the tool removes color and other terminal-control characters and normalizes line endings without modifying the original `.bin` file.
+The first line of each group of console log messages includes the PC receive time, for example `[15:14:54.367]`. When saving the file, the tool removes color and other terminal-control characters and normalizes line endings without modifying the original `.bin` file. If `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
+
+In UART and USJ modes, data that is not part of any BLE Log frame, such as ROM boot messages or a panic dump, is also shown and saved to `_console.log` between `Undecoded data` and `End of undecoded data` markers. Only printable text is kept. A text line appears on screen when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a screen refresh does not split it. A partial frame that may still complete is not shown early; the remaining undecoded tail is shown once when recording stops. This text does not count as log frames.
 
 ### 4.3 Stop the Recording and Check the Result
 
@@ -192,6 +198,8 @@ To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool f
 - `RECORD AGAIN RECOMMENDED`: Valid log frames were recorded, but the data could not be saved correctly or the detected loss rate was high. **Do not submit these files directly.** Resolve the save or transport problem and record again. If this happens repeatedly, contact technical support for assessment.
 
 Only files marked `READY FOR ANALYSIS` or `SAVED WITH WARNINGS` should be submitted directly. If either of the other conclusions appears repeatedly, contact technical support first and provide the matching `report.txt` and `.bin` files when requested for troubleshooting.
+
+In UART and USJ modes, the report also states the identified stream content: plain console text, BLE Log, or unrecognized data, together with how much parsed data was outside BLE Log frames. Identification describes only the data that the quality check parsed. Plain text and data received after BLE Log was identified add a warning to any conclusion. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. All original bytes stay in the `.bin` file; `_console.log` holds at most their printable text. Identifying BLE Log alone does not make a recording ready: without regular log frames, the conclusion is still `CHECK CONFIGURATION`, and the recommendation asks you to check the firmware log configuration. For plain text, the recommendation asks you to check that the firmware sends BLE Log to this port. The recommendation mentions the baud rate only in UART mode.
 
 #### 4.3.3 Find and Submit Recording Files
 

@@ -182,14 +182,15 @@ This section provides additional command-line usage for the tool package. Common
 | Start interactive mode | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
 | Start UART mode | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
 | Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
+| Start USJ mode | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | View saved logs | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### Command-Line Options
 
 | Option | Short | Default | Description |
 | --- | --- | --- | --- |
-| `--mode` | `-m` | `uart` | Transport mode: `uart` or `spi` |
-| `--port` | `-p` | optional | Serial or SPI Bridge port. Omit to open the interactive interface |
+| `--mode` | `-m` | `uart` | Transport mode: `uart`, `spi`, `usb` (USB Output), or `usj` (USB Serial/JTAG) |
+| `--port` | `-p` | optional | Serial, SPI Bridge, USB Output, or USJ port. Omit to open the interactive interface |
 | `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
 | `--log-dir` | `-d` | `./logs` | Recording file save directory |
 | `--debug` | none | off | Show extra debugging information |
@@ -198,10 +199,27 @@ Subcommands:
 
 | Command | Description |
 | --- | --- |
-| `ports` | List UART serial ports and SPI Bridge ports. Use `--mode` to filter |
+| `ports` | List UART, SPI Bridge, USB Output, and USJ ports. Use `--mode` to filter |
 | `ls` | List `ble_log_*.bin` recording files in the specified directory |
 
 `--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.
+
+### USJ Mode
+
+USJ mode receives BLE Log through the chip's built-in USB Serial/JTAG port (USB ID `303A:1001`). The `ports` subcommand and the interactive interface list only ports with that USB ID. The baud rate setting does not apply. The firmware must route BLE Log output to USB Serial/JTAG, which requires an ESP-IDF that offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`; see [USJ configuration](./docs/Config-Guide-EN.md#usj).
+
+On this port, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, BLE Log Console releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released and never changes them afterwards, so the `r` shortcut does not reset the target. The operating system or its USB driver can still change these lines while opening the device. Check on your own host whether opening the port resets the board.
+
+### UART and USJ Console Text
+
+UART and USJ ports can also carry plain console text, such as ROM boot messages or a panic dump. In these modes, bytes that cannot be decoded as BLE Log frames are shown in the log area and saved to `_console.log`, between `Undecoded data` markers (translated for the selected language). Printable ASCII is kept, colors are removed from the file, and line endings are normalized. A text line appears in the log area when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a line is never split by a screen refresh. A partial frame is not shown while it may still complete; any remaining undecoded tail is shown once when recording stops. This text is not counted as BLE Log frames. The raw `.bin` file always keeps every received byte. In every mode, if `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
+
+The tool also identifies what the port carries:
+
+- **Plain text:** The status bar shows `PLAIN TEXT` and a warning appears at once, then every 10 seconds while it continues. Recording and raw saving continue. Plain text usually means that the firmware does not send BLE Log to this port.
+- **BLE Log:** The status bar shows `BLE LOG` after one firmware identity record or three valid frames from known BLE Log sources. Text before that point, such as boot messages, is expected. Identification does not change back when the port is quiet or prints text later.
+
+The quality report states the identified content and how much data arrived outside BLE Log frames. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. All original bytes stay in the `.bin` file; `_console.log` holds at most their printable text. Identification alone does not make a recording ready for analysis: a recording that contains only identity records still requires a configuration check. SPI Bridge and USB Output modes do not show undecoded data or identification.
 
 ## Shortcuts
 
@@ -216,7 +234,7 @@ The following shortcuts are commonly used while the application is running. They
 | `d` | View received log statistics |
 | `m` | View buffer usage |
 | `h` | Show shortcut help |
-| `r` | Reset the target device; not supported in SPI Bridge mode |
+| `r` | Reset the target device; not supported in SPI Bridge, USB Output, or USJ mode |
 
 ## Troubleshooting
 

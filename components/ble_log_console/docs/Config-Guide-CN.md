@@ -8,20 +8,21 @@
 
 本文用于根据实际硬件和资源占用，确定一套可用的 BLE Log sdkconfig 及配套接线。以现有工程的 sdkconfig 为基础，逐项确定传输方式、端口、GPIO 和速率，再通过试录验证。配置项是否可用取决于目标芯片和 SDK 版本。
 
-**阅读顺序：选择 SPI 或 UART → 配置与接线 → 试录验证 → 提交产物。**
+**阅读顺序：选择 SPI、UART 或 USJ → 配置与接线 → 试录验证 → 提交产物。**
 
-[SPI 配置](#spi) · [UART 配置](#uart) · [采集验证](#verification) · [最终产物](#deliverables) · [配置记录](#records) · [缓冲与日志量](#advanced)
+[SPI 配置](#spi) · [UART 配置](#uart) · [USJ 配置](#usj) · [采集验证](#verification) · [最终产物](#deliverables) · [配置记录](#records) · [缓冲与日志量](#advanced)
 
 ## 快速选择
 
-确定接入方式后，只需阅读对应的 SPI 或 UART 章节，再进入采集验证。缓冲和日志级别的调整说明位于文末附录。
+确定接入方式后，只需阅读对应的 SPI、UART 或 USJ 章节，再进入采集验证。缓冲和日志级别的调整说明位于文末附录。
 
 | 顺序 | 使用条件 | 选择与操作 |
 | --- | --- | --- |
 | 1. 优先 SPI | 能接出三根信号线和 GND，SPI 资源空闲以及有 Bridge 设备。 | 外接使用 SPI Log，见 [SPI Log](#spi)。 |
 | 2. 复用现有串口 | SPI 条件不具备；板载 USB 转串口连接的 UART 可用于BLE Log，且支持所需波特率。 | 使用 UART，通常无需额外接线，见 [UART Log](#uart)。仅用于普通日志打印的串口也可考虑复用。 |
-| 3. 外接转串口工具 | 无法复用板载连接，但有可用 UART 和可接出的 TX、GND。 | 外接 USB 转串口工具，见 [UART Log](#uart)。 |
-| 4. 暂无可用方式 | 上述条件均不满足。 | 基于前面已核对的 sdkconfig 和硬件限制，联系技术支持继续评估可行配置。 |
+| 3. 使用芯片内置 USB Serial/JTAG 端口（USJ） | 无法复用板载串口连接；电脑连接的是芯片内置 USB Serial/JTAG 端口；构建固件所用的 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`；且控制台、esp_trace 和 OpenThread RCP 都不需要占用该端口。 | 使用 USJ，无需额外接线，见 [USJ Log](#usj)。固件未提供该选项时，USJ 不可用，继续看下一行。 |
+| 4. 外接转串口工具 | 无法复用板载连接，但有可用 UART 和可接出的 TX、GND。 | 外接 USB 转串口工具，见 [UART Log](#uart)。 |
+| 5. 暂无可用方式 | 上述条件均不满足。 | 基于前面已核对的 sdkconfig 和硬件限制，联系技术支持继续评估可行配置。 |
 
 <a id="spi"></a>
 
@@ -77,7 +78,7 @@ SPI 带宽更充足，适合采集较大量的日志，便于快速定位问题�
 
 | 确认项 | 说明 | 处理建议 |
 | --- | --- | --- |
-| 板载 USB 转串口 | 部分板卡已将 UART 接到 USB 转串口芯片，插 USB 即可连接电脑；核对实际连接的 UART 和 TX GPIO。原生 USB 接口不等同于 USB 转串口。 | 有可用板载连接时优先复用。 |
+| 板载 USB 转串口 | 部分板卡已将 UART 接到 USB 转串口芯片，插 USB 即可连接电脑；核对实际连接的 UART 和 TX GPIO。芯片原生 USB 接口不等同于 USB 转串口；芯片内置 USB Serial/JTAG 端口见 [USJ Log](#usj)。 | 有可用板载连接时优先复用。 |
 | 串口用途 | 仅打印普通日志时可考虑复用；同时用于命令输入、外设或工装通信时，需确认是否冲突。 | 日志专用串口可使用本工具；有业务通信时优先选其他串口。 |
 | 波特率支持 | USB 转串口设备需要支持固件设置的波特率。不确定时，可查询芯片型号对应的资料，或运行下方脚本检查。 | 建议先确认是否支持 3000000，再以相同波特率进行试录。 |
 | 外接位置（无板载连接时） | 核对可用 UART 的 TX GPIO 和 GND 位置；UART 编号与 GPIO 编号需分别确认。 | 接入外部 USB 转串口工具。 |
@@ -114,57 +115,98 @@ BLE Log 建议优先使用 `3000000` 波特率，以便传输更多日志。这�
 
 **下一步：[采集验证](#verification)。**
 
+<a id="usj"></a>
+
+## 3. USJ Log 配置（取决于固件支持）
+
+USJ 通过芯片内置的 USB Serial/JTAG 端口发送 BLE Log，该端口通常也是烧录用的 USB 口。USJ 无需额外接线，也没有波特率设置。
+
+> **USJ 需要固件支持。** 只有构建固件所用的 ESP-IDF 在 BLE Log 外设选项中提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 时，才能使用 USJ。没有该选项时，这个固件不能使用 USJ，请改用 [SPI](#spi) 或 [UART](#uart)。
+
+USJ 不同于 USB Output 模式。USB Output 在 USB OTG 外设上使用 TinyUSB（`CONFIG_BLE_LOG_PRPH_USB`，USB ID `303A:10B1`），是本指南不涉及的另一种模式；USJ 使用芯片内置的 USB Serial/JTAG 控制器，USB ID 保持 `303A:1001`。
+
+### 3.1 接入条件
+
+| 确认项 | 条件与说明 | 处理建议 |
+| --- | --- | --- |
+| 固件选项 | **当前芯片和 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。**<br>芯片需带有 USB Serial/JTAG 控制器。 | 没有该选项时选择 SPI 或 UART。 |
+| 端口占用 | **USB Serial/JTAG 端口只能由 BLE Log 使用。**<br>主控制台或第二控制台、esp_trace、OpenThread RCP 使用 USB Serial/JTAG，或关闭了 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` 时，该选项会被隐藏，menuconfig 中显示 “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”。带 USB Serial/JTAG 的芯片上，第二控制台默认使用该端口。 | 仅当原问题仍可复现时，才把这些功能移出该端口；否则选择 SPI 或 UART。 |
+| USB 连接 | **电脑直接连接芯片内置的 USB Serial/JTAG 端口。**<br>电脑上显示的 USB ID 为 `303A:1001`。经过板载 USB 转串口芯片的 USB 口属于 UART 连接。 | 使用 `ports --mode usj` 或 USJ 模式下的端口列表核对，二者只列出 `303A:1001` 端口。 |
+| 端口上的文本 | BLE Log 启动前打印的启动信息，以及崩溃转储等部分 ROM 输出，仍可能出现在该端口。 | 属于正常现象。工具会显示并保存这些文本；文本持续出现时给出警告，录制继续。 |
+
+### 3.2 配置和连接
+
+| 配置项／连接 | 设置值 | 对应连接／说明 |
+| --- | --- | --- |
+| `CONFIG_BLE_LOG_ENABLED` | `y` | 启用 BLE Log。 |
+| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | 不选择 | 主控制台改用其他通道，例如默认的 UART0。 |
+| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | 关闭 USB Serial/JTAG 上的第二控制台。 |
+| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | 选择 USB Serial/JTAG 输出。仅在固件提供该选项且端口空闲时显示。 |
+| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | 保持默认 `2048` | 发送环形缓冲大小（字节），范围 2048 到 10240，且不小于 `CONFIG_BLE_LOG_POOL_TRANS_SIZE`。增大缓冲不会提高链路速率。 |
+| USB | 无配置项 | 芯片内置 USB Serial/JTAG 端口 → 电脑。 |
+
+USJ 链路速率不可配置，是否足以承载所需日志量，以试录和质量报告为准。
+
+### 3.3 连接工具
+
+编译、烧录后，关闭占用该端口的串口监视器，在 BLE Log Console 中选择 **USJ** 和 USB ID 为 `303A:1001` 的端口；命令行对应 `--mode usj`。USJ 没有波特率，不需要运行 UART 波特率探测脚本。
+
+> 工具不会发送复位时序。打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，可能使板卡复位。请在业务可以中断时连接，并在这台电脑上确认连接是否会导致复位。
+
+**下一步：[采集验证](#verification)。**
+
 <a id="verification"></a>
 
-## 3. 采集验证
+## 4. 采集验证
 
-### 3.1 核对配置并试录
+### 4.1 核对配置并试录
 
-重新配置并编译后，核对实际生效的 sdkconfig：输出方式与所选方案一致，GPIO 与接线一致；UART 还需核对端口和波特率。烧录本次构建的固件后再试录。
+重新配置并编译后，核对实际生效的 sdkconfig：输出方式与所选方案一致，GPIO 与接线一致；UART 还需核对端口和波特率；USJ 还需确认已选择 USB Serial/JTAG 输出，且没有控制台占用该端口。烧录本次构建的固件后再试录。
 
 先运行 BLE 业务并短时录制，确认 **RX 和 Frames 持续增加、原有业务正常**，再点击 **Stop & Review** 检查质量报告。
 
 > **试录也要检查业务表现。** 日志可能影响运行时序。若业务或问题表现改变，先评估配置对复现的影响；偶发问题短时间未出现，不代表已消失。
 
-### 3.2 判断采集结果
+### 4.2 判断采集结果
 
 | 结果 | 处理建议 |
 | --- | --- |
 | RX 一直是 0 | 检查固件是否运行并启用日志、端口、接线和供电。 |
 | RX 增加，但 Frames 不增加 | 检查传输模式、UART 波特率，以及固件与工具是否匹配。 |
+| 状态栏显示“纯文本”（UART 或 USJ） | 端口上收到的是普通控制台文本，而不是 BLE Log。BLE Log 启动前出现文本属于正常现象；警告反复出现时，检查固件是否把 BLE Log 输出到这个端口。录制会继续。 |
 | 报告为“可用于分析” | 进入正式复现；仍需确认采集包含本次问题需要的日志。 |
 | 报告为“已保存，但存在警告” | 根据报告判断是否影响本次定位，保留报告和日志。 |
 | 报告为“检查配置”或“建议重新录制” | 按报告处理；反复出现时联系技术支持，提供对应报告和日志。 |
 
-### 3.3 正式复现
+### 4.3 正式复现
 
 正式采集时，**先开始录制，再触发问题**。记下问题发生的大致时间和当时操作。
 
 <a id="deliverables"></a>
 
-## 4. 最终产物与提交文件
+## 5. 最终产物与提交文件
 
-### 4.1 交付清单
+### 5.1 交付清单
 
 一次完整交付包括本次录制文件、与固件匹配的 log database，以及[配置记录](#records)。
 
-| 产物 | UART | SPI | 用途 |
-| --- | --- | --- | --- |
-| `ble_log_*.bin` | **必需** | **必需** | 原始 BLE Log，包含全部 `part` 分片。 |
-| `ble_log_*_report.txt` | **必需** | **必需** | 同次录制的质量报告。 |
-| `ble_log_*_console.log` | 生成时提供 | 当前不生成 | 普通串口日志的可读副本，不能替代 `.bin`。 |
-| `ble_log_database/` 整个目录 | 有压缩日志时必需 | 有压缩日志时必需 | 压缩日志解析所需的数据库。 |
-| `sdkconfig` 与配置记录 | **必需** | **必需** | 本次固件配置、版本及复现信息，见[配置记录](#records)。 |
+| 产物 | UART | USJ | SPI | 用途 |
+| --- | --- | --- | --- | --- |
+| `ble_log_*.bin` | **必需** | **必需** | **必需** | 原始 BLE Log，包含全部 `part` 分片。 |
+| `ble_log_*_report.txt` | **必需** | **必需** | **必需** | 同次录制的质量报告。 |
+| `ble_log_*_console.log` | 生成时提供 | 生成时提供 | 当前不生成 | 普通串口日志和文本的可读副本，不能替代 `.bin`。 |
+| `ble_log_database/` 整个目录 | 有压缩日志时必需 | 有压缩日志时必需 | 有压缩日志时必需 | 压缩日志解析所需的数据库。 |
+| `sdkconfig` 与配置记录 | **必需** | **必需** | **必需** | 本次固件配置、版本及复现信息，见[配置记录](#records)。 |
 
-### 4.2 录制文件位置
+### 5.2 录制文件位置
 
 录制文件位于启动录制时选择的保存目录，默认是启动工具时所在目录下的 `logs/`。工具退出时会打印实际文件路径。
 
 - `.bin`、`_report.txt` 和已生成的 `_console.log` 保存在同一目录，应来自**同次录制**。
 - 拆分录制需包含**全部 `part` 文件**。
-- UART 只有收到重定向的普通日志时才生成 `_console.log`；使用其他 UART 或没有此类日志时，可能没有该文件。
+- UART 和 USJ 只有收到普通文本时才生成 `_console.log`，包括重定向的普通日志，以及启动信息等不属于 BLE Log 帧的文本；没有此类文本时，可能没有该文件。
 
-### 4.3 Log database 位置与版本
+### 5.3 Log database 位置与版本
 
 > **Log database 必须来自实际烧录固件的同一次构建。** 它由固件构建生成，不在电脑端工具的录制目录中。
 
@@ -180,7 +222,7 @@ BLE Log 建议优先使用 `3000000` 波特率，以便传输更多日志。这�
 
 <a id="records"></a>
 
-## 5. 配置记录
+## 6. 配置记录
 
 将验证通过的 sdkconfig 与接线、接收设置一并保存，作为后续采集配置。调整硬件或配置后应重新验证。
 
@@ -188,13 +230,13 @@ BLE Log 建议优先使用 `3000000` 波特率，以便传输更多日志。这�
 | --- | --- |
 | 版本 | 目标芯片、SDK、BLE Log Console 和 Bridge 固件版本（使用 Bridge 时）。 |
 | 固件配置 | 本次构建并通过采集验证的 sdkconfig。 |
-| 硬件连接 | SPI / UART、GPIO 与接线位置。 |
+| 硬件连接 | SPI / UART / USJ、GPIO 与接线位置。 |
 | 接收设置 | 电脑端模式、端口及 UART 波特率。 |
 | 采集结果 | 日志文件、质量报告、问题发生时间及操作。 |
 
 <a id="advanced"></a>
 
-## 附录：其他配置（SPI / UART 通用）
+## 附录：其他配置（SPI / UART / USJ 通用）
 
 Buffer 配置用于缓冲待发送的日志、应对短时突发，帮助减少日志丢失；log level 和日志来源开关用于控制日志数量与内容。
 
@@ -219,6 +261,6 @@ Buffer 配置用于缓冲待发送的日志、应对短时突发，帮助减少�
 | NimBLE 日志级别 / Bluedroid 各模块 Trace Level | 控制 Host 日志的详细程度。 | 例如 `CONFIG_BT_NIMBLE_LOG_LEVEL_INFO`、`CONFIG_BT_LOG_HCI_TRACE_LEVEL_EVENT`。更详细的日志通常占用更多带宽。 |
 | `CONFIG_BLE_LOG_HOST_LOG`、`CONFIG_BLE_LOG_LL_ENABLED`、`CONFIG_BLE_LOG_HCI_LOG_ENABLED` | 控制 Host、链路层和 HCI 日志来源。 | 关闭来源可能减少日志量，也可能丢失定位信息；适用条件取决于协议栈和 Controller 配置。 |
 
-切换 SPI / UART 不会自动恢复已有日志级别。日志范围应覆盖待定位的问题，调整后的传输质量通过试录确认。
+切换 SPI / UART / USJ 不会自动恢复已有日志级别。日志范围应覆盖待定位的问题，调整后的传输质量通过试录确认。
 
 [ble-log-console]: https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable
