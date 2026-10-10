@@ -17,6 +17,7 @@ from textual.containers import Center, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
+from src.backend.analysis.stream_identification import StreamIdentity, StreamKind
 from src.backend.models import (
     CaptureReport,
     CaptureSegmentSummary,
@@ -25,6 +26,7 @@ from src.backend.models import (
     FirmwareLossSummary,
     SequenceSummary,
     TransportConfig,
+    TransportMode,
     format_bitrate,
     format_bytes,
     resolve_source_name,
@@ -34,6 +36,37 @@ from src.frontend.rendering import terminal_border_style
 from src.i18n import get_language, tr
 
 _QUALITY_RECAPTURE_THRESHOLD = 0.05
+
+_STREAM_KIND_LABELS = {
+    StreamKind.NO_INPUT: "No data",
+    StreamKind.UNRECOGNIZED: "Unrecognized data",
+    StreamKind.LIKELY_TEXT: "Plain console text",
+    StreamKind.BLE_LOG: "BLE Log",
+}
+
+
+def _content_warnings(identity: StreamIdentity | None, regular_frames: int) -> list[str]:
+    """What the identified stream content means for this recording; empty where no identity is kept."""
+
+    if identity is None:
+        return []
+    if identity.kind is StreamKind.LIKELY_TEXT:
+        return [
+            "Received data looks like plain console text, not BLE Log frames; check that the firmware sends BLE Log to this port."
+        ]
+    if identity.kind is not StreamKind.BLE_LOG:
+        return []
+    warnings = []
+    if regular_frames == 0:
+        warnings.append(
+            "BLE Log was identified, but no regular log frames were decoded; check the firmware log configuration."
+        )
+    if identity.evidence.gap_bytes_after_ble > 0:
+        warnings.append(
+            "Data outside BLE Log frames arrived after BLE Log was identified; all original bytes are kept in the raw "
+            "file, and the console log holds at most their displayable text."
+        )
+    return warnings
 
 
 def _firmware_source_rates(firmware_loss: tuple[FirmwareLossSummary, ...]) -> tuple[tuple[int, float], ...]:
@@ -60,6 +93,7 @@ def build_capture_report(
     duration_sec: float,
     console_log_paths: tuple[Path, ...],
     report_path: Path,
+    console_log_error: str | None = None,
 ) -> CaptureReport:
     snapshot = result.final_snapshot
     regular_frames = snapshot.regular_frames if snapshot is not None else 0
@@ -105,6 +139,10 @@ def build_capture_report(
     )
     reasons: list[str] = []
     warnings: list[str] = []
+    stream_identity = snapshot.stream_identity if snapshot is not None else None
+    findings = _content_warnings(stream_identity, regular_frames)
+    if console_log_error is not None:
+        findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
 
     if result.writer_error is not None or not result.writer_finalized:
         reasons.append("Raw recording could not be finalized safely.")
@@ -118,6 +156,7 @@ def build_capture_report(
         reasons.append("No raw recording data was saved.")
         verdict = CaptureVerdict.RECAPTURE
     else:
+        warnings.extend(findings)
         if not parser_complete:
             warnings.append("Live parsing did not cover all saved raw data; sequence integrity is not fully verified.")
         if result.reader_error:
@@ -153,6 +192,13 @@ def build_capture_report(
         else:
             verdict = CaptureVerdict.READY
             reasons.append("Raw data was finalized, BLE Log frames were decoded, and no continuity loss was observed.")
+    # Content and console.log findings accompany every verdict without deciding one that a raw save or parse
+    # failure already decided.
+    for warning in findings:
+        if warning not in warnings:
+            warnings.append(warning)
+        if warning not in reasons:
+            reasons.append(warning)
 
     peak_bits_per_sec = snapshot.stats.transport.max_rx_bits_per_sec if snapshot is not None else 0.0
     return CaptureReport(
@@ -188,6 +234,8 @@ def build_capture_report(
         warnings=tuple(warnings),
         firmware_version=snapshot.firmware_version if snapshot is not None else None,
         firmware_contract_known=snapshot.firmware_contract_known if snapshot is not None else True,
+        stream_identity=stream_identity,
+        console_log_error=console_log_error,
     )
 
 
@@ -230,6 +278,23 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
     )
 
 
+def _no_regular_frames_advice(report: CaptureReport) -> str:
+    """Identified content explains the missing frames better than a link check; only UART has a baud rate."""
+
+    content_warnings = _content_warnings(report.stream_identity, report.regular_frames)
+    if content_warnings:
+        return content_warnings[0]
+    if report.transport_config.mode is TransportMode.UART:
+        return (
+            "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
+            "configuration, then record again."
+        )
+    return (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log "
+        "configuration, then record again."
+    )
+
+
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
     language = language or get_language()
     separator = "：" if language == "zh_CN" else ": "
@@ -237,10 +302,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
     advice = {
         CaptureVerdict.READY: "This recording is ready to submit for analysis.",
         CaptureVerdict.WARNING: "The data can be submitted for analysis, but recording quality warnings were detected.",
-        CaptureVerdict.CHECK_CONFIGURATION: (
-            "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
-            "configuration, then record again."
-        ),
+        CaptureVerdict.CHECK_CONFIGURATION: _no_regular_frames_advice(report),
         CaptureVerdict.RECAPTURE: "Check the connection and configuration, then record again.",
     }[report.verdict]
     report_path = (
@@ -281,6 +343,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
                 f"  {tr('Possible sequence loss' if report.parser_complete else 'Full-recording sequence continuity', language=language)}"
                 f"{separator}{sequence_result}"
             ),
+            *_stream_content_summary(report, language, separator),
             "",
             f"{tr('Detailed report', language=language)}{separator}{report_path}",
             f"{tr('Raw data file', language=language)}{separator}{raw_path}",
@@ -365,18 +428,24 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     observed_loss = tuple(row for row in report.firmware_loss if row.frames or row.bytes)
     if observed_loss:
         for loss in observed_loss:
-            if language == "zh_CN":
-                lines.append(f"  {resolve_source_name(loss.source)}：{loss.frames} 帧，{format_bytes(loss.bytes)}")
-            else:
-                lines.append(
-                    f"  {resolve_source_name(loss.source)}: {loss.frames} frame(s), {format_bytes(loss.bytes)}"
-                )
+            row = tr(
+                "{source}: {frames} frame(s), {bytes}",
+                language=language,
+                source=resolve_source_name(loss.source),
+                frames=loss.frames,
+                bytes=format_bytes(loss.bytes),
+            )
+            lines.append(f"  {row}")
     else:
         lines.append(f"  {tr('None observed after baseline.', language=language)}")
+
+    lines.extend(_stream_content_section(report, language, separator))
 
     lines.extend(("", f"{tr('Files', language=language)}{separator.rstrip()}"))
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
+    if report.console_log_error:
+        lines.append(f"  {field('Console log error', report.console_log_error)}")
     if report.report_write_error:
         not_saved = f"{tr('NOT SAVED', language=language)} ({report.report_write_error})"
         lines.append(f"  {field('Report', not_saved)}")
@@ -392,6 +461,38 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _stream_content_summary(report: CaptureReport, language: str, separator: str) -> tuple[str, ...]:
+    identity = report.stream_identity
+    if identity is None:
+        return ()
+    label = tr(_STREAM_KIND_LABELS[identity.kind], language=language)
+    return (f"  {tr('Stream content', language=language)}{separator}{label}",)
+
+
+def _stream_content_section(report: CaptureReport, language: str, separator: str) -> list[str]:
+    """Identification evidence; it describes only the bytes the parser saw, so its scope is stated."""
+
+    identity = report.stream_identity
+    if identity is None:
+        return []
+    evidence = identity.evidence
+
+    def field(label: str, value: object) -> str:
+        return f"  {tr(label, language=language)}{separator}{value}"
+
+    scope = "all saved data" if report.parser_complete else "parsed portion only"
+    return [
+        "",
+        f"{tr('Stream content', language=language)}{separator.rstrip()}",
+        field("Identified as", tr(_STREAM_KIND_LABELS[identity.kind], language=language)),
+        field("Evidence scope", tr(scope, language=language)),
+        field("Parsed bytes outside BLE Log frames", evidence.gap_bytes),
+        field("Of which after BLE Log was identified", evidence.gap_bytes_after_ble),
+        field("Frames from known BLE Log sources", evidence.known_frames),
+        field("Firmware identity records", evidence.identity_records),
+    ]
 
 
 def _status(sequence: SequenceSummary) -> str:
@@ -509,44 +610,39 @@ def _format_rate(rate: float | None, language: str) -> str:
 
 def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
     if segment.complete:
-        status = "完整" if language == "zh_CN" else "complete"
+        status = tr("complete", language=language)
     elif segment.final_stat_seen:
-        status = "开头不完整" if language == "zh_CN" else "partial start"
+        status = tr("partial start", language=language)
     else:
-        status = "结尾不完整" if language == "zh_CN" else "partial end"
+        status = tr("partial end", language=language)
 
     if not segment.received_frames:
-        sequence_text = "无数据" if language == "zh_CN" else "no data"
+        sequence_text = tr("no data", language=language)
     elif segment.sequence_uncertain:
-        sequence_text = "无法确认" if language == "zh_CN" else "uncertain"
+        sequence_text = tr("uncertain", language=language)
     elif segment.sequence_missing_frames:
-        sequence_text = (
-            f"缺失 {segment.sequence_missing_frames} 帧"
-            if language == "zh_CN"
-            else f"{segment.sequence_missing_frames} missing"
-        )
+        sequence_text = tr("{frames} missing", language=language, frames=segment.sequence_missing_frames)
     else:
-        sequence_text = "连续" if language == "zh_CN" else "continuous"
-
-    if language == "zh_CN":
-        if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
-            firmware = f"固件写入失败 {segment.firmware_lost_frames} 帧"
-        elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
-            firmware = f"固件缓冲丢帧（ENH_STAT）{segment.firmware_lost_frames} 帧"
-        else:
-            firmware = "无固件统计"
-        return f"  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；{firmware}；SN {sequence_text}"
+        sequence_text = tr("continuous", language=language)
 
     if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
-        firmware = f"firmware failed {segment.firmware_lost_frames} frame(s)"
+        firmware = tr("firmware failed {frames} frame(s)", language=language, frames=segment.firmware_lost_frames)
     elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
-        firmware = f"firmware buffer loss (ENH_STAT) {segment.firmware_lost_frames} frame(s)"
+        firmware = tr(
+            "firmware buffer loss (ENH_STAT) {frames} frame(s)", language=language, frames=segment.firmware_lost_frames
+        )
     else:
-        firmware = "no firmware counters"
-    return (
-        f"  Segment {segment.index} ({status}): received {segment.received_frames} frame(s); "
-        f"{firmware}; SN {sequence_text}"
+        firmware = tr("no firmware counters", language=language)
+    row = tr(
+        "Segment {index} ({status}): received {frames} frame(s); {firmware}; SN {sequence}",
+        language=language,
+        index=segment.index,
+        status=status,
+        frames=segment.received_frames,
+        firmware=firmware,
+        sequence=sequence_text,
     )
+    return f"  {row}"
 
 
 def write_capture_report(report: CaptureReport, language: str | None = None) -> None:

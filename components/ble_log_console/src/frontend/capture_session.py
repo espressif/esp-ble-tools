@@ -144,18 +144,19 @@ class CaptureSession:
         return self._event_presenter.handle_events(events) + self._finish_result(result)
 
     def _finish_result(self, result: CapturePipelineResult) -> tuple[Message, ...]:
-        self._event_presenter.finish()
+        messages: list[Message] = list(self._event_presenter.finish())
         ended_at = datetime.now().astimezone()
+        presenter_state = self._event_presenter.state
         report = build_capture_report(
             result,
             self._transport_config,
             started_at=self._started_at,
             ended_at=ended_at,
             duration_sec=self._clock() - self._started_monotonic,
-            console_log_paths=self._event_presenter.state.saved_console_log_paths,
+            console_log_paths=presenter_state.saved_console_log_paths,
             report_path=report_path_for_capture(self._output_path),
+            console_log_error=presenter_state.console_log_error,
         )
-        messages: list[Message] = []
         try:
             write_capture_report(report)
         except OSError as e:
