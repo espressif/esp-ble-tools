@@ -17,7 +17,19 @@ from src.backend.support.transport.base import PortIssue, PortIssueKind
 from src.i18n import tr
 
 
-def _describe_port_issue(issue: PortIssue) -> str:
+def _describe_serial_port_issue(issue: PortIssue) -> str:
+    """Wording for an enumerated serial port, which the user fixes with a group."""
+    if issue.kind is PortIssueKind.PERMISSION_DENIED:
+        return tr(
+            "USJ {port}: no read/write permission. "
+            "Add your user to the dialout group (sudo usermod -aG dialout $USER), then log in again.",
+            port=issue.port,
+        )
+    return tr("USJ {port} cannot be opened: {detail}", port=issue.port, detail=issue.detail)
+
+
+def _describe_bridge_issue(issue: PortIssue) -> str:
+    """Wording for a USB device, which the user fixes with a USB access rule."""
     if issue.kind is PortIssueKind.PERMISSION_DENIED:
         return tr(
             "SPI Bridge (bus {bus}, addr {address}): no USB access permission. "
@@ -33,6 +45,12 @@ def _describe_port_issue(issue: PortIssue) -> str:
         address=issue.address,
         detail=issue.detail,
     )
+
+
+def _describe_port_issue(issue: PortIssue) -> str:
+    if issue.port is not None:
+        return _describe_serial_port_issue(issue)
+    return _describe_bridge_issue(issue)
 
 
 def describe_port_issues(issues: Sequence[PortIssue]) -> list[str]:

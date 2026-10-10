@@ -29,6 +29,7 @@ from src.backend.support.transport import TransportReader
 from src.backend.support.transport.spi_usb_bridge_transport import SPI_USB_RX_BUFFER_SIZE, SpiUsbBridgeCdcTransport
 from src.backend.support.transport.uart_transport import UART_BLOCK_SIZE, UART_READ_TIMEOUT, UartTransport
 from src.backend.support.transport.usb_output_transport import USB_OUTPUT_BLOCK_SIZE, UsbOutputTransport
+from src.backend.support.transport.usj_transport import USJ_BLOCK_SIZE, UsjTransport
 
 pty = pytest.importorskip("pty", reason="POSIX-only virtual terminal; Windows has no pty module")
 
@@ -184,3 +185,37 @@ def test_usb_output_keeps_reading_after_a_reset_request(pty_port: PtyPort) -> No
         assert _read_exactly(reader, 15) == b"still-connected"
     finally:
         reader.close()
+
+
+def test_usj_open_rejects_a_port_held_by_another_reader(pty_port: PtyPort) -> None:
+    holder = serial.Serial(pty_port.path, baudrate=PTY_BAUDRATE, timeout=0.1, exclusive=True)
+    reader = UsjTransport(pty_port.path, PTY_BAUDRATE)
+    try:
+        with pytest.raises(serial.SerialException, match="Could not exclusively lock"):
+            reader.open()
+
+        assert reader.status().opened is False
+        pty_port.feed(b"owned-by-holder")
+        assert holder.read(16) == b"owned-by-holder"
+    finally:
+        reader.close()
+        holder.close()
+
+
+def test_usj_reader_opens_reads_and_closes_on_a_tty_without_modem_lines(pty_port: PtyPort) -> None:
+    """Releasing DTR/RTS after open must not break a tty that has no modem lines."""
+    reader = UsjTransport(pty_port.path, PTY_BAUDRATE)
+    reader.open()
+    try:
+        assert reader.block_size == USJ_BLOCK_SIZE
+        assert reader.mode is TransportMode.USJ
+        assert reader.status().healthy is True
+        assert reader.reset_target() is False
+
+        pty_port.feed(b"usj")
+        assert _read_exactly(reader, 3) == b"usj"
+    finally:
+        reader.close()
+
+    assert reader.status().opened is False
+    assert reader.status().rx_bytes == 3

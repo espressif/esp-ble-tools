@@ -46,6 +46,9 @@ class PortIssue:
     # such as a missing libusb backend.
     bus: int | None = None
     address: int | None = None
+    # The device path of an enumerated serial port (USJ); a USB device is
+    # identified by bus and address instead.
+    port: str | None = None
     detail: str = ""
 
 

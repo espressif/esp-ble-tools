@@ -153,6 +153,10 @@ _ZH_CN = {
     "SPI Bridge (bus {bus}, addr {address}) cannot be opened: {detail}": (
         "SPI Bridge（bus {bus}，addr {address}）无法打开：{detail}"
     ),
+    "USJ {port}: no read/write permission. Add your user to the dialout group (sudo usermod -aG dialout $USER), then log in again.": (
+        "USJ {port}：没有读写权限。请把当前用户加入 dialout 组（sudo usermod -aG dialout $USER），然后重新登录。"
+    ),
+    "USJ {port} cannot be opened: {detail}": "USJ {port} 无法打开：{detail}",
 }
 
 
