@@ -8,6 +8,8 @@ It supports:
 
 - **UART**: receive BLE logs from a serial port.
 - **SPI Bridge**: receive BLE logs through a BLE Log SPI USB Bridge device.
+- **USJ**: receive BLE logs through the chip's built-in USB Serial/JTAG port.
+- **USB Output**: receive BLE logs through a firmware-provided TinyUSB CDC-ACM port.
 
 ## Supported Platforms
 
@@ -212,14 +214,14 @@ On this port, the DTR and RTS lines control the chip's reset and boot mode. Whil
 
 ### UART and USJ Console Text
 
-UART and USJ ports can also carry plain console text, such as ROM boot messages or a panic dump. In these modes, bytes that cannot be decoded as BLE Log frames are shown in the log area and saved to `_console.log`, between `Undecoded data` markers (translated for the selected language). Printable ASCII is kept, colors are removed from the file, and line endings are normalized. A text line appears in the log area when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a line is never split by a screen refresh. A partial frame is not shown while it may still complete; any remaining undecoded tail is shown once when recording stops. This text is not counted as BLE Log frames. The raw `.bin` file always keeps every received byte. In every mode, if `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
+UART and USJ ports can also carry plain console text, such as ROM boot messages or a panic dump. In these modes, bytes that cannot be decoded as BLE Log frames are shown in the log area and saved to `_console.log`, between `Undecoded data` markers (translated for the selected language). Printable ASCII is kept, colors are removed from the file, and line endings are normalized. A text line appears in the log area when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a line is never split by a screen refresh. A partial frame is not shown while it may still complete; any remaining undecoded tail is shown once when recording stops. This text is not counted as BLE Log frames. The raw `.bin` file keeps every byte the tool receives; if a transport or save failure is reported, the file may be incomplete. In every mode, if `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
 
 The tool also identifies what the port carries:
 
-- **Plain text:** The status bar shows `PLAIN TEXT` and a warning appears at once, then every 10 seconds while it continues. Recording and raw saving continue. Plain text usually means that the firmware does not send BLE Log to this port.
+- **Plain text:** The status bar shows `PLAIN TEXT` and a warning appears at once, then every 10 seconds while it continues. Recording continues. Plain text usually means that the firmware does not send BLE Log to this port.
 - **BLE Log:** The status bar shows `BLE LOG` after one firmware identity record or three valid frames from known BLE Log sources. Text before that point, such as boot messages, is expected. Identification does not change back when the port is quiet or prints text later.
 
-The quality report states the identified content and how much data arrived outside BLE Log frames. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. All original bytes stay in the `.bin` file; `_console.log` holds at most their printable text. Identification alone does not make a recording ready for analysis: a recording that contains only identity records still requires a configuration check. SPI Bridge and USB Output modes do not show undecoded data or identification.
+The quality report states the identified content and how much data arrived outside BLE Log frames. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. Bytes outside BLE Log frames are written to the `.bin` file rather than to the console log, which holds at most their printable text; a write failure can leave them out of the file, and the quality report states whether the raw recording was confirmed complete. Identification alone does not make a recording ready for analysis: a recording that contains only identity records still requires a configuration check. SPI Bridge and USB Output modes do not show undecoded data or identification.
 
 ## Shortcuts
 

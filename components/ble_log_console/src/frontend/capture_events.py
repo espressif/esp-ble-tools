@@ -79,7 +79,11 @@ def _flush_and_close_text_file(file_obj: IO[str]) -> None:
             pass
         else:
             os.fsync(fd)
-    finally:
+    except BaseException:
+        with contextlib.suppress(OSError):
+            file_obj.close()
+        raise
+    else:
         file_obj.close()
 
 
@@ -298,13 +302,9 @@ class CaptureEventPresenter:
             self._shown_stream_kind = kind
             messages.append(StreamKindChanged(kind))
             if kind is StreamKind.BLE_LOG and previous is StreamKind.LIKELY_TEXT:
-                messages.append(
-                    UserNotice(
-                        tr("BLE Log frames identified; earlier text is kept in the console log and raw file.")
-                        if self._console_log_error is None
-                        else tr("BLE Log frames identified; earlier text is kept in the raw file.")
-                    )
-                )
+                # The text is shown and recorded, but whether it reached a file is only known once the
+                # recording ends, so this notice must not promise one.
+                messages.append(UserNotice(tr("BLE Log frames identified; earlier text is shown as undecoded data.")))
         if (
             kind is StreamKind.LIKELY_TEXT
             and not self._debug
@@ -362,7 +362,8 @@ class CaptureEventPresenter:
             return (
                 UserNotice(
                     tr(
-                        "Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.",
+                        "Realtime parser skipped {chunks} chunks ({bytes}); live stats are incomplete. "
+                        "The quality report states whether the raw recording was finalized completely.",
                         chunks=event.parse_dropped_chunks,
                         bytes=format_bytes(event.parse_dropped_bytes),
                     ),
@@ -518,7 +519,7 @@ class CaptureEventPresenter:
         self._saved_console_log_paths.append(self._console_log_path)
 
     def _console_log_failed(self, error: OSError) -> None:
-        """Stop the console.log sink after its first error; the UI text and the raw recording continue."""
+        """Stop the console.log sink after its first error; the UI text keeps displaying and raw recording is unaffected."""
 
         if self._console_log_error is None:
             self._console_log_error = str(error)
@@ -535,8 +536,8 @@ class CaptureEventPresenter:
         return [
             UserNotice(
                 tr(
-                    "Console log could not be saved: {message}. The text is still shown here and the raw recording "
-                    "continues.",
+                    "Console log could not be saved: {message}. The text is still shown here; this error does not "
+                    "itself stop raw recording.",
                     message=self._console_log_error,
                 ),
                 level="warning",

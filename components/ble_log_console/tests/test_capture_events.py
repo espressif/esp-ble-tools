@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import io
 import os
@@ -26,7 +27,12 @@ from src.backend.models import (
     UserNotice,
 )
 from src.backend.support.transport import TransportStatus
-from src.frontend.capture_events import CaptureEventPresenter, _default_text_file_factory, console_log_part_path
+from src.frontend.capture_events import (
+    CaptureEventPresenter,
+    _default_text_file_factory,
+    _flush_and_close_text_file,
+    console_log_part_path,
+)
 from src.i18n import set_language
 
 
@@ -400,8 +406,139 @@ def test_console_fsync_failure_stops_only_the_console_sink(
     ]
     notices = [message for message in messages if isinstance(message, UserNotice)]
     assert len(notices) == 1 and error in notices[0].text
+    assert "this error does not itself stop raw recording" in notices[0].text
+    assert "recording continues" not in notices[0].text
     assert opened[0].read_text().endswith("first\n" if rotating else "later 2\n")
     assert presenter.state.saved_console_log_paths == (opened[0],)
+
+
+@pytest.mark.parametrize("rotating", [False, True], ids=["stop", "rotation"])
+@pytest.mark.parametrize("first_operation", ["flush", "fsync"])
+def test_console_close_failure_keeps_the_earlier_storage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rotating: bool, first_operation: str
+) -> None:
+    files = []
+    primary = OSError(errno.ENOSPC, f"console {first_operation} refused")
+
+    class DoubleFailure(io.StringIO):
+        close_calls = 0
+
+        def flush(self):
+            if first_operation == "flush":
+                raise primary
+            super().flush()
+
+        def fileno(self):
+            return 888
+
+        def close(self):
+            self.close_calls += 1
+            if self.close_calls == 1:
+                raise OSError(errno.EIO, "secondary console close failure")
+            super().close()
+
+    def factory(path):
+        file = DoubleFailure()
+        files.append(file)
+        return file
+
+    def sync(fd):
+        assert fd == 888
+        raise primary
+
+    monkeypatch.setattr(os, "fsync", sync)
+    presenter = CaptureEventPresenter(
+        tmp_path / "recording.bin",
+        text_file_factory=factory,
+        clock=lambda: 0.0,
+        console_part_max_bytes=1 if rotating else 1024,
+    )
+    messages = list(presenter.handle_event(AggregatorUpdate(console_events=(_redir("first\n"),))))
+    messages.extend(presenter.handle_event(AggregatorUpdate(console_events=(_redir("later\n"),))))
+    messages.extend(presenter.finish())
+
+    assert presenter.state.console_log_error == str(primary)
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 1 and str(primary) in notices[0]
+    assert "secondary" not in notices[0]
+    assert [message.text.split("  ", 1)[-1] for message in messages if isinstance(message, LogLine)] == [
+        "first",
+        "later",
+    ]
+    assert len(files) == 1 and files[0].closed and files[0].close_calls == 2
+    assert presenter.finish() == ()
+    assert presenter.state.console_log_error == str(primary)
+
+
+def test_buffered_console_write_then_close_failure_keeps_first_disk_error(tmp_path: Path) -> None:
+    class FailingDisk(io.RawIOBase):
+        writes = 0
+
+        def writable(self):
+            return True
+
+        def write(self, data):
+            self.writes += 1
+            if self.writes == 1:
+                raise OSError(errno.ENOSPC, "first disk write")
+            raise OSError(errno.EIO, "second disk write during close")
+
+    disk = FailingDisk()
+    text = io.TextIOWrapper(io.BufferedWriter(disk))
+    presenter = CaptureEventPresenter(
+        tmp_path / "recording.bin", text_file_factory=lambda path: text, clock=lambda: 0.0
+    )
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("buffered text\n"),)))
+    messages = presenter.finish()
+
+    assert presenter.state.console_log_error == "[Errno 28] first disk write"
+    assert disk.writes >= 2 and disk.closed and text.closed
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 1 and "first disk write" in notices[0] and "second disk write" not in notices[0]
+    assert presenter.finish() == ()
+
+
+def test_console_cleanup_preserves_primary_cancellation() -> None:
+    cancelled = asyncio.CancelledError("cancelled during flush")
+
+    class CancelledFile(io.StringIO):
+        close_attempted = False
+
+        def flush(self):
+            raise cancelled
+
+        def close(self):
+            self.close_attempted = True
+            super().close()
+            raise OSError(errno.EIO, "secondary cleanup error")
+
+    file = CancelledFile()
+    with pytest.raises(asyncio.CancelledError) as caught:
+        _flush_and_close_text_file(file)
+    assert caught.value is cancelled and file.closed and file.close_attempted
+
+
+def test_parse_backlog_notices_point_at_the_report_instead_of_promising_a_saved_file(tmp_path: Path) -> None:
+    presenter = CaptureEventPresenter(tmp_path / "ble_log.bin")
+
+    messages = presenter.handle_event(
+        ReaderProcessEvent(
+            kind="parse_backlog",
+            message=(
+                "Realtime parser queue stayed full during shutdown; the raw recording is unaffected, "
+                "final live stats may be incomplete."
+            ),
+        )
+    )
+    messages += presenter.handle_event(
+        ReaderProcessEvent(kind="parse_backlog_summary", parse_dropped_chunks=2, parse_dropped_bytes=4096)
+    )
+
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 2
+    assert "raw recording is unaffected" in notices[0]
+    assert "raw recording was finalized completely" in notices[1]
+    assert all("saved" not in notice.lower() for notice in notices)
 
 
 @pytest.mark.parametrize("rotating", [False, True], ids=["stop", "rotation"])

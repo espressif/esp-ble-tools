@@ -106,16 +106,26 @@ def _spawn_stderr_with_real_fileno() -> Iterator[None]:
 
 
 def unique_capture_path(log_dir: Path, now: datetime | None = None) -> Path:
-    """Return a timestamped capture path without overwriting an earlier run."""
+    """Reserve a timestamped capture path without overwriting an earlier run."""
 
     timestamp = (now or datetime.now().astimezone()).strftime("%Y%m%d_%H%M%S")
     base = log_dir / f"ble_log_{timestamp}.bin"
     candidate = base
     index = 2
-    while any(log_dir.glob(f"{candidate.stem}*")):
+    while True:
+        # An earlier run may have left only a part, report or console log under this stem.
+        if not any(log_dir.glob(f"{candidate.stem}*")):
+            try:
+                # The writer opens the file only when the first block arrives, so claim the name
+                # here. Checking without creating left the name free for a second recording in the
+                # same second, and whichever of them wrote later truncated the other's file.
+                with open(candidate, "xb"):
+                    pass
+                return candidate
+            except FileExistsError:
+                pass
         candidate = base.with_name(f"{base.stem}_{index:03d}{base.suffix}")
         index += 1
-    return candidate
 
 
 def _chip_label(msg: InternalFrameDecoded) -> str:
@@ -206,8 +216,7 @@ class BLELogApp(App):
     def on_mount(self) -> None:
         self.set_interval(PIPELINE_POLL_INTERVAL_SEC, self._poll_pipeline)
         if self._transport_config is not None:
-            self._resolve_output_path()
-            self._start_capture()
+            self._begin_capture()
         else:
             self.push_screen(LaunchScreen(default_log_dir=self._log_dir), callback=self._on_launch_result)
 
@@ -245,7 +254,26 @@ class BLELogApp(App):
             return
         self._transport_config = config.transport_config
         self._log_dir = config.log_dir
-        self._resolve_output_path()
+        self._begin_capture()
+
+    def _begin_capture(self) -> None:
+        try:
+            self._resolve_output_path()
+        except OSError as error:
+            self.push_screen(
+                LaunchScreen(
+                    default_log_dir=self._log_dir,
+                    default_transport_config=self._transport_config,
+                    start_error=tr(
+                        "Recording could not start in {path}: {message}. "
+                        "Choose another log directory or fix the storage error, then select Connect.",
+                        path=self._log_dir,
+                        message=error,
+                    ),
+                ),
+                callback=self._on_launch_result,
+            )
+            return
         self._start_capture()
 
     def _resolve_output_path(self) -> None:
@@ -434,5 +462,4 @@ class BLELogApp(App):
         if action != "again":
             self.exit()
             return
-        self._resolve_output_path()
-        self._start_capture()
+        self._begin_capture()

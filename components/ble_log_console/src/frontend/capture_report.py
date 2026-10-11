@@ -45,8 +45,13 @@ _STREAM_KIND_LABELS = {
 }
 
 
-def _content_warnings(identity: StreamIdentity | None, regular_frames: int) -> list[str]:
-    """What the identified stream content means for this recording; empty where no identity is kept."""
+def _content_warnings(identity: StreamIdentity | None, regular_frames: int, *, raw_complete: bool) -> list[str]:
+    """What the identified stream content means for this recording; empty where no identity is kept.
+
+    ``raw_complete`` decides whether the wording may state that the counted frame-external bytes
+    reached the raw file: a recording whose writer failed, or whose transport ended unexpectedly,
+    cannot say that.
+    """
 
     if identity is None:
         return []
@@ -62,10 +67,17 @@ def _content_warnings(identity: StreamIdentity | None, regular_frames: int) -> l
             "BLE Log was identified, but no regular log frames were decoded; check the firmware log configuration."
         )
     if identity.evidence.gap_bytes_after_ble > 0:
-        warnings.append(
-            "Data outside BLE Log frames arrived after BLE Log was identified; all original bytes are kept in the raw "
-            "file, and the console log holds at most their displayable text."
-        )
+        if raw_complete:
+            warnings.append(
+                "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to "
+                "the raw file, and the console log holds at most their displayable text."
+            )
+        else:
+            warnings.append(
+                "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not "
+                "be confirmed complete, so those bytes may not all be in the raw file, and the console log "
+                "holds at most their displayable text."
+            )
     return warnings
 
 
@@ -102,8 +114,15 @@ def build_capture_report(
     firmware_loss = snapshot.capture_firmware_loss if snapshot is not None else ()
     firmware_written_bytes = snapshot.capture_firmware_written_bytes if snapshot is not None else 0
     firmware_lost_bytes = snapshot.capture_firmware_lost_bytes if snapshot is not None else 0
+    # Writer finalization alone does not prove that the file holds every recorded byte: a transport can
+    # lose bytes before the writer sees them, whether or not that loss surfaces as a reader error. Either
+    # failure must clear the completeness claim that the report and its summary make.
     raw_complete = bool(
-        result.raw_bytes > 0 and result.raw_paths and result.writer_error is None and result.writer_finalized
+        result.raw_bytes > 0
+        and result.raw_paths
+        and result.writer_error is None
+        and result.writer_finalized
+        and result.reader_error is None
     )
     parser_complete = bool(
         snapshot is not None
@@ -140,7 +159,7 @@ def build_capture_report(
     reasons: list[str] = []
     warnings: list[str] = []
     stream_identity = snapshot.stream_identity if snapshot is not None else None
-    findings = _content_warnings(stream_identity, regular_frames)
+    findings = _content_warnings(stream_identity, regular_frames, raw_complete=raw_complete)
     if console_log_error is not None:
         findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
 
@@ -281,7 +300,9 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
 def _no_regular_frames_advice(report: CaptureReport) -> str:
     """Identified content explains the missing frames better than a link check; only UART has a baud rate."""
 
-    content_warnings = _content_warnings(report.stream_identity, report.regular_frames)
+    content_warnings = _content_warnings(
+        report.stream_identity, report.regular_frames, raw_complete=report.raw_complete
+    )
     if content_warnings:
         return content_warnings[0]
     if report.transport_config.mode is TransportMode.UART:
@@ -323,7 +344,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
         (
             f"{tr('Recommendation', language=language)}{separator}{tr(advice, language=language)}",
             "",
-            f"{tr('Saved data (reliable)' if report.raw_complete else 'Saved data (incomplete)', language=language)}{separator.rstrip()}",
+            f"{tr('Saved data (confirmed)' if report.raw_complete else 'Saved data (not confirmed)', language=language)}{separator.rstrip()}",
             f"  {tr('Duration', language=language)}{separator}{report.duration_sec:.1f} s",
             (
                 f"  {tr('Raw', language=language)}{separator}"
@@ -368,7 +389,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         *(f"  - {reason}" for reason in _localized_reasons(report, language)),
         "",
         f"{tr('Reliability', language=language)}{separator.rstrip()}",
-        f"  {field('Saved raw data', tr('Complete and reliable' if report.raw_complete else 'Incomplete', language=language))}",
+        f"  {field('Saved raw data', tr('Confirmed' if report.raw_complete else 'Not confirmed', language=language))}",
         f"  {field('Automated quality check', tr('all saved data' if report.parser_complete else 'parsed portion only', language=language))}",
         f"  {field('Parser coverage summary', _coverage_text(report, language))}",
         "",
