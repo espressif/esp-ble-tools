@@ -152,6 +152,8 @@ First, choose the display language for long messages such as warnings and qualit
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 
+If the tool cannot create the log directory or reserve a recording file, it returns to setup without starting a recording. The screen keeps the attempted mode, port, UART baud rate, and directory, and displays the storage error. Choose another log directory or resolve the storage error, then click **Connect** again. You can also press `q` to exit. This recovery also applies when you start with a port specified on the command line.
+
 #### 4.2.2 Confirm That Logs Are Being Received
 
 The recording screen is shown below:
@@ -181,6 +183,8 @@ The first line of each group of console log messages includes the PC receive tim
 #### 4.3.1 Stop & Review
 
 To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves the remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit.
+
+If **Record Again** cannot reserve the next recording file, setup displays the storage error and lets you change the directory before retrying. The previous recording files, saved paths, report, and log display remain unchanged until a new file is reserved successfully. A refused start does not create a new quality report.
 
 > Note: While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
 

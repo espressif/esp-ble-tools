@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-"""Launch Screen — interactive setup for transport mode, port, and log directory.
+"""Interactive setup for transport mode, port, and log directory.
 
-Shown on startup when --port is not provided via CLI.
+Shown at startup without --port or when the log directory or recording file cannot be created.
 Dismissed with a LaunchConfig result on Connect, or None on quit.
 """
 
@@ -119,6 +119,13 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     #no-ports-label {
         color: $warning;
     }
+
+    #start-error {
+        width: 100%;
+        height: auto;
+        color: $error;
+        margin-top: 1;
+    }
     __WINDOWS_SAFE_WIDGET_CSS__
     __LAUNCH_WIDTH_STABLE_CSS__
     """.replace("__BORDER_STYLE__", terminal_border_style())
@@ -142,18 +149,33 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         Binding("ctrl+c", "quit", show=False, priority=True),
     ]
 
-    def __init__(self, default_log_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        default_log_dir: Path | None = None,
+        *,
+        default_transport_config: TransportConfig | None = None,
+        start_error: str | None = None,
+    ) -> None:
         super().__init__()
-        self._mode = DEFAULT_TRANSPORT_MODE
+        self._default_transport_config = default_transport_config
+        self._start_error = start_error
+        self._mode = default_transport_config.mode if default_transport_config is not None else DEFAULT_TRANSPORT_MODE
         self._default_log_dir = default_log_dir or Path.cwd() / "logs"
 
     def compose(self) -> ComposeResult:
         mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
         port_options = self._list_port_options()
-        baud_options = [(str(b), b) for b in BAUD_RATES]
+        config = self._default_transport_config
+        baudrate = config.baudrate if config is not None else DEFAULT_BAUD_RATE
+        baud_options = [(str(b), b) for b in sorted(set(BAUD_RATES) | {baudrate})]
+        port = port_options[0][1] if port_options else Select.NULL
+        if config is not None:
+            port = config.port
 
         with Vertical(id="launch-container"):
             yield Label("BLE Log Console Setup", id="launch-title")
+            if self._start_error is not None:
+                yield Label(self._start_error, markup=False, id="start-error")
 
             yield Label("Language / 语言", classes="field-label")
             yield Select(
@@ -169,13 +191,13 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             yield Label("Port", classes="field-label")
             with Horizontal(classes="field-row"):
                 if port_options:
-                    yield Select(port_options, value=port_options[0][1], id="port-select")
+                    yield Select(port_options, value=port, id="port-select")
                 else:
                     yield Select([], id="port-select", prompt="No ports detected")
                 yield Button("Refresh", id="refresh-btn")
 
             yield Label("Baud Rate", classes="field-label", id="baud-label")
-            yield Select(baud_options, value=DEFAULT_BAUD_RATE, id="baud-select")
+            yield Select(baud_options, value=baudrate, id="baud-select")
 
             yield Label("Log Directory", classes="field-label")
             with Horizontal(classes="field-row"):
@@ -202,7 +224,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     def transport_mode_changed(self, event: Select.Changed) -> None:
         """Refresh visible setup fields when the transport mode changes."""
         mode = self._mode_from_select_value(event.value)
-        if mode is None:
+        if mode is None or mode is self._mode:
             return
         self._mode = mode
         self._refresh_port_options()
@@ -226,14 +248,14 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     def _refresh_port_options(self) -> None:
         port_options = self._list_port_options()
-
         try:
             port_select = self.query_one("#port-select", Select)
         except NoMatches:
             return
+        selected = port_select.value
         port_select.set_options(port_options)
         if port_options:
-            port_select.value = port_options[0][1]
+            port_select.value = selected if selected in [value for _, value in port_options] else port_options[0][1]
 
     def _truncate_port_label(self, label: str) -> str:
         if len(label) <= MAX_PORT_LABEL_LEN:
@@ -241,6 +263,9 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         return f"{label[: MAX_PORT_LABEL_LEN - 3]}..."
 
     def _display_port_options(self, port_options: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        config = self._default_transport_config
+        if config is not None and self._mode is config.mode and config.port not in [value for _, value in port_options]:
+            port_options = [*port_options, (config.label, config.port)]
         if self._mode is TransportMode.SPI_USB_BRIDGE:
             return [
                 (self._truncate_port_label(f"{SPI_PORT_LABEL_PREFIX}  {value}"), value) for _, value in port_options
@@ -282,7 +307,12 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             self.notify(tr("Please select a port"), severity="error")
             return
 
-        baudrate = DEFAULT_BAUD_RATE
+        default_config = self._default_transport_config
+        baudrate = (
+            default_config.baudrate
+            if default_config is not None and self._mode is default_config.mode
+            else DEFAULT_BAUD_RATE
+        )
         if self._mode is TransportMode.UART:
             baud_select = self.query_one("#baud-select", Select)
             if baud_select.value is Select.NULL:

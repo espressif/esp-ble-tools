@@ -147,6 +147,7 @@ _ZH_CN = {
     "Please select a port": "请选择端口",
     "Please select a baud rate": "请选择波特率",
     "Unsupported transport mode: {mode}\nPlease select the right mode.": "不支持的传输模式：{mode}\n请选择正确的模式。",
+    "Recording could not start in {path}: {message}. Choose another log directory or fix the storage error, then select Connect.": "无法在 {path} 开始录制：{message}。请选择其他日志目录或排除存储错误，然后点击 Connect。",
     "Reader error: {message}": "读取器错误：{message}",
     "Writer error: {message}": "写入器错误：{message}",
     "Parser error: {message}": "解析器错误：{message}",
