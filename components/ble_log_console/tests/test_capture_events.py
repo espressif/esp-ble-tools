@@ -3,9 +3,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import errno
+import io
+import os
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from ble_log_frame_decoder import InternalLogInfo
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, InternalFrameUpdate
 from src.backend.analysis.parser_events import RedirEvent
@@ -22,7 +27,12 @@ from src.backend.models import (
     UserNotice,
 )
 from src.backend.support.transport import TransportStatus
-from src.frontend.capture_events import CaptureEventPresenter, console_log_part_path
+from src.frontend.capture_events import (
+    CaptureEventPresenter,
+    _default_text_file_factory,
+    _flush_and_close_text_file,
+    console_log_part_path,
+)
 from src.i18n import set_language
 
 
@@ -153,8 +163,8 @@ def test_redir_text_writes_console_log_and_emits_complete_lines(tmp_path: Path) 
     output_path = tmp_path / "ble_log.bin"
     presenter = CaptureEventPresenter(output_path)
 
-    first = presenter.handle_event(AggregatorUpdate(redir_events=(_redir("hello ", 1000),)))
-    second = presenter.handle_event(AggregatorUpdate(redir_events=(_redir("world\npartial", 2000),)))
+    first = presenter.handle_event(AggregatorUpdate(console_events=(_redir("hello ", 1000),)))
+    second = presenter.handle_event(AggregatorUpdate(console_events=(_redir("world\npartial", 2000),)))
 
     assert first == ()
     assert len(second) == 1
@@ -170,8 +180,8 @@ def test_redir_console_log_is_plain_text_across_chunks(tmp_path: Path) -> None:
     output_path = tmp_path / "ble_log.bin"
     presenter = CaptureEventPresenter(output_path)
 
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir("\x1b[0;", 1000),)))
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir("32mgreen\x1b[0m\r\nnext\rline\t\x01", 2000),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("\x1b[0;", 1000),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("32mgreen\x1b[0m\r\nnext\rline\t\x01", 2000),)))
     presenter.close()
 
     stamp = _timestamp(2000).encode()
@@ -182,7 +192,7 @@ def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
     output_path = tmp_path / "ble_log.bin"
     presenter = CaptureEventPresenter(output_path)
 
-    messages = presenter.handle_event(AggregatorUpdate(redir_events=(_redir("one\ntwo\nthree\n", 2000),)))
+    messages = presenter.handle_event(AggregatorUpdate(console_events=(_redir("one\ntwo\nthree\n", 2000),)))
 
     assert len(messages) == 1
     assert isinstance(messages[0], LogLine)
@@ -191,7 +201,7 @@ def test_redir_text_batches_complete_lines_for_ui(tmp_path: Path) -> None:
 
 def test_redir_text_without_newline_is_shown_on_next_snapshot(tmp_path: Path) -> None:
     presenter = CaptureEventPresenter(tmp_path / "ble_log.bin")
-    assert presenter.handle_event(AggregatorUpdate(redir_events=(_redir("prompt> ", 2000),))) == ()
+    assert presenter.handle_event(AggregatorUpdate(console_events=(_redir("prompt> ", 2000),))) == ()
 
     messages = presenter.handle_event(
         AggregatorSnapshot(
@@ -213,8 +223,8 @@ def test_redir_console_log_rotates_with_legacy_name(tmp_path: Path) -> None:
     output_path = tmp_path / "ble_log.bin"
     presenter = CaptureEventPresenter(output_path, console_part_max_bytes=3)
 
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir("abc\n"),)))
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir("de\n"),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("abc\n"),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("de\n"),)))
     presenter.close()
 
     assert console_log_part_path(output_path, 1).read_text().endswith("abc\n")
@@ -335,7 +345,7 @@ def test_reader_opened_becomes_connected_notice(tmp_path: Path) -> None:
 def test_final_result_closes_console_log_and_marks_disconnected(tmp_path: Path) -> None:
     output_path = tmp_path / "ble_log.bin"
     presenter = CaptureEventPresenter(output_path)
-    presenter.handle_event(AggregatorUpdate(redir_events=(_redir("hello\n"),)))
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("hello\n"),)))
 
     presenter.finish()
 
@@ -351,3 +361,314 @@ def test_finish_without_console_log_marks_disconnected(tmp_path: Path) -> None:
 
     assert presenter.state.disconnected
     assert presenter.state.saved_console_log_paths == ()
+
+
+@pytest.mark.parametrize("rotating", [False, True], ids=["stop", "rotation"])
+def test_console_fsync_failure_stops_only_the_console_sink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rotating: bool
+) -> None:
+    files = []
+    opened = []
+    sync_calls = []
+    real_fsync = os.fsync
+
+    def factory(path):
+        opened.append(path)
+        file = _default_text_file_factory(path)
+        files.append(file)
+        return file
+
+    def refuse_console_sync(fd):
+        if any(not file.closed and file.fileno() == fd for file in files):
+            sync_calls.append(fd)
+            raise OSError(errno.EIO, "console sync refused")
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", refuse_console_sync)
+    presenter = CaptureEventPresenter(
+        tmp_path / "ble_log.bin", text_file_factory=factory, console_part_max_bytes=1 if rotating else 1024
+    )
+    messages = list(presenter.handle_event(AggregatorUpdate(console_events=(_redir("first\n"),))))
+    for index in range(3):
+        messages.extend(presenter.handle_event(AggregatorUpdate(console_events=(_redir(f"later {index}\n"),))))
+    messages.extend(presenter.finish())
+    error = presenter.state.console_log_error
+    assert error == "[Errno 5] console sync refused"
+    assert presenter.finish() == ()
+    assert presenter.state.console_log_error == error
+    assert len(sync_calls) == 1
+    assert len(opened) == 1 and all(file.closed for file in files)
+    assert [message.text.split("  ", 1)[-1] for message in messages if isinstance(message, LogLine)] == [
+        "first",
+        "later 0",
+        "later 1",
+        "later 2",
+    ]
+    notices = [message for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 1 and error in notices[0].text
+    assert "this error does not itself stop raw recording" in notices[0].text
+    assert "recording continues" not in notices[0].text
+    assert opened[0].read_text().endswith("first\n" if rotating else "later 2\n")
+    assert presenter.state.saved_console_log_paths == (opened[0],)
+
+
+@pytest.mark.parametrize("rotating", [False, True], ids=["stop", "rotation"])
+@pytest.mark.parametrize("first_operation", ["flush", "fsync"])
+def test_console_close_failure_keeps_the_earlier_storage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rotating: bool, first_operation: str
+) -> None:
+    files = []
+    primary = OSError(errno.ENOSPC, f"console {first_operation} refused")
+
+    class DoubleFailure(io.StringIO):
+        close_calls = 0
+
+        def flush(self):
+            if first_operation == "flush":
+                raise primary
+            super().flush()
+
+        def fileno(self):
+            return 888
+
+        def close(self):
+            self.close_calls += 1
+            if self.close_calls == 1:
+                raise OSError(errno.EIO, "secondary console close failure")
+            super().close()
+
+    def factory(path):
+        file = DoubleFailure()
+        files.append(file)
+        return file
+
+    def sync(fd):
+        assert fd == 888
+        raise primary
+
+    monkeypatch.setattr(os, "fsync", sync)
+    presenter = CaptureEventPresenter(
+        tmp_path / "recording.bin",
+        text_file_factory=factory,
+        clock=lambda: 0.0,
+        console_part_max_bytes=1 if rotating else 1024,
+    )
+    messages = list(presenter.handle_event(AggregatorUpdate(console_events=(_redir("first\n"),))))
+    messages.extend(presenter.handle_event(AggregatorUpdate(console_events=(_redir("later\n"),))))
+    messages.extend(presenter.finish())
+
+    assert presenter.state.console_log_error == str(primary)
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 1 and str(primary) in notices[0]
+    assert "secondary" not in notices[0]
+    assert [message.text.split("  ", 1)[-1] for message in messages if isinstance(message, LogLine)] == [
+        "first",
+        "later",
+    ]
+    assert len(files) == 1 and files[0].closed and files[0].close_calls == 2
+    assert presenter.finish() == ()
+    assert presenter.state.console_log_error == str(primary)
+
+
+def test_buffered_console_write_then_close_failure_keeps_first_disk_error(tmp_path: Path) -> None:
+    class FailingDisk(io.RawIOBase):
+        writes = 0
+
+        def writable(self):
+            return True
+
+        def write(self, data):
+            self.writes += 1
+            if self.writes == 1:
+                raise OSError(errno.ENOSPC, "first disk write")
+            raise OSError(errno.EIO, "second disk write during close")
+
+    disk = FailingDisk()
+    text = io.TextIOWrapper(io.BufferedWriter(disk))
+    presenter = CaptureEventPresenter(
+        tmp_path / "recording.bin", text_file_factory=lambda path: text, clock=lambda: 0.0
+    )
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("buffered text\n"),)))
+    messages = presenter.finish()
+
+    assert presenter.state.console_log_error == "[Errno 28] first disk write"
+    assert disk.writes >= 2 and disk.closed and text.closed
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 1 and "first disk write" in notices[0] and "second disk write" not in notices[0]
+    assert presenter.finish() == ()
+
+
+def test_console_cleanup_preserves_primary_cancellation() -> None:
+    cancelled = asyncio.CancelledError("cancelled during flush")
+
+    class CancelledFile(io.StringIO):
+        close_attempted = False
+
+        def flush(self):
+            raise cancelled
+
+        def close(self):
+            self.close_attempted = True
+            super().close()
+            raise OSError(errno.EIO, "secondary cleanup error")
+
+    file = CancelledFile()
+    with pytest.raises(asyncio.CancelledError) as caught:
+        _flush_and_close_text_file(file)
+    assert caught.value is cancelled and file.closed and file.close_attempted
+
+
+def test_parse_backlog_notices_point_at_the_report_instead_of_promising_a_saved_file(tmp_path: Path) -> None:
+    presenter = CaptureEventPresenter(tmp_path / "ble_log.bin")
+
+    messages = presenter.handle_event(
+        ReaderProcessEvent(
+            kind="parse_backlog",
+            message=(
+                "Realtime parser queue stayed full during shutdown; the raw recording is unaffected, "
+                "final live stats may be incomplete."
+            ),
+        )
+    )
+    messages += presenter.handle_event(
+        ReaderProcessEvent(kind="parse_backlog_summary", parse_dropped_chunks=2, parse_dropped_bytes=4096)
+    )
+
+    notices = [message.text for message in messages if isinstance(message, UserNotice)]
+    assert len(notices) == 2
+    assert "raw recording is unaffected" in notices[0]
+    assert "raw recording was finalized completely" in notices[1]
+    assert all("saved" not in notice.lower() for notice in notices)
+
+
+@pytest.mark.parametrize("rotating", [False, True], ids=["stop", "rotation"])
+@pytest.mark.parametrize("descriptor_error", [io.UnsupportedOperation, OSError])
+def test_descriptorless_text_factory_still_closes_without_a_save_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rotating: bool, descriptor_error: type[OSError]
+) -> None:
+    files = []
+
+    class NoDescriptor(io.StringIO):
+        def fileno(self):
+            raise descriptor_error("factory has no descriptor")
+
+    def factory(path):
+        file = NoDescriptor()
+        files.append(file)
+        return file
+
+    def unexpected_sync(fd):
+        pytest.fail("a descriptorless text factory must not call fsync")
+
+    monkeypatch.setattr(os, "fsync", unexpected_sync)
+    presenter = CaptureEventPresenter(
+        tmp_path / "ble_log.bin", text_file_factory=factory, console_part_max_bytes=1 if rotating else 1024
+    )
+    messages = list(presenter.handle_event(AggregatorUpdate(console_events=(_redir("first\n"),))))
+    messages.extend(presenter.handle_event(AggregatorUpdate(console_events=(_redir("later\n"),))))
+    messages.extend(presenter.finish())
+    assert presenter.finish() == ()
+    assert presenter.state.console_log_error is None
+    assert not any(isinstance(message, UserNotice) and message.level == "warning" for message in messages)
+    assert len(files) == (2 if rotating else 1) and all(file.closed for file in files)
+    assert [message.text.split("  ", 1)[-1] for message in messages if isinstance(message, LogLine)] == [
+        "first",
+        "later",
+    ]
+
+
+class _FailingConsoleFile:
+    """A real console file that raises once at the chosen operation, like a full or revoked disk."""
+
+    def __init__(self, path: Path, fail_on: str, files: list[_FailingConsoleFile]) -> None:
+        self._file = _default_text_file_factory(path)
+        self._fail_on = fail_on
+        self.closed = False
+        self.calls_after_close = 0
+        files.append(self)
+
+    def _maybe_fail(self, operation: str) -> None:
+        if self.closed:
+            self.calls_after_close += 1
+        if operation == self._fail_on:
+            self._fail_on = ""
+            raise OSError(errno.ENOSPC, f"console {operation} refused")
+
+    def write(self, text: str) -> int:
+        self._maybe_fail("write")
+        return self._file.write(text)
+
+    def flush(self) -> None:
+        self._maybe_fail("flush")
+        self._file.flush()
+
+    def fileno(self) -> int:
+        return self._file.fileno()
+
+    def close(self) -> None:
+        self._maybe_fail("close")
+        self._file.close()
+        self.closed = True
+
+
+# failure -> (operation that raises, console part it hits)
+_CONSOLE_FAILURES = {
+    "open": ("open", 1),
+    "write": ("write", 1),
+    "flush": ("flush", 1),
+    "close": ("close", 1),
+    "rotation close": ("close", 1),
+    "rotation open": ("open", 2),
+}
+
+
+@pytest.mark.parametrize("failure", list(_CONSOLE_FAILURES))
+def test_console_log_failure_keeps_ui_text_and_is_reported_once(tmp_path: Path, failure: str) -> None:
+    """A console.log failure is auxiliary: UI text continues, the sink stops, and the failure stays visible."""
+    fail_on, fail_part = _CONSOLE_FAILURES[failure]
+    output_path = tmp_path / "ble_log.bin"
+    now = [0.0]
+    files: list[_FailingConsoleFile] = []
+    opened: list[Path] = []
+
+    def factory(path: Path) -> _FailingConsoleFile:
+        opened.append(path)
+        part = len(opened)
+        if fail_on == "open" and part == fail_part:
+            raise PermissionError(errno.EACCES, "console open refused", str(path))
+        armed_at_open = part == fail_part and fail_on in ("flush", "close")
+        return _FailingConsoleFile(path, fail_on if armed_at_open else "", files)
+
+    rotating = failure.startswith("rotation")
+    presenter = CaptureEventPresenter(
+        output_path,
+        text_file_factory=factory,
+        clock=lambda: now[0],
+        console_part_max_bytes=10 if rotating else 1024 * 1024,
+    )
+    messages = list(presenter.handle_event(AggregatorUpdate(console_events=(_redir("first\n", 0),))))
+    if failure == "write":
+        files[0]._fail_on = "write"
+    now[0] = 5.0 if failure == "flush" else 0.0
+    for index in range(3):
+        messages.extend(presenter.handle_event(AggregatorUpdate(console_events=(_redir(f"later {index}\n", 0),))))
+    messages.extend(presenter.finish())
+    assert presenter.finish() == ()
+
+    ui_lines = [message.text for message in messages if isinstance(message, LogLine)]
+    assert [line.split("  ", 1)[-1] for line in ui_lines] == ["first", "later 0", "later 1", "later 2"]
+    warnings = [message.text for message in messages if isinstance(message, UserNotice) and message.level == "warning"]
+    assert len(warnings) == 1, warnings
+    assert "refused" in warnings[0]
+    error = presenter.state.console_log_error
+    assert error is not None and "refused" in error
+    assert all(file.closed for file in files)
+    assert [file.calls_after_close for file in files] == [0] * len(files)
+    assert len(opened) == fail_part, "a failed console log is never reopened"
+    first_part = console_log_part_path(output_path, 1)
+    if failure == "open":
+        assert not first_part.exists()
+        assert presenter.state.saved_console_log_paths == ()
+    else:
+        assert first_part.read_text().startswith(f"[{_timestamp(0)}] first\n")
+        assert presenter.state.saved_console_log_paths[0] == first_part

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import NamedTuple, TypeAlias
 
+from src.backend.analysis.stream_identification import StreamIdentity
 from src.backend.models import (
     FinalStatEntry,
     InternalDecoderResult,
@@ -71,7 +72,20 @@ class ReceivedChunk(NamedTuple):
     received_at_ms: int
 
 
-BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent
+class UndecodedEvent(NamedTuple):
+    """Display text from bytes no frame claimed, or the end of that undecoded span.
+
+    It never counts as a frame; ``RedirEvent`` is the text carried inside valid
+    BLE Log frames.
+    """
+
+    text: str
+    received_at_ms: int
+    end: bool = False
+
+
+BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent | UndecodedEvent
+ConsoleEvent: TypeAlias = RedirEvent | UndecodedEvent
 
 
 class ParseChunkResult(NamedTuple):
@@ -90,6 +104,7 @@ class ParseBatch(NamedTuple):
     consumed: int  # Bytes retired from prior carry plus this batch.
     carried_bytes: int  # Bytes retained for the next batch.
     events: tuple[BleLogEvent, ...]
+    identity: StreamIdentity | None = None  # Cumulative; None when the transport carries no console text.
 
 
 class ParseSummary(NamedTuple):
@@ -98,3 +113,5 @@ class ParseSummary(NamedTuple):
     raw_bytes: int
     parsed_frames: int
     carried_bytes: int
+    events: tuple[UndecodedEvent, ...] = ()  # Undecoded tail resolved at end of input.
+    identity: StreamIdentity | None = None

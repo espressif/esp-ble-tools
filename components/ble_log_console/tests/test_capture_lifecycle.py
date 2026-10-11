@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+
 import asyncio
 from dataclasses import replace
 from datetime import datetime
@@ -59,6 +62,17 @@ def test_unique_capture_path_never_overwrites_same_second(tmp_path: Path) -> Non
 
     second = unique_capture_path(tmp_path, now)
 
+    assert second.name == "ble_log_20260102_030405_002.bin"
+
+
+def test_unique_capture_path_reserves_the_name_before_any_block_arrives(tmp_path: Path) -> None:
+    now = datetime(2026, 1, 2, 3, 4, 5).astimezone()
+
+    first = unique_capture_path(tmp_path, now)
+    second = unique_capture_path(tmp_path, now)
+
+    assert first.name == "ble_log_20260102_030405.bin"
+    assert first.exists()
     assert second.name == "ble_log_20260102_030405_002.bin"
 
 

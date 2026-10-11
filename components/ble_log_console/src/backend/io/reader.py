@@ -282,7 +282,12 @@ def run_reader_loop(
                 break
 
         if opened and stop_requested.is_set() and not writer_failed:
-            for block in reader.drain(drain_rounds):
+            # Read one block at a time: drain() accumulated blocks and discarded them if a later read raised,
+            # so a transport that failed while draining lost the blocks it had already handed over.
+            for _ in range(drain_rounds):
+                block = reader.read()
+                if not block:
+                    break
                 if not handle_block(block, wall_clock_ms()):
                     break
     except Exception as e:
@@ -297,7 +302,7 @@ def run_reader_loop(
         if not _put_parse_sentinel(parse_queue, queue_put_timeout) and not parse_backlog_reported:
             report_parse_backlog(
                 "Realtime parser queue stayed full during shutdown; "
-                "raw recording continues, final live stats may be incomplete."
+                "the raw recording is unaffected, final live stats may be incomplete."
             )
         _finalize_writer(writer, ui_queue, emit_finalized=not writer_failed)
         if parse_dropped_chunks:
@@ -307,8 +312,9 @@ def run_reader_loop(
                     kind="parse_backlog_summary",
                     message=(
                         "Realtime parser skipped "
-                        f"{parse_dropped_chunks} chunks ({parse_dropped_bytes} bytes); "
-                        "raw recording saved them, live stats are incomplete."
+                        f"{parse_dropped_chunks} chunks ({parse_dropped_bytes} bytes); live stats are "
+                        "incomplete. The quality report states whether the raw recording was finalized "
+                        "completely."
                     ),
                     status=reader.status(),
                     parse_dropped_chunks=parse_dropped_chunks,

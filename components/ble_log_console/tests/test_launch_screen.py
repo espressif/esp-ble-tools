@@ -4,6 +4,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from src.backend.models import LaunchConfig, TransportMode
 from src.frontend.launch_screen import BAUD_RATES, DEFAULT_BAUD_RATE, SPI_PORT_LABEL_PREFIX, LaunchScreen
 from src.i18n import get_language, set_language
@@ -184,15 +185,34 @@ class TestConnect:
         assert config.transport_config.port == "/dev/cu.usbmodem1234561"
         assert config.transport_config.baudrate == DEFAULT_BAUD_RATE
 
-    def test_connect_with_blank_port_shows_error(self) -> None:
-        """connect() should notify error and NOT dismiss when port is BLANK."""
+    @pytest.mark.parametrize("language, message", [("en", "Please select a port"), ("zh_CN", "请选择端口")])
+    def test_connect_with_blank_port_shows_error(
+        self, monkeypatch: pytest.MonkeyPatch, language: str, message: str
+    ) -> None:
+        """A port with no selection must not submit a recording configuration."""
         from textual.widgets import Select
 
-        screen, _, _, _ = self._make_screen_with_mocks(port_value=Select.BLANK)
+        monkeypatch.setattr("src.i18n._language", language)
+        screen, _, _, _ = self._make_screen_with_mocks(port_value=Select.NULL)
 
         screen.connect()
 
-        screen.notify.assert_called_once_with("Please select a port", severity="error")
+        screen.notify.assert_called_once_with(message, severity="error")
+        screen.dismiss.assert_not_called()
+
+    @pytest.mark.parametrize("language, message", [("en", "Please select a baud rate"), ("zh_CN", "请选择波特率")])
+    def test_connect_with_blank_baud_shows_error(
+        self, monkeypatch: pytest.MonkeyPatch, language: str, message: str
+    ) -> None:
+        from textual.widgets import Select
+
+        monkeypatch.setattr("src.i18n._language", language)
+        screen, _, baud_select, _ = self._make_screen_with_mocks(port_value="COM3")
+        baud_select.value = Select.NULL
+
+        screen.connect()
+
+        screen.notify.assert_called_once_with(message, severity="error")
         screen.dismiss.assert_not_called()
 
     def test_connect_log_dir_is_path_object(self) -> None:
@@ -212,6 +232,32 @@ class TestTransportModeHelpers:
         screen._mode = TransportMode.SPI_USB_BRIDGE
         options = screen._display_port_options([("raw label", "usb:303a:4001")])
         assert options == [(f"{SPI_PORT_LABEL_PREFIX}  usb:303a:4001", "usb:303a:4001")]
+
+    def test_blank_mode_does_not_report_an_unsupported_mode(self) -> None:
+        from textual.widgets import Select
+
+        screen = LaunchScreen()
+        screen.notify = MagicMock()  # type: ignore[method-assign]
+
+        assert screen._mode_from_select_value(Select.NULL) is None
+        screen.notify.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "language, message",
+        [
+            ("en", "Unsupported transport mode: unsupported\nPlease select the right mode."),
+            ("zh_CN", "不支持的传输模式：unsupported\n请选择正确的模式。"),
+        ],
+    )
+    def test_unsupported_mode_reports_in_selected_language(
+        self, monkeypatch: pytest.MonkeyPatch, language: str, message: str
+    ) -> None:
+        monkeypatch.setattr("src.i18n._language", language)
+        screen = LaunchScreen()
+        screen.notify = MagicMock()  # type: ignore[method-assign]
+
+        assert screen._mode_from_select_value("unsupported") is None
+        screen.notify.assert_called_once_with(message)
 
     def test_mode_from_select_value_accepts_enum_value(self) -> None:
         screen = LaunchScreen()

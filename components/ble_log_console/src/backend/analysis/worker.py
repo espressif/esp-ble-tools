@@ -15,6 +15,7 @@ from typing import Any
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, CaptureAggregator
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk
+from src.backend.analysis.stream_identification import IdentificationRules
 from src.backend.models import ChecksumMode, TransportBitrate
 
 PARSER_BATCH_MAX_CHUNKS = 16
@@ -63,11 +64,12 @@ def run_parser_loop(
     output_queue: Any,
     *,
     checksum_mode: ChecksumMode | None = None,
+    identification: IdentificationRules | None = None,
 ) -> None:
     """Parse raw chunks from parse_queue until a None sentinel is received."""
 
     try:
-        parser = BleLogParser(checksum_mode=checksum_mode)
+        parser = BleLogParser(checksum_mode=checksum_mode, identification=identification)
         while True:
             item = parse_queue.get()
             if item is None:
@@ -103,6 +105,7 @@ def run_parser_loop(
                         consumed=sum(batch.consumed for batch in batches),
                         carried_bytes=batches[-1].carried_bytes,
                         events=tuple(event for batch in batches for event in batch.events),
+                        identity=batches[-1].identity,
                     ),
                 )
             if stop_after_batch:
@@ -128,7 +131,7 @@ def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
         return None
     return AggregatorUpdate(
         frames_seen=sum(update.frames_seen for update in updates),
-        redir_events=tuple(event for update in updates for event in update.redir_events),
+        console_events=tuple(event for update in updates for event in update.console_events),
         internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
     )
 
@@ -167,6 +170,9 @@ def _handle_parser_item(
     if isinstance(item, ParseSummary):
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
+        if item.events:
+            # The undecoded tail resolved at end of input precedes the final snapshot.
+            _put_analysis_event(ui_queue, aggregator.consume_events(item.events))
         aggregator.consume_parser_summary(item)
         return True, True
     if isinstance(item, ParserStatus):
@@ -318,6 +324,7 @@ def run_analysis_loop(
     *,
     bitrate: TransportBitrate | None = None,
     checksum_mode: ChecksumMode | None = None,
+    identification: IdentificationRules | None = None,
     analysis_queue_size: int = ANALYSIS_QUEUE_SIZE,
 ) -> None:
     """Run parser and aggregator in one process, connected by a thread queue."""
@@ -329,6 +336,7 @@ def run_analysis_loop(
         args=(parse_queue, analysis_queue),
         kwargs={
             "checksum_mode": checksum_mode,
+            "identification": identification,
         },
         daemon=True,
     )
@@ -351,6 +359,7 @@ def run_analysis_process(
     ui_queue: Any,
     bitrate: TransportBitrate | None = None,
     checksum_mode: ChecksumMode | None = None,
+    identification: IdentificationRules | None = None,
 ) -> None:
     """Process entrypoint for combined BLE log analysis."""
 
@@ -360,4 +369,5 @@ def run_analysis_process(
         ui_queue,
         bitrate=bitrate,
         checksum_mode=checksum_mode,
+        identification=identification,
     )

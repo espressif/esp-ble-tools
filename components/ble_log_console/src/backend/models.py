@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ble_log_frame_decoder import (
     BleLogVersionInfo,
@@ -24,6 +25,10 @@ from ble_log_frame_decoder import (
 )
 from ble_log_frame_decoder import FinalStatEntry as FinalStatEntry  # noqa: PLC0414 - re-exported contract type
 from textual.message import Message
+
+if TYPE_CHECKING:
+    # The identification records live with their analysis owner, which imports this module.
+    from src.backend.analysis.stream_identification import StreamIdentity, StreamKind
 
 # --- Common formatting helpers ---
 
@@ -144,6 +149,13 @@ class TransportMode(str, Enum):
     UART = "uart"
     SPI_USB_BRIDGE = "spi_usb_bridge"
     USB_OUTPUT = "usb_output"
+    USJ = "usj"
+
+
+# Serial transports whose byte stream may also carry chip console text (boot ROM,
+# panic output) next to BLE Log frames. Only these show undecoded text and
+# identify the stream content; SPI Bridge and USB Output carry frames only.
+CONSOLE_TEXT_MODES: frozenset[TransportMode] = frozenset({TransportMode.UART, TransportMode.USJ})
 
 
 @dataclass(frozen=True)
@@ -417,6 +429,8 @@ class CaptureReport:
     report_write_error: str | None = None
     firmware_version: int | None = None
     firmware_contract_known: bool = True
+    stream_identity: "StreamIdentity | None" = None
+    console_log_error: str | None = None
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {
@@ -481,6 +495,14 @@ class LogLine(Message):
     def __init__(self, text: str) -> None:
         super().__init__()
         self.text = text
+
+
+class StreamKindChanged(Message):
+    """What the received stream carries, as last identified on a console-text transport."""
+
+    def __init__(self, kind: "StreamKind") -> None:
+        super().__init__()
+        self.kind = kind
 
 
 class UserNotice(Message):

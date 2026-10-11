@@ -1,6 +1,6 @@
 ---
 name: ble-log-intake
-description: Prepare BLE Log intake questionnaires, identify missing hardware and project information, and map confirmed answers to SPI or UART sdkconfig, wiring, and capture verification. Use for setup consultations, UART baud rate assessment, and delivery checks, not log root-cause analysis.
+description: Prepare BLE Log intake questionnaires, identify missing hardware and project information, and map confirmed answers to SPI, UART, or USJ sdkconfig, wiring, and capture verification. Use for setup consultations, UART baud rate assessment, and delivery checks, not log root-cause analysis.
 ---
 
 # BLE Log Intake Assistant
@@ -17,7 +17,9 @@ Collect existing sdkconfig, chip and SDK versions, board wiring, peripheral usag
 
 ## Follow the Feasible Transport
 
-Prefer SPI, then reuse an existing logging UART, then consider an external USB-to-UART adapter. Advance only the currently feasible branch. If SPI cannot be wired, proceed directly to UART; if SPI is feasible, do not add a UART questionnaire.
+Prefer SPI, then reuse an existing logging UART, then consider USJ, then an external USB-to-UART adapter. This is the guide's Quick Selection order. Advance only the currently feasible branch. If SPI cannot be wired, proceed directly to the next feasible branch; if SPI is feasible, do not add a UART or USJ questionnaire.
+
+USJ is feasible only when the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`. Check the customer's ESP-IDF branch and the chip's Kconfig yourself. Do not assume that every ESP-IDF release has the option. If it is absent, USJ is unavailable for that firmware; record the reason and continue with a supported transport. USB Output (TinyUSB on USB OTG, `CONFIG_BLE_LOG_PRPH_USB`, USB ID `303A:10B1`) is a separate mode; do not map USJ answers to it.
 
 | Decision | Information needed now | Result |
 | --- | --- | --- |
@@ -25,8 +27,9 @@ Prefer SPI, then reuse an existing logging UART, then consider an external USB-t
 | SPI resources and GPIOs | Existing SPI peripherals, three available GPIOs, and physical connection points. | Output mode, MOSI/CLK/CS settings, and Bridge wiring. Request only the relevant schematic or initialization code if unclear. |
 | Can UART be reused? | UART usage, UART number, TX wiring, and onboard or external converter. | Port and TX settings; ordinary logging alone is not an application conflict. |
 | UART baud rate candidates | Converter/tool model, or complete output from the probe script below. | Candidate rates and strength of evidence; a trial recording is still required. |
+| Can USJ be used? | Whether the firmware's ESP-IDF offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` for this chip, whether the PC connects to the built-in USB Serial/JTAG port (USB ID `303A:1001`), and whether the console, esp_trace, or OpenThread RCP must keep that port. | USJ settings from the guide, or USJ unavailable with the reason. No GPIO, UART number, or baud rate applies. |
 
-Absence of a resource conflict in inspected code does not prove availability. Port and GPIO values in sdkconfig do not confirm physical wiring. An available UART and GPIO do not prove that TX connects to the receiver being probed. If extra wiring is impossible, confirm that the existing connection can be reused. Native USB is not a USB-to-UART converter. Changing existing peripherals is feasible only if the problem remains reproducible.
+Absence of a resource conflict in inspected code does not prove availability. Port and GPIO values in sdkconfig do not confirm physical wiring. An available UART and GPIO do not prove that TX connects to the receiver being probed. If extra wiring is impossible, confirm that the existing connection can be reused. A chip's native USB port is not a USB-to-UART converter; when it is the built-in USB Serial/JTAG port, assess the USJ branch instead of UART. Changing existing peripherals is feasible only if the problem remains reproducible.
 
 For each gap, name the specific material and its purpose, such as confirming the TX GPIO to fill in the UART TX setting. Collect each item once even if it supports several settings. Keep unknowns pending confirmation. If a confirmed conflict cannot be resolved, summarize the constraints for technical support instead of asking the customer to try parameter combinations.
 
@@ -36,7 +39,7 @@ When creating or updating a questionnaire, read the [intake questionnaire templa
 
 - Produce a complete questionnaire for the current scenario, rather than isolated follow-up questions. Fill the response column with known information and its filename or confirmation source; mark unconfirmed facts as “Pending confirmation”.
 - Blank fields mean unanswered, not “unused”, “supported”, or “passed”. Extract project information from sdkconfig and the conversation without requesting it again.
-- Expand only the needed SPI or UART branch. Retain other branch headings with “Not applicable” and a reason. If the transport is undecided, resolve feasibility before requesting every field for both interfaces. Include all branches when the user explicitly requests a generic blank form.
+- Expand only the needed SPI, UART, or USJ branch. Retain other branch headings with “Not applicable” and a reason. If the transport is undecided, resolve feasibility before requesting every field for every interface. Include all branches when the user explicitly requests a generic blank form.
 - Retain trial recording and delivery sections at the end, marked “After capture” until that stage. Expand special scenarios only when their conditions apply; otherwise mark them “Not applicable”.
 - Precede the questionnaire with a short list of information still needed this round. Preserve known context for handover and explain each question's purpose alongside it without creating a duplicate questionnaire.
 - Verify chip capabilities, Kconfig dependencies, and field mapping yourself, then state conclusions after the questionnaire. Customers supply physical hardware and operating conditions; they need not select technical parameters.
@@ -75,11 +78,13 @@ Interpret results within these limits:
 | `FAIL` | Opening or configuring failed; possible causes include baud rate, port contention, permissions, or device state. | Inspect the complete error. Failure at every rate does not establish that the chip supports none of them. |
 | Lower rates accepted, 3000000 failed | Lower-rate candidates exist, but stable application log capture is unproven. | Select a candidate using the error and log volume, match firmware and PC settings, then make a trial recording. |
 
+USJ has no baud rate. Do not provide the probe script for USJ. The console does not probe a USJ port or send a reset sequence; while opening it, the console releases RTS before DTR, the order ESP-IDF Monitor uses to avoid a reset. The operating system or its USB driver can still change these lines when opening the device, which can reset the board. Tell the customer to connect when the application can be interrupted.
+
 The script performs no transfer test and cannot establish throughput, error rate, log completeness, or correct GPIO and firmware port selection. See the [pySerial API](https://pyserial.readthedocs.io/en/latest/pyserial_api.html); final confirmation comes from the guide's capture verification.
 
 ## Map Information to Configuration
 
-Once information is sufficient, use the guide's fixed settings for the chosen transport and map confirmed board details to GPIOs, UART port, and baud rate. Produce the minimum sdkconfig changes against the existing project, preserving application settings and selecting exactly one transport. Cite the source of each value. Keep missing values in a pending table rather than filling copyable configuration blocks with default GPIOs, UART0, or guesses.
+Once information is sufficient, use the guide's fixed settings for the chosen transport and map confirmed board details to GPIOs, UART port, and baud rate. USJ needs no board variables; its settings move the console and other users off USB Serial/JTAG. Produce the minimum sdkconfig changes against the existing project, preserving application settings and selecting exactly one transport. Cite the source of each value. Keep missing values in a pending table rather than filling copyable configuration blocks with default GPIOs, UART0, or guesses.
 
 Distinguish “Information incomplete”, “Configured, pending trial”, and “Verified”. Use “Verified” only after checking the effective build configuration against wiring, trial recording quality, and application behavior. Follow the guide and implementation for ordinary serial log forwarding and file generation conditions.
 
@@ -97,7 +102,7 @@ When information is sufficient:
 
 1. Transport and status, plus the completed questionnaire.
 2. Configuration mapping: `Setting | Value | Evidence/source | Confirmation status`, covering fixed settings and board variables, followed by the minimum configuration diff.
-3. Wiring table: `Target signal | GPIO/port | Receiver pin/interface | Confirmation status`, including GND and, for UART, the PC port and baud rate.
+3. Wiring table: `Target signal | GPIO/port | Receiver pin/interface | Confirmation status`, including GND and, for UART, the PC port and baud rate. For USJ, list the built-in USB port and the PC port with USB ID `303A:1001`.
 4. Trial steps and delivery table: `File/directory | Required when | Likely location | Actual path/filename | Status`. Use the guide's delivery requirements and the template's location hints. Distinguish suggested locations from verified paths: recordings default to `<tool-start-directory>/logs/` unless another save directory was selected; the database usually lives under the firmware build directory; sdkconfig usually lives at the firmware project root. Resolve custom locations from the actual capture/build settings. Confirm that the database and flashed firmware come from the same build; directory names alone do not prove a match.
 
 For questions about a tool's meaning, explain only the relevant part. Continue filling an existing questionnaire, retaining evidence sources and avoiding repeated requests.

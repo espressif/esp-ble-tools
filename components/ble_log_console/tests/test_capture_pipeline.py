@@ -53,11 +53,9 @@ class FakeReader:
         blocks: list[bytes],
         stop_event: Event,
         *,
-        drain_blocks: list[bytes] | None = None,
         fail_after_blocks: bool = False,
     ) -> None:
         self.blocks = list(blocks)
-        self.drain_blocks = list(drain_blocks or [])
         self.stop_event = stop_event
         self.fail_after_blocks = fail_after_blocks
         self.failed = False
@@ -93,7 +91,8 @@ class FakeReader:
         return b""
 
     def drain(self, max_rounds: int = 10) -> list[bytes]:
-        return self.drain_blocks[:max_rounds]
+        del max_rounds
+        return []
 
     def close(self) -> None:
         self.opened = False
@@ -143,15 +142,28 @@ def test_fake_reader_writes_raw_file(tmp_path: Path) -> None:
     assert output_path.read_bytes() == b"onetwo"
 
 
-def test_stop_drains_reader_data_into_raw_file(tmp_path: Path) -> None:
+def test_stop_records_reader_data_still_in_the_transport(tmp_path: Path) -> None:
     stop_event = Event()
     stop_event.set()
-    reader = FakeReader([], stop_event, drain_blocks=[b"last"])
+    reader = FakeReader([b"last"], stop_event)
     output_path = tmp_path / "ble_log.bin"
 
     result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
 
     assert result.completed
+    assert output_path.read_bytes() == b"last"
+
+
+def test_stop_read_error_keeps_the_blocks_read_before_it(tmp_path: Path) -> None:
+    stop_event = Event()
+    stop_event.set()
+    reader = FakeReader([b"last"], stop_event, fail_after_blocks=True)
+    output_path = tmp_path / "ble_log.bin"
+
+    result = run_capture_pipeline_inprocess(reader, WriterConfig(output_path), stop_requested=stop_event)
+
+    assert result.reader_error == "reader failed"
+    assert result.raw_bytes == len(b"last")
     assert output_path.read_bytes() == b"last"
 
 

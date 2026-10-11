@@ -8,6 +8,8 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 - **UART**：通过串口接收 BLE 日志。
 - **SPI Bridge**：通过 BLE Log SPI USB Bridge 设备接收 BLE 日志。
+- **USJ**：通过芯片内置的 USB Serial/JTAG 口接收 BLE 日志。
+- **USB Output**：通过固件提供的 TinyUSB CDC-ACM 口接收 BLE 日志。
 
 ## 工具下载
 
@@ -179,14 +181,15 @@ python console.py --mode spi --port <PORT>
 | 启动交互模式 | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
 | 启动 UART 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
 | 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
+| 启动 USJ 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | 查看已保存日志 | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### 命令行参数
 
 | 参数 | 缩写 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--mode` | `-m` | `uart` | 传输模式：`uart` 或 `spi` |
-| `--port` | `-p` | 可选 | 串口或 SPI Bridge 端口。省略时打开交互界面 |
+| `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi`、`usb`（USB Output）或 `usj`（USB Serial/JTAG） |
+| `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | `./logs` | 录制文件保存目录 |
 | `--debug` | 无 | 关闭 | 显示额外的调试信息 |
@@ -195,10 +198,27 @@ python console.py --mode spi --port <PORT>
 
 | 命令 | 说明 |
 | --- | --- |
-| `ports` | 列出 UART 串口和 SPI Bridge 端口，可用 `--mode` 过滤 |
+| `ports` | 列出 UART、SPI Bridge、USB Output 和 USJ 端口，可用 `--mode` 过滤 |
 | `ls` | 列出指定目录中的 `ble_log_*.bin` 录制文件 |
 
 `--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。
+
+### USJ 模式
+
+USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接收 BLE Log。`ports` 子命令和交互界面只列出这个 USB ID 的端口。波特率设置不适用。固件需要把 BLE Log 输出到 USB Serial/JTAG，这要求所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，见 [USJ 配置](./docs/Config-Guide-CN.md#usj)。
+
+在这个端口上，DTR 和 RTS 线控制芯片的复位和启动模式。BLE Log Console 打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，因此 `r` 快捷键不会复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认打开端口是否会复位开发板。
+
+### UART 与 USJ 上的文本数据
+
+UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动信息或崩溃转储。在这两种模式下，无法解析为 BLE Log 帧的字节会显示在日志区域，并保存到 `_console.log`，前后带有“未解码成功数据”标记。工具只保留可打印 ASCII，保存到文件时去掉颜色，并统一换行符。一行文本在换行、后面出现 BLE Log 数据或长度达到 16 KiB 时才显示在日志区域，因此不会被界面刷新拆开。可能还会补全的半个帧不会提前显示；录制结束时，剩余的未解码尾部只显示一次。这些文本不计入 BLE Log 帧。原始 `.bin` 文件保存工具收到的全部字节；报告了传输或保存失败时，该文件可能不完整。在任何模式下，如果 `_console.log` 无法写入或同步到存储，工具只提示一次并停止写入该文件。日志区域继续显示文本。此错误本身不会停止原始录制。质量报告会说明串口转发日志未能完整保存，并单独报告原始录制的保存失败。
+
+工具还会识别端口上的数据内容：
+
+- **纯文本：** 状态栏显示 `PLAIN TEXT`，并立即出现警告，文本持续时每 10 秒再提示一次。录制不会中断。出现纯文本通常说明固件没有把 BLE Log 输出到这个端口。
+- **BLE Log：** 收到一条固件身份记录，或三个来自已知 BLE Log 来源的有效帧后，状态栏显示 `BLE LOG`。在此之前出现启动信息等文本属于正常情况。端口变安静或之后再输出文本，识别结果都不会改回去。
+
+质量报告会写明识别出的内容，以及有多少数据不属于 BLE Log 帧。录制停止时被截断的最后一帧属于正常情况：这些字节记入“结尾未完成数据字节数”，不会附加该警告。不属于 BLE Log 帧的字节写入 `.bin` 文件而不是 `_console.log`，后者最多只包含其中可打印的文本；写入失败时这些字节可能不在文件中，质量报告会说明原始录制是否已确认完整。仅仅识别出 BLE Log 并不代表录制可用于分析：只有身份记录的录制仍会提示检查配置。SPI Bridge 和 USB Output 模式不显示未解码数据，也不做内容识别。
 
 ## 快捷键
 
@@ -213,7 +233,7 @@ python console.py --mode spi --port <PORT>
 | `d` | 查看接收日志统计信息 |
 | `m` | 查看缓冲区利用率 |
 | `h` | 显示快捷键帮助 |
-| `r` | 复位目标设备；SPI Bridge 模式下不支持 |
+| `r` | 复位目标设备；SPI Bridge、USB Output 和 USJ 模式下不支持 |
 
 ## 故障排查
 

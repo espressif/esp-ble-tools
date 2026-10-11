@@ -72,7 +72,12 @@ def _endpoint_from_key(key: str) -> SpiUsbBridgeEndpoint:
 
 
 def _is_usb_timeout(error: usb.core.USBError) -> bool:
-    return error.errno == USB_TIMEOUT_ERRNO or "time out" in str(error).lower()
+    # libusb raises USBTimeoutError with the platform ETIMEDOUT (60 on macOS) and the message
+    # "Operation timed out"; the other checks cover backends that only set an errno or a message.
+    if isinstance(error, usb.core.USBTimeoutError):
+        return True
+    message = str(error).lower()
+    return error.errno == USB_TIMEOUT_ERRNO or "time out" in message or "timed out" in message or "timeout" in message
 
 
 def _is_usb_disconnect(error: usb.core.USBError) -> bool:

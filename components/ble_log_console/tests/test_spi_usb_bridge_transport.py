@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+import errno
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 import serial
+import usb.core
 from src.backend.models import TransportConfig, TransportMode
 from src.backend.support.transport.spi_usb_bridge_transport import (
     CDC_ENDPOINT_PREFIX,
@@ -134,3 +137,32 @@ class TestSpiUsbBridgeTransportOpen:
     def test_provider_metadata(self) -> None:
         assert PROVIDER.mode is TransportMode.SPI_USB_BRIDGE
         assert PROVIDER.label == "SPI USB Bridge"
+
+
+class TestSpiUsbBridgeBulkRead:
+    def _transport_reading(self, read_error: Exception) -> SpiUsbBridgeBulkTransport:
+        endpoint = SpiUsbBridgeEndpoint(bus=1, address=2, interface=0, endpoint=0x81)
+        transport = SpiUsbBridgeBulkTransport(endpoint)
+        device = MagicMock()
+        device.read.side_effect = read_error
+        transport._epa = SimpleNamespace(device=device, ep=0x81)
+        transport._claimed = True
+        return transport
+
+    def test_idle_timeout_returns_an_empty_block(self) -> None:
+        # libusb reports a timeout as USBTimeoutError carrying the platform ETIMEDOUT, 60 on macOS.
+        transport = self._transport_reading(usb.core.USBTimeoutError("Operation timed out", -7, errno=60))
+
+        assert transport.read() == b""
+        assert transport.status().last_error is None
+
+    def test_timeout_message_without_the_error_type_is_still_an_empty_block(self) -> None:
+        transport = self._transport_reading(usb.core.USBError("Operation timed out", -7, errno=60))
+
+        assert transport.read() == b""
+
+    def test_other_usb_errors_still_fail_the_read(self) -> None:
+        transport = self._transport_reading(usb.core.USBError("Pipe error", -9, errno=errno.EPIPE))
+
+        with pytest.raises(RuntimeError, match="USB-SPI bridge read failed"):
+            transport.read()

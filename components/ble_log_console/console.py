@@ -9,6 +9,7 @@ Usage:
     python console.py --mode spi --port cdc:/dev/ttyACM0
     python console.py --mode spi --port 1:8:0:129
     python console.py --mode usb --port /dev/ttyACM0          # USB Output (CDC-ACM)
+    python console.py --mode usj --port /dev/ttyACM0          # USB Serial/JTAG
     python console.py ports                  # list transport endpoints
     python console.py ls                     # list saved files
 """
@@ -30,7 +31,7 @@ from src.backend.support.transport.registry import (
 from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID, VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
 
-MODE_CHOICES = ("uart", "spi", "usb")
+MODE_CHOICES = ("uart", "spi", "usb", "usj")
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ble-log-spi-bridge.rules")
 UDEV_RULE = (
     f'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{VENDOR_ID:04x}", '
@@ -71,20 +72,20 @@ def _should_auto_install_udev(ctx: click.Context) -> bool:
     )
 
 
-def _echo_saved_paths(label: str, paths: list[Path]) -> None:
+def _echo_paths(label: str, paths: list[Path]) -> None:
     if not paths:
         return
     if len(paths) == 1:
-        click.echo(f"{label} saved to: {paths[0]}")
+        click.echo(f"{label}: {paths[0]}")
         return
 
-    click.echo(f"{label} saved to {len(paths)} files:")
+    click.echo(f"{label}: {len(paths)} files")
     if len(paths) <= 5:
-        for saved_path in paths:
-            click.echo(f"  {saved_path}")
+        for path in paths:
+            click.echo(f"  {path}")
         return
 
-    same_dir = all(saved_path.parent == paths[0].parent for saved_path in paths)
+    same_dir = all(path.parent == paths[0].parent for path in paths)
     if same_dir:
         first = paths[0]
         last = paths[-1]
@@ -136,7 +137,7 @@ def _install_udev_rules() -> None:
     "-p",
     default=None,
     help="Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or bus:addr:intf:ep,"
-    " USB Output: /dev/ttyACM0 or /dev/cu.usbmodem*.",
+    " USB Output or USJ: /dev/ttyACM0 or /dev/cu.usbmodem*.",
 )
 @click.option("--baudrate", "-b", type=int, default=3_000_000, show_default=True, help="UART baud rate.")
 @click.option("--debug", is_flag=True, help="Show internal traffic and firmware state events in the log view.")
@@ -199,10 +200,10 @@ def cli(
         debug=debug,
     )
     app.run()
-    _echo_saved_paths("Recording", app.saved_capture_paths)
-    _echo_saved_paths("Console log", app.saved_console_log_paths)
+    _echo_paths("Recording file", app.saved_capture_paths)
+    _echo_paths("Console log", app.saved_console_log_paths)
     if app.saved_report_path is not None:
-        _echo_saved_paths("Recording report", [app.saved_report_path])
+        _echo_paths("Recording report", [app.saved_report_path])
 
 
 @cli.command(name="ports")
