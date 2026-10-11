@@ -132,7 +132,7 @@ USJ 不同于 USB Output 模式。USB Output 在 USB OTG 外设上使用 TinyUSB
 | 固件选项 | **当前芯片和 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。**<br>芯片需带有 USB Serial/JTAG 控制器。 | 没有该选项时选择 SPI 或 UART。 |
 | 端口占用 | **USB Serial/JTAG 端口只能由 BLE Log 使用。**<br>主控制台或第二控制台、esp_trace、OpenThread RCP 使用 USB Serial/JTAG，或关闭了 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` 时，该选项会被隐藏，menuconfig 中显示 “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”。带 USB Serial/JTAG 的芯片上，第二控制台默认使用该端口。 | 仅当原问题仍可复现时，才把这些功能移出该端口；否则选择 SPI 或 UART。 |
 | USB 连接 | **电脑直接连接芯片内置的 USB Serial/JTAG 端口。**<br>电脑上显示的 USB ID 为 `303A:1001`。经过板载 USB 转串口芯片的 USB 口属于 UART 连接。 | 使用 `ports --mode usj` 或 USJ 模式下的端口列表核对，二者只列出 `303A:1001` 端口。 |
-| 端口上的文本 | BLE Log 启动前打印的启动信息，以及崩溃转储等部分 ROM 输出，仍可能出现在该端口。 | 属于正常现象。原始录制保留这些字节；它们不计入 BLE Log 帧。 |
+| 端口上的文本 | BLE Log 启动前打印的启动信息，以及崩溃转储等部分 ROM 输出，仍可能出现在该端口。 | 属于正常现象。工具会显示并保存这些文本；文本持续出现时给出警告，录制继续。 |
 
 ### 3.2 配置和连接
 
@@ -194,7 +194,7 @@ USJ 链路速率不可配置，是否足以承载所需日志量，以试录和�
 | --- | --- | --- | --- | --- |
 | `ble_log_*.bin` | **必需** | **必需** | **必需** | 原始 BLE Log，包含全部 `part` 分片。 |
 | `ble_log_*_report.txt` | **必需** | **必需** | **必需** | 同次录制的质量报告。 |
-| `ble_log_*_console.log` | 生成时提供 | 生成时提供 | 当前不生成 | 转发的普通串口日志的可读副本，不能替代 `.bin`。 |
+| `ble_log_*_console.log` | 生成时提供 | 生成时提供 | 当前不生成 | 普通串口日志和文本的可读副本，不能替代 `.bin`。 |
 | `ble_log_database/` 整个目录 | 有压缩日志时必需 | 有压缩日志时必需 | 有压缩日志时必需 | 压缩日志解析所需的数据库。 |
 | `sdkconfig` 与配置记录 | **必需** | **必需** | **必需** | 本次固件配置、版本及复现信息，见[配置记录](#records)。 |
 
@@ -204,7 +204,7 @@ USJ 链路速率不可配置，是否足以承载所需日志量，以试录和�
 
 - `.bin`、`_report.txt` 和已生成的 `_console.log` 保存在同一目录，应来自**同次录制**。
 - 拆分录制需包含**全部 `part` 文件**。
-- UART 和 USJ 只有收到重定向的普通日志时才生成 `_console.log`；没有此类日志时，可能没有该文件。
+- UART 和 USJ 只有收到普通文本时才生成 `_console.log`，包括重定向的普通日志，以及启动信息等不属于 BLE Log 帧的文本；没有此类文本时，可能没有该文件。
 
 ### 5.3 Log database 位置与版本
 

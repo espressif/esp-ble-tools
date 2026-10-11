@@ -12,9 +12,8 @@ ENGLISH = "en"
 CHINESE = "zh_CN"
 
 _ZH_CN = {
-    "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to the raw file.": "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；这些字节都会写入原始数据文件。",
-    "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not be confirmed complete, so those bytes may not all be in the raw file.": "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；原始录制未能确认完整，这些字节可能未全部写入原始数据文件。",
-    "BLE Log frames identified; earlier data was outside BLE Log frames.": "已识别到 BLE Log 帧；之前的数据不属于 BLE Log 帧。",
+    "--- Undecoded data ---": "--- 未解码成功数据 ---",
+    "--- End of undecoded data ---": "--- 未解码成功数据结束 ---",
     "PLAIN TEXT": "纯文本",
     "Stream content": "数据内容",
     "Identified as": "识别结果",
@@ -28,11 +27,14 @@ _ZH_CN = {
     "Firmware identity records": "固件身份记录数",
     "Received data looks like plain console text, not BLE Log frames; check that the firmware sends BLE Log to this port.": "收到的数据像是普通控制台文本，而不是 BLE Log 帧；请确认固件把 BLE Log 输出到这个端口。",
     "BLE Log was identified, but no regular log frames were decoded; check the firmware log configuration.": "已识别到 BLE Log，但没有解析到普通日志帧；请检查固件日志配置。",
+    "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to the raw file, and the console log holds at most their displayable text.": "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；这些字节都会写入原始数据文件，串口转发日志最多只包含其中可显示的文本。",
+    "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not be confirmed complete, so those bytes may not all be in the raw file, and the console log holds at most their displayable text.": "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；原始录制未能确认完整，这些字节可能未全部写入原始数据文件，串口转发日志最多只包含其中可显示的文本。",
     "The console log could not be saved completely; this error does not itself stop raw recording.": "串口转发日志未能完整保存；此错误本身不会停止原始录制。",
     "Console log error": "串口转发日志错误",
     "Console log could not be saved: {message}. The text is still shown here; this error does not itself stop raw recording.": "无法保存串口转发日志：{message}。文本仍在此处显示；此错误本身不会停止原始录制。",
     "BLE LOG": "BLE Log",
     "Received data looks like plain console text, not BLE Log frames. Recording continues; check that the firmware sends BLE Log to this port.": "收到的数据像是普通控制台文本，而不是 BLE Log 帧。录制仍在继续；请确认固件把 BLE Log 输出到这个端口。",
+    "BLE Log frames identified; earlier text is shown as undecoded data.": "已识别到 BLE Log 帧；之前的文本作为未解码数据显示。",
     "BLE Log was identified on this port, but no regular log frames were decoded for 10s. Check the firmware log configuration.": "已在此端口识别到 BLE Log，但连续 10 秒未解析到普通日志帧，请检查固件日志配置。",
     "BLE Log Recording Report": "BLE Log 录制质量报告",
     "READY FOR ANALYSIS": "可用于分析",

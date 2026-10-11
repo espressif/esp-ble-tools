@@ -109,3 +109,7 @@ def test_strip_ansi_sequences_removes_sgr_and_controls():
     text = "\x1b[31mred\x1b[0m\x1b[2Jdone"
 
     assert rendering.strip_ansi_sequences(text) == "reddone"
+
+
+def test_keep_sgr_ansi_sequences_removes_an_escape_that_starts_no_sgr():
+    assert rendering.keep_sgr_ansi_sequences("a\x1b\x1b[0mb\x1bc\x1b") == "a\x1b[0mbc"

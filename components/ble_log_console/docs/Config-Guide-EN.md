@@ -132,7 +132,7 @@ USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CO
 | Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
 | Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
 | USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj`, or the port list in USJ mode, which lists only `303A:1001` ports. |
-| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The raw recording retains these bytes; they do not count as BLE Log frames. |
+| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool shows and saves this text, warns if text continues, and keeps recording. |
 
 ### 3.2 Configuration and Connection
 
@@ -194,7 +194,7 @@ A complete delivery includes the recording files, the log database matching the 
 | --- | --- | --- | --- | --- |
 | `ble_log_*.bin` | **Required** | **Required** | **Required** | Raw BLE Log, including all `part` files. |
 | `ble_log_*_report.txt` | **Required** | **Required** | **Required** | Quality report from the same recording. |
-| `ble_log_*_console.log` | Include if generated | Include if generated | Currently not generated | Readable copy of redirected ordinary serial logs; does not replace `.bin`. |
+| `ble_log_*_console.log` | Include if generated | Include if generated | Currently not generated | Readable copy of ordinary serial logs and text; does not replace `.bin`. |
 | Entire `ble_log_database/` directory | Required for compressed logs | Required for compressed logs | Required for compressed logs | Database needed to decode compressed logs. |
 | `sdkconfig` and configuration record | **Required** | **Required** | **Required** | Firmware configuration, versions, and reproduction details; see [Configuration record](#records). |
 
@@ -204,7 +204,7 @@ Recordings are saved in the directory selected when starting a recording. The de
 
 - `.bin`, `_report.txt`, and any generated `_console.log` are saved in the same directory and must come from **the same recording**.
 - For split recordings, include **all `part` files**.
-- UART and USJ generate `_console.log` only when redirected ordinary logs are received. The file may be absent when no such logs are received.
+- UART and USJ generate `_console.log` only when ordinary text is received: redirected ordinary logs, or text outside BLE Log frames such as boot messages. The file may be absent when no such text is received.
 
 ### 5.3 Log Database Location and Version
 

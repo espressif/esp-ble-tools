@@ -17,6 +17,7 @@ from typing import IO, Any
 from textual.message import Message
 
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
+from src.backend.analysis.parser_events import UndecodedEvent
 from src.backend.analysis.stream_identification import StreamKind
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
@@ -129,6 +130,8 @@ class CaptureEventPresenter:
         self._console_line_received_at_ms = 0
         self._console_timestamp_pending = False
         self._redir_line_buf = ""
+        self._undecoded_active = False
+        self._undecoded_previous_cr = False
         self._disconnected = False
         now = self._clock()
         self._last_console_flush_at = now
@@ -181,9 +184,9 @@ class CaptureEventPresenter:
         return tuple(messages)
 
     def finish(self) -> tuple[Message, ...]:
-        """Close the sinks and return the final UI lines; repeat calls return nothing."""
+        """Close the open text span and sinks, returning the final UI lines; repeat calls return nothing."""
 
-        messages: list[Message] = []
+        messages = self._end_undecoded(self._console_line_received_at_ms)
         if self._redir_line_buf:
             self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
             self._redir_line_buf = ""
@@ -195,6 +198,7 @@ class CaptureEventPresenter:
     def close(self) -> None:
         """Flush and close UI-owned output files; a console.log failure is kept in ``state``, not raised."""
 
+        self._end_undecoded(self._console_line_received_at_ms)
         if self._console_log_file is None:
             return
         if self._console_line_buf.endswith("\r"):
@@ -219,7 +223,9 @@ class CaptureEventPresenter:
                 list(event.buf_util_snapshots),
             )
         ]
-        if self._redir_line_buf:
+        # A REDIR prompt is previewed on the snapshot tick. An undecoded span is not: the UI cannot append to a
+        # written line, so its partial line waits for a newline, the size limit, or the span end.
+        if self._redir_line_buf and not self._undecoded_active:
             self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
             self._redir_line_buf = ""
 
@@ -296,7 +302,9 @@ class CaptureEventPresenter:
             self._shown_stream_kind = kind
             messages.append(StreamKindChanged(kind))
             if kind is StreamKind.BLE_LOG and previous is StreamKind.LIKELY_TEXT:
-                messages.append(UserNotice(tr("BLE Log frames identified; earlier data was outside BLE Log frames.")))
+                # The text is shown and recorded, but whether it reached a file is only known once the
+                # recording ends, so this notice must not promise one.
+                messages.append(UserNotice(tr("BLE Log frames identified; earlier text is shown as undecoded data.")))
         if (
             kind is StreamKind.LIKELY_TEXT
             and not self._debug
@@ -318,8 +326,11 @@ class CaptureEventPresenter:
         messages: list[Message] = []
         for internal in event.internal_frames:
             messages.append(InternalFrameDecoded(internal.int_src, internal.decoded))
-        for redir in event.redir_events:
-            messages.extend(self._write_redir_text(redir.text, redir.received_at_ms))
+        for console_event in event.console_events:
+            if isinstance(console_event, UndecodedEvent):
+                messages.extend(self._write_undecoded(console_event))
+            else:
+                messages.extend(self._write_redir_text(console_event.text, console_event.received_at_ms))
         return tuple(messages)
 
     def _handle_writer_event(self, event: WriterEvent) -> tuple[Message, ...]:
@@ -376,6 +387,40 @@ class CaptureEventPresenter:
         if event.kind == "error":
             return (UserNotice(tr("Aggregator error: {message}", message=event.message), level="warning"),)
         return ()
+
+    def _separate_console_line(self, received_at_ms: int) -> list[Message]:
+        if self._console_line_buf or self._console_line_prefixed or self._redir_line_buf:
+            return self._write_redir_text("\n", received_at_ms)
+        return []
+
+    def _end_undecoded(self, received_at_ms: int) -> list[Message]:
+        if not self._undecoded_active:
+            return []
+        messages = self._separate_console_line(received_at_ms)
+        messages.extend(self._write_redir_text(tr("--- End of undecoded data ---") + "\n", received_at_ms))
+        self._undecoded_active = False
+        self._undecoded_previous_cr = False
+        return messages
+
+    def _write_undecoded(self, event: UndecodedEvent) -> list[Message]:
+        if event.end:
+            return self._end_undecoded(event.received_at_ms)
+        text = event.text
+        if not text:
+            return []
+        messages: list[Message] = []
+        if not self._undecoded_active:
+            messages.extend(self._separate_console_line(event.received_at_ms))
+            messages.extend(self._write_redir_text(tr("--- Undecoded data ---") + "\n", event.received_at_ms))
+            self._undecoded_active = True
+        # A CRLF can straddle two events; normalize it before the shared UI and file path.
+        previous_cr = self._undecoded_previous_cr
+        self._undecoded_previous_cr = text.endswith("\r")
+        if previous_cr and text.startswith("\n"):
+            text = text[1:]
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        messages.extend(self._write_redir_text(text, event.received_at_ms))
+        return messages
 
     def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
         messages: list[Message] = []

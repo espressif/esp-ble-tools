@@ -70,12 +70,13 @@ def _content_warnings(identity: StreamIdentity | None, regular_frames: int, *, r
         if raw_complete:
             warnings.append(
                 "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to "
-                "the raw file."
+                "the raw file, and the console log holds at most their displayable text."
             )
         else:
             warnings.append(
                 "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not "
-                "be confirmed complete, so those bytes may not all be in the raw file."
+                "be confirmed complete, so those bytes may not all be in the raw file, and the console log "
+                "holds at most their displayable text."
             )
     return warnings
 

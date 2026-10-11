@@ -6,6 +6,7 @@
 # 设备刚打开时的线路状态（Linux CDC-ACM 在打开时置位 DTR 和 RTS，即 1/1），并记录每次 ioctl 之后
 # 的状态。USJ 在 RTS 有效而 DTR 无效时复位芯片（esptool 的 USJ 复位序列）。这证明 Console 发出的
 # 线路次序，不证明真实 USB 主机、驱动或芯片的行为，后者只能用实物验证。
+# 字节流里的文本与 BLE Log 识别由 console_text.feature 覆盖。
 
 功能: 从 USB Serial/JTAG 口接收 BLE Log
 

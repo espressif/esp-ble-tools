@@ -233,6 +233,7 @@ def test_parser_without_rules_keeps_no_identity_and_no_text() -> None:
     summary = parser.finalize()
 
     assert batch.identity is None and summary.identity is None
+    assert summary.events == ()
     assert all(type(event).__name__ == "FrameEvent" for event in batch.events)
 
 

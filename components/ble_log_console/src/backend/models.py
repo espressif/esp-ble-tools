@@ -153,8 +153,8 @@ class TransportMode(str, Enum):
 
 
 # Serial transports whose byte stream may also carry chip console text (boot ROM,
-# panic output) next to BLE Log frames. Only these identify the stream content;
-# SPI Bridge and USB Output carry frames only.
+# panic output) next to BLE Log frames. Only these show undecoded text and
+# identify the stream content; SPI Bridge and USB Output carry frames only.
 CONSOLE_TEXT_MODES: frozenset[TransportMode] = frozenset({TransportMode.UART, TransportMode.USJ})
 
 

@@ -159,7 +159,7 @@ def attempt_start(start_world: SimpleNamespace) -> None:
             WriterEvent("opened", status=WriterStatus(output, (output,), 18, 1, 1, False))
         )
         session._event_presenter.handle_event(
-            AggregatorUpdate(redir_events=(RedirEvent(20, 8, 0, "previous console text\n", 0),))
+            AggregatorUpdate(console_events=(RedirEvent(20, 8, 0, "previous console text\n", 0),))
         )
         session._finished = True
         app._publish_view_messages(session._finish_result(_completed_result(output)))

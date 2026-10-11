@@ -131,7 +131,7 @@ def _merge_updates(updates: list[AggregatorUpdate]) -> AggregatorUpdate | None:
         return None
     return AggregatorUpdate(
         frames_seen=sum(update.frames_seen for update in updates),
-        redir_events=tuple(event for update in updates for event in update.redir_events),
+        console_events=tuple(event for update in updates for event in update.console_events),
         internal_frames=tuple(internal for update in updates for internal in update.internal_frames),
     )
 
@@ -170,6 +170,9 @@ def _handle_parser_item(
     if isinstance(item, ParseSummary):
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
+        if item.events:
+            # The undecoded tail resolved at end of input precedes the final snapshot.
+            _put_analysis_event(ui_queue, aggregator.consume_events(item.events))
         aggregator.consume_parser_summary(item)
         return True, True
     if isinstance(item, ParserStatus):

@@ -139,7 +139,7 @@ def test_aggregator_loop_preserves_redir_receive_timestamp() -> None:
     run_aggregator_loop(parser_event_queue, raw_stats_queue, ui_queue, snapshot_elapsed_sec=1.0)
 
     updates = [event for event in _events(ui_queue) if isinstance(event, AggregatorUpdate)]
-    assert updates[0].redir_events[0].received_at_ms == 123
+    assert updates[0].console_events[0].received_at_ms == 123
 
 
 def test_aggregator_loop_emits_periodic_snapshot() -> None:

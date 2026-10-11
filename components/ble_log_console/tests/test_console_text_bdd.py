@@ -10,6 +10,7 @@ import errno
 import multiprocessing
 import os
 import random
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import replace
@@ -58,30 +59,18 @@ from tests.helpers import BytesReader, build_frame, snapshot_payload, xor_checks
 
 scenarios("features/console_text.feature")
 
-
 BOOT_TEXT = b"".join(
     b"\x1b[0;32mI (%d) boot: loading partition table entry %d\x1b[0m\r\n" % (index * 7, index) for index in range(12)
 )
-
-
 CRASH_TEXT = b"Guru Meditation Error: Core 0 panic'ed (Load access fault)\r\n" + b"MEPC    : 0x4200a1b2\r\n" * 8
-
-
+HOST_LINE = "HOST TEXT BEFORE BLE"
+TAIL_TEXT = "TAIL WITHOUT NEWLINE"
 REDIR_LINE = b"I (900) app: forwarded through BLE Log\n"
-
-
 BEGIN = "--- Undecoded data ---"
-
-
+END = "--- End of undecoded data ---"
 TEXT_WARNING = "looks like plain console text"
-
-
 GENERIC_NO_FRAME_WARNING = "No valid BLE Log frames were decoded for 10s"
-
-
 BLE_NO_FRAME_WARNING = "BLE Log was identified on this port, but no regular log frames"
-
-
 MODES = {mode.name: mode for mode in TransportMode}
 
 
@@ -188,6 +177,31 @@ def unknown_source_frames(world: SimpleNamespace, mode: str) -> SimpleNamespace:
 @given(parsers.parse("一个 {mode} 端口先输出 BLE Log 帧，安静一段时间后输出崩溃文本"), target_fixture="world")
 def ble_quiet_then_crash(world: SimpleNamespace, mode: str) -> SimpleNamespace:
     return _set_stream(world, mode, [_host_frames(3), b"", b"", b"", CRASH_TEXT, b""])
+
+
+@given(parsers.parse("一个 {mode} 端口以文本加半个帧结尾"), target_fixture="world")
+def text_and_half_frame(world: SimpleNamespace, mode: str) -> SimpleNamespace:
+    unfinished = _frame(b"never completed payload\n", BleLogSource.REDIR, 0)[:-4]
+    return _set_stream(world, mode, [_redir_frames(1), b"boot tail line\r\nEND-OF-TEXT " + unfinished])
+
+
+@given(
+    parsers.parse("一个 {mode} 端口输出的文本行在两次快照之间断开，随后输出 BLE Log 帧和不换行的结尾文本"),
+    target_fixture="world",
+)
+def split_lines_then_ble(world: SimpleNamespace, mode: str) -> SimpleNamespace:
+    host_lines = f"{HOST_LINE}\n".encode() * 127 + HOST_LINE[:-3].encode()
+    return _set_stream(
+        world, mode, [host_lines, HOST_LINE[-3:].encode() + b"\n" + _redir_frames(3), TAIL_TEXT.encode()]
+    )
+
+
+@given(
+    parsers.parse("一个 {mode} 端口在多次快照之间输出一行 {length:d} 字符、最后才换行的文本"),
+    target_fixture="world",
+)
+def long_line(world: SimpleNamespace, mode: str, length: int) -> SimpleNamespace:
+    return _set_stream(world, mode, [b"Z" * 10_000, b"Z" * 10_000, b"Z" * (length - 20_000) + b"\n"])
 
 
 @given(parsers.parse("一个 {mode} 端口输出两行短文本"), target_fixture="world")
@@ -307,8 +321,9 @@ def _live(world: SimpleNamespace, mounted_app: SimpleNamespace, seconds: int) ->
         messages.extend(presenter.handle_event(aggregator.snapshot(1.0)))
         _post(mounted_app, messages)
         world.live.append(SimpleNamespace(second=second, messages=messages, status=panel.render().plain))
+    # Same end-of-input order as the analysis worker: the summary's undecoded tail precedes the final snapshot.
     summary = parser.finalize()
-    final: list[Any] = []
+    final: list[Any] = list(presenter.handle_event(aggregator.consume_events(summary.events)))
     aggregator.consume_parser_summary(summary)
     final.extend(presenter.handle_event(aggregator.snapshot(1.0)))
     final.extend(presenter.finish())
@@ -326,6 +341,46 @@ def live_for_stream(world: SimpleNamespace, mounted_app: SimpleNamespace) -> Non
     _live(world, mounted_app, len(world.chunks))
 
 
+@when("实时界面每秒收到一次数据和快照，最后结束录制")
+def live_until_end(world: SimpleNamespace, mounted_app: SimpleNamespace) -> None:
+    _live(world, mounted_app, len(world.chunks))
+
+
+def _rows_with(world: SimpleNamespace, text: str) -> list[int]:
+    return [index for index, row in enumerate(world.rendered) if text in row]
+
+
+@then(parsers.parse('界面中 {count:d} 行 "{line}" 都完整显示，没有被拆开'))
+def rendered_lines_intact(world: SimpleNamespace, count: int, line: str) -> None:
+    rows = [world.rendered[index] for index in _rows_with(world, line.split()[0])]
+    assert [row for row in rows if not row.endswith(line)] == []
+    assert len(rows) == count
+
+
+@then("界面中转发日志显示在未解码数据结束标记之后")
+def rendered_redir_after_span(world: SimpleNamespace) -> None:
+    redir_rows = _rows_with(world, "forwarded through BLE Log")
+    end_rows = _rows_with(world, tr(END))
+    assert len(redir_rows) == 3
+    assert _rows_with(world, HOST_LINE)[-1] < end_rows[0] < redir_rows[0]
+
+
+@then("不换行的结尾文本在界面中完整显示一次，未解码数据标记成对")
+def rendered_tail_once(world: SimpleNamespace) -> None:
+    tail_rows = _rows_with(world, TAIL_TEXT.split()[0])
+    begin_rows, end_rows = _rows_with(world, tr(BEGIN)), _rows_with(world, tr(END))
+    assert [world.rendered[index].endswith(TAIL_TEXT) for index in tail_rows] == [True]
+    assert len(begin_rows) == len(end_rows) == 2
+    assert begin_rows[-1] < tail_rows[0] < end_rows[-1]
+
+
+@then(parsers.parse("界面中这行文本只在第 {limit:d} 个字符处断开一次，共显示 {length:d} 个字符"))
+def rendered_long_line_bounded(world: SimpleNamespace, limit: int, length: int) -> None:
+    # Joining rows merges the wrapped rows of one write; the timestamp of the next write separates the runs.
+    runs = [len(run) for run in re.findall("Z+", "".join(world.rendered))]
+    assert runs == [limit, length - limit]
+
+
 def _notices(world: SimpleNamespace, text: str) -> list[int]:
     return [
         tick.second
@@ -341,6 +396,15 @@ def raw_is_exact(world: SimpleNamespace) -> None:
     assert recording.output.read_bytes() == world.data
     assert recording.result.raw_bytes == len(world.data)
     assert recording.report.raw_complete
+
+
+@then("界面和 console.log 都按原顺序显示这段文本")
+def text_shown_in_order(world: SimpleNamespace) -> None:
+    for text in (world.recording.ui, world.recording.console_log):
+        assert text.count("loading partition table entry 11") == 26
+        assert text.index("entry 0") < text.index("entry 11")
+        assert text.count(tr(BEGIN)) == text.count(tr(END)) == 1
+    assert "\x1b" not in world.recording.console_log
 
 
 def _verdict_from_label(label: str) -> CaptureVerdict:
@@ -410,6 +474,14 @@ def ble_notice_once(world: SimpleNamespace) -> None:
 def ble_specific_no_frame_warning(world: SimpleNamespace) -> None:
     assert _notices(world, BLE_NO_FRAME_WARNING) == [10]
     assert _notices(world, GENERIC_NO_FRAME_WARNING) == []
+
+
+@then("console.log 中启动文本位于未解码数据标记之间，转发日志在其后")
+def text_then_redir_in_console_log(world: SimpleNamespace) -> None:
+    log = world.recording.console_log
+    begin, end = log.index(tr(BEGIN)), log.index(tr(END))
+    assert begin < log.index("entry 0") < log.rindex("entry 11") < end < log.index("forwarded through BLE Log")
+    assert log.count("forwarded through BLE Log") == 3
 
 
 @then(parsers.parse("报告判定为「{label}」且没有内容警告"))
@@ -486,7 +558,7 @@ def report_gap_after_ble(world: SimpleNamespace, label: str) -> None:
     recording = world.recording
     assert recording.report.verdict is _verdict_from_label(label)
     assert "Data outside BLE Log frames arrived after BLE Log was identified" in recording.report_text
-    # The decoder still holds the last few crash-text bytes at EOF: they are reported as carried
+    # The decoder still holds the last few crash-text bytes at EOF: they are shown, reported as carried
     # bytes, and not counted as data outside frames.
     carried = recording.report.parser_carried_bytes
     assert 0 < carried < 6
@@ -494,10 +566,33 @@ def report_gap_after_ble(world: SimpleNamespace, label: str) -> None:
     assert f"Trailing carried bytes: {carried}" in recording.report_text
 
 
+@then("界面和 console.log 都显示了崩溃文本")
+def crash_text_shown(world: SimpleNamespace) -> None:
+    for text in (world.recording.ui, world.recording.console_log):
+        assert "Guru Meditation Error" in text
+        assert text.count("MEPC    : 0x4200a1b2") == 8
+
+
+@then("结尾文本在界面和 console.log 中各出现一次，未解码数据标记成对")
+def tail_once(world: SimpleNamespace) -> None:
+    for text in (world.recording.ui, world.recording.console_log):
+        assert text.count("END-OF-TEXT") == 1
+        assert text.count("never completed payload") == 1
+        assert text.count(tr(BEGIN)) == text.count(tr(END)) == 1
+
+
+@then("再次结束不再输出任何内容")
+def finish_is_idempotent(world: SimpleNamespace) -> None:
+    before = world.recording.console_log
+    assert world.recording.presenter.finish() == ()
+    assert world.recording.presenter.state.saved_console_log_paths[0].read_text() == before
+
+
 @then("界面和 console.log 都没有这段文本")
 def no_text_for_other_modes(world: SimpleNamespace) -> None:
     for text in (world.recording.ui, world.recording.console_log):
         assert "partition table" not in text
+        assert tr(BEGIN) not in text
 
 
 @then("报告不包含数据内容一节，也没有内容警告")
@@ -606,8 +701,52 @@ def binary_between_frames_then_disconnect(world: SimpleNamespace, mode: str, cou
     return _set_stream(world, mode, [_host_frames(3), b"\xff" * count, _host_frames(3, first_sn=3)])
 
 
+AFTER_FAILURE_TEXT = b"AFTER FAILURE line\r\n" * 3
+
+
 def _rendered_rows(app: BLELogApp) -> list[str]:
     return [strip.text.rstrip() for strip in app.query_one(LogView).lines]
+
+
+@given(parsers.parse("一个 {mode} 端口先输出启动文本，再输出更多文本和 BLE Log 帧"), target_fixture="world")
+def text_then_more_text_and_frames(world: SimpleNamespace, mode: str) -> SimpleNamespace:
+    world.phases = [
+        (
+            BOOT_TEXT,
+            lambda app: (
+                "PLAIN TEXT" in app.query_one(StatusPanel).render().plain
+                and any("entry 10" in row for row in _rendered_rows(app))
+            ),
+        ),
+        (
+            AFTER_FAILURE_TEXT + _redir_frames(3),
+            lambda app: sum("forwarded through BLE Log" in row for row in _rendered_rows(app)) == 3,
+        ),
+    ]
+    return _set_stream(world, mode, [BOOT_TEXT, AFTER_FAILURE_TEXT + _redir_frames(3)])
+
+
+class _DiskFullConsoleFile:
+    """A real console.log that stops accepting text after a byte budget, like a disk that fills up."""
+
+    def __init__(self, path: Path, budget: int) -> None:
+        self._file = _default_text_file_factory(path)
+        self._budget = budget
+
+    def write(self, text: str) -> int:
+        if len(text) > self._budget:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        self._budget -= len(text)
+        return self._file.write(text)
+
+    def flush(self) -> None:
+        self._file.flush()
+
+    def fileno(self) -> int:
+        return self._file.fileno()
+
+    def close(self) -> None:
+        self._file.close()
 
 
 @given(parsers.parse("一个 {mode} 端口分两次输出转发日志帧"), target_fixture="world")
@@ -672,6 +811,17 @@ def console_sync_fails(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
 def console_sync_and_close_fail(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
     world.double_failure = True
     console_sync_fails(world, monkeypatch, operation)
+
+
+@given("console.log 写入一部分后磁盘写满")
+def console_disk_fills(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    def disk_full(path: Path) -> _DiskFullConsoleFile:
+        return _DiskFullConsoleFile(path, budget=300)
+
+    monkeypatch.setattr(
+        "src.frontend.capture_session.CaptureEventPresenter",
+        partial(CaptureEventPresenter, text_file_factory=disk_full),
+    )
 
 
 @when("Console 界面通过独立进程从虚拟串口录制这段数据，然后停止并查看报告")
@@ -762,10 +912,14 @@ def report_binary_gap_kept_in_raw(world: SimpleNamespace, label: str) -> None:
     assert recording.report.verdict is _verdict_from_label(label)
     assert recording.report.stream_identity.evidence.gap_bytes_after_ble == world.binary_gap
     assert recording.report.reasons == (
-        ("Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to the raw file."),
+        (
+            "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to the raw "
+            "file, and the console log holds at most their displayable text."
+        ),
     )
     assert (
-        "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；这些字节都会写入原始数据文件。"
+        "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；这些字节都会写入原始数据文件，"
+        "串口转发日志最多只包含其中可显示的文本。"
     ) in recording.report_text_zh
 
 
@@ -813,6 +967,41 @@ def app_report_ready(world: SimpleNamespace, label: str) -> None:
     )
 
 
+CONSOLE_FAILURE_NOTICE = "Console log could not be saved: [Errno 28] No space left on device."
+
+
+@then("界面只提示一次 console.log 保存失败，之后的文本和转发日志仍然显示")
+def app_console_failure_notice_once(world: SimpleNamespace) -> None:
+    rows = world.rendered
+    notices = [index for index, row in enumerate(rows) if "Console log could not be saved" in row]
+    assert len(notices) == 1, rows
+    assert CONSOLE_FAILURE_NOTICE in rows[notices[0]]
+    after = rows[notices[0] :]
+    assert sum("AFTER FAILURE line" in row for row in after) == 3
+    assert sum("forwarded through BLE Log" in row for row in after) == 3
+
+
+@then("识别出 BLE Log 时，界面说明之前的文本已作为未解码数据显示，不承诺保存到文件")
+def app_transition_notice_without_console_log(world: SimpleNamespace) -> None:
+    transition = [row for row in world.rendered if "BLE Log frames identified" in row]
+    assert transition == ["[INFO] BLE Log frames identified; earlier text is shown as undecoded data."]
+    assert "raw file" not in transition[0]
+    assert "console.log" not in transition[0]
+
+
+@then(parsers.parse("界面报告判定为「{label}」，说明 console.log 不完整且此错误本身不会停止原始录制"))
+def app_report_console_incomplete(world: SimpleNamespace, label: str) -> None:
+    text = world.app.report_text
+    assert f"Verdict: {_verdict_from_label(label).value}" in text
+    assert (
+        "Reasons:\n  - The console log could not be saved completely; this error does not itself stop raw recording.\n"
+        in text
+    )
+    assert "Saved raw data: Confirmed" in text
+    assert "Console log error: [Errno 28] No space left on device" in text
+    assert "Writer:" not in text
+
+
 @then("同步失败只警告一次，保留首个错误且不再打开日志分片")
 def app_sync_failure_visible_once(world: SimpleNamespace) -> None:
     notices = [index for index, row in enumerate(world.rendered) if "Console log could not be saved" in row]
@@ -838,6 +1027,14 @@ def app_sync_failure_visible_once(world: SimpleNamespace) -> None:
     saved = world.sync_paths[0].read_text(encoding="utf-8")
     assert "BEFORE SYNC" in saved
     assert ("AFTER SYNC" in saved) is not world.rotating
+
+
+@then("console.log 保留失败前写入的内容")
+def console_log_keeps_prefix(world: SimpleNamespace) -> None:
+    (path,) = world.app.console_log_paths
+    saved = path.read_text(encoding="utf-8")
+    assert 0 < len(saved) <= 300
+    assert tr(BEGIN) in saved and "entry 0" in saved
 
 
 def test_record_in_app_observes_mounted_report_after_saved_path(
