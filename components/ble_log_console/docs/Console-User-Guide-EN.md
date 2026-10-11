@@ -158,7 +158,7 @@ The recording screen is shown below:
   <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 70%; max-width: 900px;">
 </p>
 
-During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received and saved by the PC. `Frames` is the number of valid log frames recognized by the tool.
+During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received by the PC. `Frames` is the number of valid log frames recognized by the tool.
 
 - **Normal:** Both `RX` and `Frames` keep increasing, which means the tool is receiving and recognizing logs normally.
 - **No data received:** `RX` remains 0. The tool shows a warning every 10 seconds. Check the port, cable, and firmware logging configuration.
@@ -172,7 +172,7 @@ During recording, first check `RX` and `Frames` at the bottom of the screen. `RX
 
 When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 in a serial monitor are sent to BLE Log Console together with BLE Log data. The tool displays them in the log area and automatically saves them in the selected log directory. The `_console.log` file is created only when the tool actually receives console-log content.
 
-The first line of each group of console log messages includes the PC receive time, for example `[15:14:54.367]`. When saving the file, the tool removes color and other terminal-control characters and normalizes line endings without modifying the original `.bin` file.
+The first line of each group of console log messages includes the PC receive time, for example `[15:14:54.367]`. When saving the file, the tool removes color and other terminal-control characters and normalizes line endings without modifying the original `.bin` file. If `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure. If writing or synchronizing fails and closing the file also fails, the warning and report retain the first error.
 
 ### 4.3 Stop the Recording and Check the Result
 

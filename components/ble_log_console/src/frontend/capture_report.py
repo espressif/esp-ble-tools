@@ -60,6 +60,7 @@ def build_capture_report(
     duration_sec: float,
     console_log_paths: tuple[Path, ...],
     report_path: Path,
+    console_log_error: str | None = None,
 ) -> CaptureReport:
     snapshot = result.final_snapshot
     regular_frames = snapshot.regular_frames if snapshot is not None else 0
@@ -68,8 +69,15 @@ def build_capture_report(
     firmware_loss = snapshot.capture_firmware_loss if snapshot is not None else ()
     firmware_written_bytes = snapshot.capture_firmware_written_bytes if snapshot is not None else 0
     firmware_lost_bytes = snapshot.capture_firmware_lost_bytes if snapshot is not None else 0
+    # Writer finalization alone does not prove that the file holds every recorded byte: a transport can
+    # lose bytes before the writer sees them, whether or not that loss surfaces as a reader error. Either
+    # failure must clear the completeness claim that the report and its summary make.
     raw_complete = bool(
-        result.raw_bytes > 0 and result.raw_paths and result.writer_error is None and result.writer_finalized
+        result.raw_bytes > 0
+        and result.raw_paths
+        and result.writer_error is None
+        and result.writer_finalized
+        and result.reader_error is None
     )
     parser_complete = bool(
         snapshot is not None
@@ -105,6 +113,9 @@ def build_capture_report(
     )
     reasons: list[str] = []
     warnings: list[str] = []
+    findings: list[str] = []
+    if console_log_error is not None:
+        findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
 
     if result.writer_error is not None or not result.writer_finalized:
         reasons.append("Raw recording could not be finalized safely.")
@@ -118,6 +129,7 @@ def build_capture_report(
         reasons.append("No raw recording data was saved.")
         verdict = CaptureVerdict.RECAPTURE
     else:
+        warnings.extend(findings)
         if not parser_complete:
             warnings.append("Live parsing did not cover all saved raw data; sequence integrity is not fully verified.")
         if result.reader_error:
@@ -153,6 +165,11 @@ def build_capture_report(
         else:
             verdict = CaptureVerdict.READY
             reasons.append("Raw data was finalized, BLE Log frames were decoded, and no continuity loss was observed.")
+    for warning in findings:
+        if warning not in warnings:
+            warnings.append(warning)
+        if warning not in reasons:
+            reasons.append(warning)
 
     peak_bits_per_sec = snapshot.stats.transport.max_rx_bits_per_sec if snapshot is not None else 0.0
     return CaptureReport(
@@ -188,6 +205,7 @@ def build_capture_report(
         warnings=tuple(warnings),
         firmware_version=snapshot.firmware_version if snapshot is not None else None,
         firmware_contract_known=snapshot.firmware_contract_known if snapshot is not None else True,
+        console_log_error=console_log_error,
     )
 
 
@@ -261,7 +279,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
         (
             f"{tr('Recommendation', language=language)}{separator}{tr(advice, language=language)}",
             "",
-            f"{tr('Saved data (reliable)' if report.raw_complete else 'Saved data (incomplete)', language=language)}{separator.rstrip()}",
+            f"{tr('Saved data (confirmed)' if report.raw_complete else 'Saved data (not confirmed)', language=language)}{separator.rstrip()}",
             f"  {tr('Duration', language=language)}{separator}{report.duration_sec:.1f} s",
             (
                 f"  {tr('Raw', language=language)}{separator}"
@@ -305,7 +323,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         *(f"  - {reason}" for reason in _localized_reasons(report, language)),
         "",
         f"{tr('Reliability', language=language)}{separator.rstrip()}",
-        f"  {field('Saved raw data', tr('Complete and reliable' if report.raw_complete else 'Incomplete', language=language))}",
+        f"  {field('Saved raw data', tr('Confirmed' if report.raw_complete else 'Not confirmed', language=language))}",
         f"  {field('Automated quality check', tr('all saved data' if report.parser_complete else 'parsed portion only', language=language))}",
         f"  {field('Parser coverage summary', _coverage_text(report, language))}",
         "",
@@ -365,18 +383,22 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     observed_loss = tuple(row for row in report.firmware_loss if row.frames or row.bytes)
     if observed_loss:
         for loss in observed_loss:
-            if language == "zh_CN":
-                lines.append(f"  {resolve_source_name(loss.source)}：{loss.frames} 帧，{format_bytes(loss.bytes)}")
-            else:
-                lines.append(
-                    f"  {resolve_source_name(loss.source)}: {loss.frames} frame(s), {format_bytes(loss.bytes)}"
-                )
+            row = tr(
+                "{source}: {frames} frame(s), {bytes}",
+                language=language,
+                source=resolve_source_name(loss.source),
+                frames=loss.frames,
+                bytes=format_bytes(loss.bytes),
+            )
+            lines.append(f"  {row}")
     else:
         lines.append(f"  {tr('None observed after baseline.', language=language)}")
 
     lines.extend(("", f"{tr('Files', language=language)}{separator.rstrip()}"))
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
+    if report.console_log_error:
+        lines.append(f"  {field('Console log error', report.console_log_error)}")
     if report.report_write_error:
         not_saved = f"{tr('NOT SAVED', language=language)} ({report.report_write_error})"
         lines.append(f"  {field('Report', not_saved)}")
@@ -509,44 +531,39 @@ def _format_rate(rate: float | None, language: str) -> str:
 
 def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
     if segment.complete:
-        status = "完整" if language == "zh_CN" else "complete"
+        status = tr("complete", language=language)
     elif segment.final_stat_seen:
-        status = "开头不完整" if language == "zh_CN" else "partial start"
+        status = tr("partial start", language=language)
     else:
-        status = "结尾不完整" if language == "zh_CN" else "partial end"
+        status = tr("partial end", language=language)
 
     if not segment.received_frames:
-        sequence_text = "无数据" if language == "zh_CN" else "no data"
+        sequence_text = tr("no data", language=language)
     elif segment.sequence_uncertain:
-        sequence_text = "无法确认" if language == "zh_CN" else "uncertain"
+        sequence_text = tr("uncertain", language=language)
     elif segment.sequence_missing_frames:
-        sequence_text = (
-            f"缺失 {segment.sequence_missing_frames} 帧"
-            if language == "zh_CN"
-            else f"{segment.sequence_missing_frames} missing"
-        )
+        sequence_text = tr("{frames} missing", language=language, frames=segment.sequence_missing_frames)
     else:
-        sequence_text = "连续" if language == "zh_CN" else "continuous"
-
-    if language == "zh_CN":
-        if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
-            firmware = f"固件写入失败 {segment.firmware_lost_frames} 帧"
-        elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
-            firmware = f"固件缓冲丢帧（ENH_STAT）{segment.firmware_lost_frames} 帧"
-        else:
-            firmware = "无固件统计"
-        return f"  第 {segment.index} 段（{status}）：接收 {segment.received_frames} 帧；{firmware}；SN {sequence_text}"
+        sequence_text = tr("continuous", language=language)
 
     if segment.firmware_counters is FirmwareCounterSource.FINAL_STAT:
-        firmware = f"firmware failed {segment.firmware_lost_frames} frame(s)"
+        firmware = tr("firmware failed {frames} frame(s)", language=language, frames=segment.firmware_lost_frames)
     elif segment.firmware_counters is FirmwareCounterSource.ENH_STAT:
-        firmware = f"firmware buffer loss (ENH_STAT) {segment.firmware_lost_frames} frame(s)"
+        firmware = tr(
+            "firmware buffer loss (ENH_STAT) {frames} frame(s)", language=language, frames=segment.firmware_lost_frames
+        )
     else:
-        firmware = "no firmware counters"
-    return (
-        f"  Segment {segment.index} ({status}): received {segment.received_frames} frame(s); "
-        f"{firmware}; SN {sequence_text}"
+        firmware = tr("no firmware counters", language=language)
+    row = tr(
+        "Segment {index} ({status}): received {frames} frame(s); {firmware}; SN {sequence}",
+        language=language,
+        index=segment.index,
+        status=status,
+        frames=segment.received_frames,
+        firmware=firmware,
+        sequence=sequence_text,
     )
+    return f"  {row}"
 
 
 def write_capture_report(report: CaptureReport, language: str | None = None) -> None:

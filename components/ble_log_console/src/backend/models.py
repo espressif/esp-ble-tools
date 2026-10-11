@@ -417,6 +417,7 @@ class CaptureReport:
     report_write_error: str | None = None
     firmware_version: int | None = None
     firmware_contract_known: bool = True
+    console_log_error: str | None = None
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {

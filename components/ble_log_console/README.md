@@ -203,6 +203,10 @@ Subcommands:
 
 `--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.
 
+### Recording files
+
+The raw `.bin` file keeps every byte the tool receives; if a transport or save failure is reported, the file may be incomplete. If `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
+
 ## Shortcuts
 
 The following shortcuts are commonly used while the application is running. They can be used to view statistics, reset the device, exit the application, and more.

@@ -27,7 +27,7 @@ from src.frontend.rendering import (
     launch_width_stable_css,
     terminal_border_style,
 )
-from src.i18n import get_language, set_language
+from src.i18n import get_language, set_language, tr
 
 BAUD_RATES: list[int] = [115200, 230400, 460800, 921600, 1500000, 2000000, 3000000]
 DEFAULT_BAUD_RATE: int = 3000000
@@ -149,8 +149,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     def compose(self) -> ComposeResult:
         mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
-        raw_port_options = list_transport_port_options(self._mode)
-        port_options = self._display_port_options(raw_port_options)
+        port_options = self._list_port_options()
         baud_options = [(str(b), b) for b in BAUD_RATES]
 
         with Vertical(id="launch-container"):
@@ -191,7 +190,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     @on(Select.Changed, "#language-select")
     def language_changed(self, event: Select.Changed) -> None:
-        if event.value is not Select.BLANK:
+        if event.value is not Select.NULL:
             set_language(str(event.value))
 
     @on(Button.Pressed, "#refresh-btn")
@@ -217,13 +216,16 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         except NoMatches:
             return
 
-    def _refresh_port_options(self) -> None:
+    def _list_port_options(self) -> list[tuple[str, str]]:
         try:
             raw_port_options = list_transport_port_options(self._mode)
-            port_options = self._display_port_options(raw_port_options)
-        except Exception as e:
-            self.notify(f"Failed to list ports: {e}")
-            port_options = []
+        except Exception as error:
+            self.notify(tr("Failed to list ports: {message}", message=error))
+            raw_port_options = []
+        return self._display_port_options(raw_port_options)
+
+    def _refresh_port_options(self) -> None:
+        port_options = self._list_port_options()
 
         try:
             port_select = self.query_one("#port-select", Select)
@@ -246,7 +248,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         return [(self._truncate_port_label(label), value) for label, value in port_options]
 
     def _mode_from_select_value(self, value: object) -> TransportMode | None:
-        if value is Select.BLANK:
+        if value is Select.NULL:
             return None
         value_text = str(value)
         for label, mode in list_transport_modes():
@@ -255,7 +257,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         try:
             return TransportMode(value_text)
         except ValueError:
-            self.notify(f"Unsupported transport mode: {value_text}'\nPlease select the right mode.")
+            self.notify(tr("Unsupported transport mode: {mode}\nPlease select the right mode.", mode=value_text))
             return None
 
     @on(Button.Pressed, "#browse-btn")
@@ -276,15 +278,15 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         port_select = self.query_one("#port-select", Select)
         dir_input = self.query_one("#dir-input", Input)
 
-        if port_select.value is Select.BLANK:
-            self.notify("Please select a port", severity="error")
+        if port_select.value is Select.NULL:
+            self.notify(tr("Please select a port"), severity="error")
             return
 
         baudrate = DEFAULT_BAUD_RATE
         if self._mode is TransportMode.UART:
             baud_select = self.query_one("#baud-select", Select)
-            if baud_select.value is Select.BLANK:
-                self.notify("Please select a baud rate", severity="error")
+            if baud_select.value is Select.NULL:
+                self.notify(tr("Please select a baud rate"), severity="error")
                 return
             baudrate = int(baud_select.value)  # type: ignore[arg-type]  # guarded above
 

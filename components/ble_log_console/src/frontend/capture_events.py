@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from collections.abc import Callable
@@ -19,7 +20,13 @@ from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES, WriterEvent
-from src.backend.models import InternalFrameDecoded, LogLine, StatsUpdated, UserNotice, format_bytes
+from src.backend.models import (
+    InternalFrameDecoded,
+    LogLine,
+    StatsUpdated,
+    UserNotice,
+    format_bytes,
+)
 from src.frontend.rendering import normalize_console_text, strip_ansi_sequences
 from src.i18n import tr
 
@@ -45,6 +52,7 @@ class CaptureEventState:
     saved_console_log_path: Path | None
     saved_console_log_paths: tuple[Path, ...]
     disconnected: bool
+    console_log_error: str | None
 
 
 def console_log_part_path(base_path: Path, part_index: int) -> Path:
@@ -63,10 +71,16 @@ def _flush_and_close_text_file(file_obj: IO[str]) -> None:
     try:
         file_obj.flush()
         try:
-            os.fsync(file_obj.fileno())
+            fd = file_obj.fileno()
         except OSError:
             pass
-    finally:
+        else:
+            os.fsync(fd)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            file_obj.close()
+        raise
+    else:
         file_obj.close()
 
 
@@ -103,6 +117,8 @@ class CaptureEventPresenter:
         self._saved_capture_paths: list[Path] = []
         self._saved_console_log_paths: list[Path] = []
         self._console_log_file: IO[str] | None = None
+        self._console_log_error: str | None = None
+        self._console_log_error_shown = False
         self._console_log_path = console_log_part_path(output_path, 1)
         self._console_part_index = 1
         self._console_part_bytes = 0
@@ -132,6 +148,7 @@ class CaptureEventPresenter:
             saved_console_log_path=self._saved_console_log_paths[-1] if self._saved_console_log_paths else None,
             saved_console_log_paths=tuple(self._saved_console_log_paths),
             disconnected=self._disconnected,
+            console_log_error=self._console_log_error,
         )
 
     def handle_event(self, event: Any) -> tuple[Message, ...]:
@@ -159,14 +176,20 @@ class CaptureEventPresenter:
             messages.extend(self.handle_event(event))
         return tuple(messages)
 
-    def finish(self) -> None:
-        """Close UI-owned sinks and mark the transport disconnected."""
+    def finish(self) -> tuple[Message, ...]:
+        """Close the sinks and return the final UI lines; repeat calls return nothing."""
 
+        messages: list[Message] = []
+        if self._redir_line_buf:
+            self._append_redir_log_lines(messages, [self._redir_line_buf], self._console_line_received_at_ms)
+            self._redir_line_buf = ""
         self.close()
+        messages.extend(self._console_log_failure_notice())
         self._disconnected = True
+        return tuple(messages)
 
     def close(self) -> None:
-        """Flush and close UI-owned output files."""
+        """Flush and close UI-owned output files; a console.log failure is kept in ``state``, not raised."""
 
         if self._console_log_file is None:
             return
@@ -175,7 +198,12 @@ class CaptureEventPresenter:
         else:
             self._write_console_line(self._console_line_buf, self._console_line_received_at_ms, complete=False)
         self._console_line_buf = ""
-        _flush_and_close_text_file(self._console_log_file)
+        if self._console_log_file is None:
+            return
+        try:
+            _flush_and_close_text_file(self._console_log_file)
+        except OSError as error:
+            self._console_log_failed(error)
         self._console_log_file = None
 
     def _handle_snapshot(self, event: AggregatorSnapshot) -> tuple[Message, ...]:
@@ -283,7 +311,8 @@ class CaptureEventPresenter:
             return (
                 UserNotice(
                     tr(
-                        "Realtime parser skipped {chunks} chunks ({bytes}); raw recording saved them, live stats are incomplete.",
+                        "Realtime parser skipped {chunks} chunks ({bytes}); live stats are incomplete. "
+                        "The quality report states whether the raw recording was finalized completely.",
                         chunks=event.parse_dropped_chunks,
                         bytes=format_bytes(event.parse_dropped_bytes),
                     ),
@@ -342,6 +371,7 @@ class CaptureEventPresenter:
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
             messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
+        messages.extend(self._console_log_failure_notice())
         return messages
 
     def _write_console_line(self, text: str, received_at_ms: int, *, complete: bool) -> None:
@@ -359,9 +389,12 @@ class CaptureEventPresenter:
     def _append_console_log_text(self, text: str) -> None:
         if self._console_log_file is None or not text:
             return
-        self._console_log_file.write(text)
-        self._console_part_bytes += len(text.encode(errors="replace"))
-        self._flush_console_log_if_due()
+        try:
+            self._console_log_file.write(text)
+            self._console_part_bytes += len(text.encode(errors="replace"))
+            self._flush_console_log_if_due()
+        except OSError as error:
+            self._console_log_failed(error)
 
     def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
         non_empty_lines = [line for line in lines if line]
@@ -382,20 +415,46 @@ class CaptureEventPresenter:
         self._last_console_flush_at = now
 
     def _ensure_console_log_open(self) -> None:
-        if self._console_log_file is None:
+        if self._console_log_error is not None:
+            return
+        try:
+            if self._console_log_file is not None:
+                if self._console_part_bytes < self._console_part_max_bytes:
+                    return
+                _flush_and_close_text_file(self._console_log_file)
+                self._console_log_file = None
+                self._console_part_index += 1
+                self._console_part_bytes = 0
             self._console_log_path = console_log_part_path(self._output_path, self._console_part_index)
             self._console_log_file = self._text_file_factory(self._console_log_path)
-            self._last_console_flush_at = self._clock()
-            self._saved_console_log_paths.append(self._console_log_path)
+        except OSError as error:
+            self._console_log_failed(error)
             return
-
-        if self._console_part_bytes < self._console_part_max_bytes:
-            return
-
-        _flush_and_close_text_file(self._console_log_file)
-        self._console_part_index += 1
-        self._console_part_bytes = 0
-        self._console_log_path = console_log_part_path(self._output_path, self._console_part_index)
-        self._console_log_file = self._text_file_factory(self._console_log_path)
         self._last_console_flush_at = self._clock()
         self._saved_console_log_paths.append(self._console_log_path)
+
+    def _console_log_failed(self, error: OSError) -> None:
+        """Stop the console.log sink after its first error; the UI text keeps displaying and raw recording is unaffected."""
+
+        if self._console_log_error is None:
+            self._console_log_error = str(error)
+        file_obj, self._console_log_file = self._console_log_file, None
+        if file_obj is not None:
+            # The first error is the one reported; a close that fails again adds nothing.
+            with contextlib.suppress(OSError):
+                file_obj.close()
+
+    def _console_log_failure_notice(self) -> list[Message]:
+        if self._console_log_error is None or self._console_log_error_shown:
+            return []
+        self._console_log_error_shown = True
+        return [
+            UserNotice(
+                tr(
+                    "Console log could not be saved: {message}. The text is still shown here; this error does not "
+                    "itself stop raw recording.",
+                    message=self._console_log_error,
+                ),
+                level="warning",
+            )
+        ]
