@@ -7,7 +7,7 @@ Version: v1.1.0
 
 ## Introduction
 
-BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports UART and SPI Bridge transport modes.
+BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports the UART, SPI Bridge, USJ (the chip's built-in USB Serial/JTAG port), and USB Output transport modes. This guide walks through UART and SPI Bridge. [4.2.1](#421-select-the-mode-and-port) explains how to select USJ, and the [Configuration Guide](Config-Guide-EN.md#usj) covers its firmware setup.
 
 **Before first use, download the latest stable BLE Log Console tool package:**
 
@@ -146,7 +146,9 @@ After startup, the application displays the following screen:
   <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 60%; max-width: 900px;">
 </p>
 
-First, choose the display language for long messages such as warnings and quality reports, then select the transport mode. Select UART to receive logs through a serial port, or SPI Bridge to receive logs through an SPI Bridge device. After the mode is selected, the application automatically scans the available ports.
+First, choose the display language for long messages such as warnings and quality reports, then select the transport mode. Select UART to receive logs through a serial port, or SPI Bridge to receive logs through an SPI Bridge device. Select USJ when the firmware sends BLE Log through the chip's built-in USB Serial/JTAG port; only ports with USB ID `303A:1001` are listed, and the baud rate does not apply. After the mode is selected, the application automatically scans the available ports.
+
+> In USJ mode, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, the tool releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released, never changes them afterwards, and cannot reset the target with `r`. The operating system or its USB driver can still change these lines while opening the device, so check on your PC whether connecting resets the board.
 
 Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
 

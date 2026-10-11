@@ -30,6 +30,7 @@ from src.frontend.capture_report import (
     CaptureReportScreen,
 )
 from src.frontend.log_view import LogView
+from src.i18n import tr
 from textual.pilot import Pilot
 from textual.widgets import Button
 
@@ -272,3 +273,25 @@ def test_record_in_app_observes_mounted_report_after_saved_path(
     assert len(snapshots) == 1
     assert world.app.raw == _redir_frames(3)
     assert world.session.finished and not world.session._pipeline.is_alive()
+
+
+def _verdict_from_label(label: str) -> CaptureVerdict:
+    return next(verdict for verdict in CaptureVerdict if tr(verdict.value, language="zh_CN") == label)
+
+
+@then(parsers.parse("界面报告判定为「{label}」，没有内容警告"))
+def app_report_ready(world: SimpleNamespace, label: str) -> None:
+    text = world.app.report_text
+    assert f"Verdict: {_verdict_from_label(label).value}" in text
+    assert "Data outside BLE Log frames" not in text
+    assert (
+        "Reasons:\n  - Raw data was finalized, BLE Log frames were decoded, and no continuity loss was observed.\n"
+        in text
+    )
+
+
+@given("一个 USJ 端口输出三个有效 BLE Log 帧", target_fixture="world")
+def usj_regular_frames(world: SimpleNamespace) -> SimpleNamespace:
+    data = _redir_frames(3)
+    world.phases = [(data, lambda app: sum("forwarded through BLE Log" in row for row in _rendered_rows(app)) == 3)]
+    return _set_stream(world, "USJ", [data])

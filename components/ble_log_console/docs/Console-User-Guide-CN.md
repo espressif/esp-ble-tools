@@ -6,7 +6,7 @@
 > 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。
 
 ## 简介
-BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART 和 SPI Bridge 两种传输模式。
+BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART、SPI Bridge、USJ（芯片内置的 USB Serial/JTAG 口）和 USB Output 传输模式。本指南详细介绍 UART 和 SPI Bridge；选择 USJ 的方法见 [4.2.1](#421-选择模式和端口)，其固件配置见[配置指南](Config-Guide-CN.md#usj)。
 
 **首次使用前，请先下载最新稳定版 BLE Log Console 工具包：**
 
@@ -145,7 +145,9 @@ sudo ./ble_log_console_ubuntu_v1.1.0
   <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 60%; max-width: 900px;">
 </p>
 
-&emsp;首先选择警告和质量报告等长文本的显示语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。选择模式后，应用会自动扫描可用端口。
+&emsp;首先选择警告和质量报告等长文本的显示语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。固件通过芯片内置的 USB Serial/JTAG 口输出 BLE Log 时选择 USJ；此时只列出 USB ID 为 `303A:1001` 的端口，波特率不适用。选择模式后，应用会自动扫描可用端口。
+
+> USJ 模式下，DTR 和 RTS 线控制芯片的复位和启动模式。工具打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，也无法用 `r` 复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认连接时是否会复位开发板。
 
 &emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
 

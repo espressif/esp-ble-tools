@@ -608,3 +608,47 @@ def test_reader_error_clears_the_raw_completeness_claim() -> None:
     assert "Saved raw data: Confirmed" not in text
     assert "The transport ended unexpectedly" in text
     assert "Saved data (not confirmed)" in format_capture_summary(report, language="en")
+
+
+_UART_NO_FRAME_ADVICE = (
+    (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
+        "configuration, then record again."
+    ),
+    "没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。",
+)
+_NO_BAUD_NO_FRAME_ADVICE = (
+    (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log "
+        "configuration, then record again."
+    ),
+    "没有录到有效 BLE Log 帧。请检查传输模式、端口、接线和固件日志配置后重新录制。",
+)
+
+
+@pytest.mark.parametrize(
+    ("mode", "advice"),
+    [
+        (TransportMode.UART, _UART_NO_FRAME_ADVICE),
+        (TransportMode.USJ, _NO_BAUD_NO_FRAME_ADVICE),
+        (TransportMode.SPI_USB_BRIDGE, _NO_BAUD_NO_FRAME_ADVICE),
+    ],
+    ids=["uart-no-input", "usj-no-input", "spi-no-identity"],
+)
+def test_no_frame_advice_mentions_baud_rate_only_for_uart(mode: TransportMode, advice: tuple[str, str]) -> None:
+    english, chinese = advice
+    result = _result(regular_frames=0)
+    assert result.final_snapshot is not None
+    report = build_capture_report(
+        result,
+        TransportConfig(mode, "port", "port"),
+        started_at=datetime(2026, 1, 1, 12, 0, 0).astimezone(),
+        ended_at=datetime(2026, 1, 1, 12, 0, 10).astimezone(),
+        duration_sec=10.0,
+        console_log_paths=(),
+        report_path=Path("capture_report.txt"),
+    )
+
+    assert report.verdict is CaptureVerdict.CHECK_CONFIGURATION
+    assert format_capture_summary(report, language="en").splitlines()[0] == f"Recommendation: {english}"
+    assert format_capture_summary(report, language="zh_CN").splitlines()[0] == f"建议：{chinese}"

@@ -118,6 +118,7 @@ _ZH_CN = {
     "The data can be submitted for analysis, but recording quality warnings were detected.": "数据可以提交分析，但录制质量存在警告。",
     "Check the connection and configuration, then record again.": "请检查连接和配置后重新录制。",
     "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log configuration, then record again.": "没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。",
+    "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log configuration, then record again.": "没有录到有效 BLE Log 帧。请检查传输模式、端口、接线和固件日志配置后重新录制。",
     "Saved data (confirmed)": "已保存数据（已确认）",
     "Saved data (not confirmed)": "已保存数据（未确认）",
     "{size}, {count} file(s)": "{size}，共 {count} 个文件",

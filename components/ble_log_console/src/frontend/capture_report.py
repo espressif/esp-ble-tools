@@ -25,6 +25,7 @@ from src.backend.models import (
     FirmwareLossSummary,
     SequenceSummary,
     TransportConfig,
+    TransportMode,
     format_bitrate,
     format_bytes,
     resolve_source_name,
@@ -248,6 +249,18 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
     )
 
 
+def _no_regular_frames_advice(report: CaptureReport) -> str:
+    if report.transport_config.mode is TransportMode.UART:
+        return (
+            "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
+            "configuration, then record again."
+        )
+    return (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log "
+        "configuration, then record again."
+    )
+
+
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
     language = language or get_language()
     separator = "：" if language == "zh_CN" else ": "
@@ -255,10 +268,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
     advice = {
         CaptureVerdict.READY: "This recording is ready to submit for analysis.",
         CaptureVerdict.WARNING: "The data can be submitted for analysis, but recording quality warnings were detected.",
-        CaptureVerdict.CHECK_CONFIGURATION: (
-            "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
-            "configuration, then record again."
-        ),
+        CaptureVerdict.CHECK_CONFIGURATION: _no_regular_frames_advice(report),
         CaptureVerdict.RECAPTURE: "Check the connection and configuration, then record again.",
     }[report.verdict]
     report_path = (
