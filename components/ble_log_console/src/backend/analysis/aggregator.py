@@ -10,11 +10,9 @@ from typing import cast
 
 from ble_log_frame_decoder import (
     INIT,
-    BleLogVersionInfo,
     InternalLogBufferUtil,
     InternalSource,
     Snapshot,
-    parse_snapshot_version_info,
 )
 
 from src.backend.analysis.parser_events import (
@@ -27,6 +25,7 @@ from src.backend.analysis.parser_events import (
     ParseSummary,
     RedirEvent,
 )
+from src.backend.analysis.stream_identification import StreamIdentity, recorded_version
 from src.backend.models import (
     FRAME_OVERHEAD,
     BufUtilEntry,
@@ -37,7 +36,6 @@ from src.backend.models import (
     FrameStats,
     FunnelSnapshot,
     InternalDecoderResult,
-    InternalLogInfo,
     SequenceSummary,
     TransportBitrate,
 )
@@ -86,20 +84,7 @@ class AggregatorSnapshot:
     capture_segments: tuple[CaptureSegmentSummary, ...] = ()
     firmware_version: int | None = None
     firmware_contract_known: bool = True
-
-
-def _recorded_version(decoded: InternalDecoderResult) -> int | None:
-    """Firmware version a record carries, or None when it carries none."""
-
-    try:
-        if isinstance(decoded, Snapshot):
-            return int(parse_snapshot_version_info(decoded).version)
-        if isinstance(decoded, (BleLogVersionInfo, InternalLogInfo)):
-            return int(decoded.version)
-    except ValueError:
-        # A SNAPSHOT can pass shape validation with a corrupt embedded block.
-        return None
-    return None
+    stream_identity: StreamIdentity | None = None
 
 
 def _accumulate(target: dict[int, tuple[int, int]], source: int, delta: tuple[int, int]) -> None:
@@ -149,6 +134,7 @@ class CaptureAggregator:
         self._last_final_stat: tuple[int, tuple[FinalStatEntry, ...]] | None = None
         self._firmware_version: int | None = None
         self._firmware_contract_known = False
+        self._stream_identity: StreamIdentity | None = None
 
     @property
     def captured_bytes(self) -> int:
@@ -187,6 +173,7 @@ class CaptureAggregator:
         self._parser_raw_bytes += batch.raw_bytes
         self._parser_frames += batch.parsed_frames
         self._parser_carried_bytes = batch.carried_bytes
+        self._stream_identity = batch.identity
         return self.consume_events(batch.events)
 
     def consume_parser_summary(self, summary: ParseSummary) -> None:
@@ -195,6 +182,7 @@ class CaptureAggregator:
         self._parser_raw_bytes = summary.raw_bytes
         self._parser_frames = summary.parsed_frames
         self._parser_carried_bytes = summary.carried_bytes
+        self._stream_identity = summary.identity
         self._close_pending_segment()
 
     def consume_events(self, events: tuple[BleLogEvent, ...]) -> AggregatorUpdate:
@@ -252,7 +240,7 @@ class CaptureAggregator:
                 flush_regular_frames()
                 # Decide the contract before sealing or feeding this frame's SN,
                 # so replay can regroup earlier frames before a segment boundary.
-                version = _recorded_version(event.decoded)
+                version = recorded_version(event.decoded)
                 per_source = event.int_src not in _GLOBAL_COUNTER_SOURCES
                 if event.int_src == InternalSource.VERSION_INFO and version == 6:
                     per_source = True
@@ -328,6 +316,7 @@ class CaptureAggregator:
             capture_segments=tuple(self._segments) if include_segments else (),
             firmware_version=self._firmware_version,
             firmware_contract_known=self._firmware_contract_known,
+            stream_identity=self._stream_identity,
         )
 
     def _observe_firmware(self, *, per_source: bool, version: int | None = None) -> None:

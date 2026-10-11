@@ -31,6 +31,14 @@ from src.backend.analysis.parser_events import (
     ParseSummary,
     RedirEvent,
 )
+from src.backend.analysis.stream_identification import (
+    IdentificationRules,
+    StreamEvidence,
+    StreamIdentity,
+    identify_stream,
+    recorded_version,
+    text_window_counts,
+)
 from src.backend.models import (
     FRAME_OVERHEAD,
     MAX_FRAME_SIZE,
@@ -42,6 +50,8 @@ from src.backend.models import (
 )
 
 DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
+
+_KNOWN_SOURCES = frozenset(int(source) for source in BleLogSource)
 
 # INTERNAL payload: [4B os_ts][1B int_src_code][sub-payload]
 _INTERNAL_SUBTYPE_OFFSET = 4
@@ -98,38 +108,114 @@ def parse_ble_log_chunk(
 
 
 class BleLogParser:
-    """Stateful streaming parser holding a persistent esp-blfd FrameDecoder."""
+    """Stateful streaming parser holding a persistent esp-blfd FrameDecoder.
 
-    def __init__(self, checksum_mode: ChecksumMode | None = None) -> None:
+    With ``identification`` rules the parser mirrors the decoder's unresolved
+    tail and keeps the raw evidence that identifies what the stream carries.
+    It emits frame events only.
+    """
+
+    def __init__(
+        self,
+        checksum_mode: ChecksumMode | None = None,
+        *,
+        identification: IdentificationRules | None = None,
+    ) -> None:
         self._decoder = _decoder_for_mode(checksum_mode)
+        self._rules = identification
+        self._pending = b""
+        self._gap_bytes = 0
+        self._gap_bytes_after_ble = 0
+        self._known_frames = 0
+        self._identity_records = 0
+        self._window = bytearray()
 
     def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
-        buffered_before = self._decoder.stats.buffered_bytes
+        before = self._decoder.stats
+        buffered_before = before.buffered_bytes
         frames = self._decoder.feed(chunk)
         buffered_after = self._decoder.stats.buffered_bytes
+        consumed = buffered_before + len(chunk) - buffered_after
         events: list[BleLogEvent] = []
-        for frame in frames:
-            _append_frame_event(frame, events, received_at_ms)
+        rules = self._rules
+        if rules is None:
+            for frame in frames:
+                _append_frame_event(frame, events, received_at_ms)
+        else:
+            data = self._pending + chunk
+            base_offset = before.bytes_received - buffered_before
+            cursor = 0
+            for frame in frames:
+                start = frame.offset - base_offset
+                self._take_gap(rules, data[cursor:start])
+                cursor = start + frame.size
+                first_frame_event = len(events)
+                _append_frame_event(frame, events, received_at_ms)
+                self._observe_frame(frame, events[first_frame_event:])
+            self._take_gap(rules, data[cursor:consumed])
+            # Mirror only the decoder's unresolved tail for EOF evidence.
+            self._pending = data[consumed:]
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
-            consumed=buffered_before + len(chunk) - buffered_after,
+            consumed=consumed,
             carried_bytes=buffered_after,
             events=tuple(events),
+            identity=self._identity(),
         )
 
     def finalize(self) -> ParseSummary:
-        """Return final parser totals without reparsing raw data."""
+        """Return final parser totals and account EOF evidence without reparsing raw data."""
 
         stats = self._decoder.finish()
+        if self._rules is not None:
+            # The carry may be a cut-off frame. It enters the evidence window, but not the gap count.
+            self._take_gap(self._rules, self._pending, eof_carry=True)
+            self._pending = b""
         return ParseSummary(
             raw_bytes=stats.bytes_received,
             parsed_frames=stats.frames_decoded,
             carried_bytes=stats.trailing_bytes,
+            identity=self._identity(),
         )
+
+    def _take_gap(self, rules: IdentificationRules, gap: bytes, *, eof_carry: bool = False) -> None:
+        if gap:
+            if not eof_carry:
+                self._gap_bytes += len(gap)
+                if rules.confirms_ble_log(self._known_frames, self._identity_records):
+                    self._gap_bytes_after_ble += len(gap)
+            self._window += gap
+            overflow = len(self._window) - rules.window_bytes
+            if overflow > 0:
+                del self._window[:overflow]
+
+    def _observe_frame(self, frame: BleLogFrame, frame_events: list[BleLogEvent]) -> None:
+        self._window.clear()
+        if frame.payload and frame.source_code in _KNOWN_SOURCES:
+            self._known_frames += 1
+        for event in frame_events:
+            if isinstance(event, InternalEvent) and (recorded_version(event.decoded) or 0) > 0:
+                self._identity_records += 1
+
+    def _identity(self) -> StreamIdentity | None:
+        if self._rules is None:
+            return None
+        text_bytes, line_breaks = text_window_counts(self._window)
+        evidence = StreamEvidence(
+            received_bytes=self._decoder.stats.bytes_received,
+            gap_bytes=self._gap_bytes,
+            known_frames=self._known_frames,
+            identity_records=self._identity_records,
+            gap_bytes_after_ble=self._gap_bytes_after_ble,
+            window_bytes=len(self._window),
+            window_text_bytes=text_bytes,
+            window_line_breaks=line_breaks,
+        )
+        return identify_stream(evidence, self._rules)
 
 
 def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:

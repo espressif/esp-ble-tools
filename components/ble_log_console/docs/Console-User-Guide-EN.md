@@ -162,11 +162,13 @@ The recording screen is shown below:
   <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 70%; max-width: 900px;">
 </p>
 
-During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received by the PC. `Frames` is the number of valid log frames recognized by the tool.
+During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received by the PC. `Frames` is the number of valid frames recognized by the tool, including the firmware's periodic status records (INTERNAL frames) as well as regular log frames.
 
 - **Normal:** Both `RX` and `Frames` keep increasing, which means the tool is receiving and recognizing logs normally.
 - **No data received:** `RX` remains 0. The tool shows a warning every 10 seconds. Check the port, cable, and firmware logging configuration.
-- **Received data cannot be decoded:** `RX` increases, but `Frames` remains 0 or stops increasing for 10 seconds. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
+- **Received data cannot be decoded:** `RX` increases, but no regular log frames are decoded for 10 seconds; `Frames` usually remains 0 or stops increasing. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
+- **Plain text instead of BLE Log (UART and USJ):** The status bar shows `PLAIN TEXT`, and a warning appears at once, then every 10 seconds while the text continues. Recording continues. Plain text usually means that the firmware does not send BLE Log to this port. Text at startup, such as boot messages, is expected; the status changes to `BLE LOG` when BLE Log data arrives.
+- **BLE Log identified without regular frames (UART and USJ):** The status bar shows `BLE LOG`, and `Frames` can keep increasing because the firmware's periodic status records are counted too. The warning that no regular log frames were decoded, and the final quality report, show that the recording has no log data to analyze. Check the firmware log configuration instead of the transport.
 
 > During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
 
@@ -198,6 +200,8 @@ If **Record Again** cannot reserve the next recording file, setup displays the s
 - `RECORD AGAIN RECOMMENDED`: Valid log frames were recorded, but the data could not be saved correctly or the detected loss rate was high. **Do not submit these files directly.** Resolve the save or transport problem and record again. If this happens repeatedly, contact technical support for assessment.
 
 Only files marked `READY FOR ANALYSIS` or `SAVED WITH WARNINGS` should be submitted directly. If either of the other conclusions appears repeatedly, contact technical support first and provide the matching `report.txt` and `.bin` files when requested for troubleshooting.
+
+In UART and USJ modes, the report also states the identified stream content: plain console text, BLE Log, or unrecognized data, together with how much parsed data was outside BLE Log frames. Identification describes only the data that the quality check parsed. Plain text and data received after BLE Log was identified add a warning to any conclusion. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. Bytes outside BLE Log frames are written to the `.bin` file; a write failure can leave them out of the file, and the quality report states whether the raw recording was confirmed complete. Identifying BLE Log alone does not make a recording ready: without regular log frames, the conclusion is still `CHECK CONFIGURATION`, and the recommendation asks you to check the firmware log configuration. For plain text, the recommendation asks you to check that the firmware sends BLE Log to this port. The recommendation mentions the baud rate only in UART mode.
 
 #### 4.3.3 Find and Submit Recording Files
 

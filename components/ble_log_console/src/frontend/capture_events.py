@@ -17,6 +17,7 @@ from typing import IO, Any
 from textual.message import Message
 
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
+from src.backend.analysis.stream_identification import StreamKind
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES, WriterEvent
@@ -24,6 +25,7 @@ from src.backend.models import (
     InternalFrameDecoded,
     LogLine,
     StatsUpdated,
+    StreamKindChanged,
     UserNotice,
     format_bytes,
 )
@@ -134,6 +136,8 @@ class CaptureEventPresenter:
         self._last_frame_at = now
         self._last_idle_warning_at = now - NO_DATA_WARNING_COOLDOWN_SEC
         self._last_frame_warning_at = now - NO_FRAME_WARNING_COOLDOWN_SEC
+        self._last_text_warning_at = now - NO_FRAME_WARNING_COOLDOWN_SEC
+        self._shown_stream_kind: StreamKind | None = None
         self._last_capture_notice_at = now
         self._last_noticed_captured_bytes = 0
         self._last_noticed_regular_frames = 0
@@ -227,6 +231,9 @@ class CaptureEventPresenter:
         self._last_captured_bytes = event.captured_bytes
         self._last_regular_frames = event.regular_frames
 
+        if event.stream_identity is not None:
+            messages.extend(self._present_stream_kind(event.stream_identity.kind, now))
+
         if not self._debug:
             if (
                 event.captured_bytes == 0
@@ -243,12 +250,18 @@ class CaptureEventPresenter:
 
             if (
                 event.captured_bytes > 0
+                and self._shown_stream_kind is not StreamKind.LIKELY_TEXT
                 and now - self._last_frame_at >= NO_FRAME_WARNING_SEC
                 and now - self._last_frame_warning_at >= NO_FRAME_WARNING_COOLDOWN_SEC
             ):
                 messages.append(
                     UserNotice(
                         tr(
+                            "BLE Log was identified on this port, but no regular log frames were decoded for 10s. "
+                            "Check the firmware log configuration."
+                        )
+                        if self._shown_stream_kind is StreamKind.BLE_LOG
+                        else tr(
                             "No valid BLE Log frames were decoded for 10s. "
                             "Check transport mode, wiring, and firmware log configuration."
                         ),
@@ -273,6 +286,33 @@ class CaptureEventPresenter:
                 self._last_noticed_regular_frames = event.regular_frames
 
         return tuple(messages)
+
+    def _present_stream_kind(self, kind: StreamKind, now: float) -> list[Message]:
+        """Publish identification changes; warn about plain text at once, then on the no-frame cadence."""
+
+        messages: list[Message] = []
+        previous = self._shown_stream_kind
+        if kind is not previous:
+            self._shown_stream_kind = kind
+            messages.append(StreamKindChanged(kind))
+            if kind is StreamKind.BLE_LOG and previous is StreamKind.LIKELY_TEXT:
+                messages.append(UserNotice(tr("BLE Log frames identified; earlier data was outside BLE Log frames.")))
+        if (
+            kind is StreamKind.LIKELY_TEXT
+            and not self._debug
+            and now - self._last_text_warning_at >= NO_FRAME_WARNING_COOLDOWN_SEC
+        ):
+            messages.append(
+                UserNotice(
+                    tr(
+                        "Received data looks like plain console text, not BLE Log frames. "
+                        "Recording continues; check that the firmware sends BLE Log to this port."
+                    ),
+                    level="warning",
+                )
+            )
+            self._last_text_warning_at = now
+        return messages
 
     def _handle_aggregator_update(self, event: AggregatorUpdate) -> tuple[Message, ...]:
         messages: list[Message] = []

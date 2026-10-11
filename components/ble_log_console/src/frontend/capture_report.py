@@ -17,6 +17,7 @@ from textual.containers import Center, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
+from src.backend.analysis.stream_identification import StreamIdentity, StreamKind
 from src.backend.models import (
     CaptureReport,
     CaptureSegmentSummary,
@@ -35,6 +36,48 @@ from src.frontend.rendering import terminal_border_style
 from src.i18n import get_language, tr
 
 _QUALITY_RECAPTURE_THRESHOLD = 0.05
+
+_STREAM_KIND_LABELS = {
+    StreamKind.NO_INPUT: "No data",
+    StreamKind.UNRECOGNIZED: "Unrecognized data",
+    StreamKind.LIKELY_TEXT: "Plain console text",
+    StreamKind.BLE_LOG: "BLE Log",
+}
+
+
+def _content_warnings(identity: StreamIdentity | None, regular_frames: int, *, raw_complete: bool) -> list[str]:
+    """What the identified stream content means for this recording; empty where no identity is kept.
+
+    ``raw_complete`` decides whether the wording may state that the counted frame-external bytes
+    reached the raw file: a recording whose writer failed, or whose transport ended unexpectedly,
+    cannot say that.
+    """
+
+    if identity is None:
+        return []
+    if identity.kind is StreamKind.LIKELY_TEXT:
+        return [
+            "Received data looks like plain console text, not BLE Log frames; check that the firmware sends BLE Log to this port."
+        ]
+    if identity.kind is not StreamKind.BLE_LOG:
+        return []
+    warnings = []
+    if regular_frames == 0:
+        warnings.append(
+            "BLE Log was identified, but no regular log frames were decoded; check the firmware log configuration."
+        )
+    if identity.evidence.gap_bytes_after_ble > 0:
+        if raw_complete:
+            warnings.append(
+                "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to "
+                "the raw file."
+            )
+        else:
+            warnings.append(
+                "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not "
+                "be confirmed complete, so those bytes may not all be in the raw file."
+            )
+    return warnings
 
 
 def _firmware_source_rates(firmware_loss: tuple[FirmwareLossSummary, ...]) -> tuple[tuple[int, float], ...]:
@@ -114,7 +157,8 @@ def build_capture_report(
     )
     reasons: list[str] = []
     warnings: list[str] = []
-    findings: list[str] = []
+    stream_identity = snapshot.stream_identity if snapshot is not None else None
+    findings = _content_warnings(stream_identity, regular_frames, raw_complete=raw_complete)
     if console_log_error is not None:
         findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
 
@@ -166,6 +210,8 @@ def build_capture_report(
         else:
             verdict = CaptureVerdict.READY
             reasons.append("Raw data was finalized, BLE Log frames were decoded, and no continuity loss was observed.")
+    # Content and console.log findings accompany every verdict without deciding one that a raw save or parse
+    # failure already decided.
     for warning in findings:
         if warning not in warnings:
             warnings.append(warning)
@@ -206,6 +252,7 @@ def build_capture_report(
         warnings=tuple(warnings),
         firmware_version=snapshot.firmware_version if snapshot is not None else None,
         firmware_contract_known=snapshot.firmware_contract_known if snapshot is not None else True,
+        stream_identity=stream_identity,
         console_log_error=console_log_error,
     )
 
@@ -250,6 +297,13 @@ def _coverage_text(report: CaptureReport, language: str) -> str:
 
 
 def _no_regular_frames_advice(report: CaptureReport) -> str:
+    """Identified content explains the missing frames better than a link check; only UART has a baud rate."""
+
+    content_warnings = _content_warnings(
+        report.stream_identity, report.regular_frames, raw_complete=report.raw_complete
+    )
+    if content_warnings:
+        return content_warnings[0]
     if report.transport_config.mode is TransportMode.UART:
         return (
             "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
@@ -309,6 +363,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
                 f"  {tr('Possible sequence loss' if report.parser_complete else 'Full-recording sequence continuity', language=language)}"
                 f"{separator}{sequence_result}"
             ),
+            *_stream_content_summary(report, language, separator),
             "",
             f"{tr('Detailed report', language=language)}{separator}{report_path}",
             f"{tr('Raw data file', language=language)}{separator}{raw_path}",
@@ -404,6 +459,8 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     else:
         lines.append(f"  {tr('None observed after baseline.', language=language)}")
 
+    lines.extend(_stream_content_section(report, language, separator))
+
     lines.extend(("", f"{tr('Files', language=language)}{separator.rstrip()}"))
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
@@ -424,6 +481,38 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _stream_content_summary(report: CaptureReport, language: str, separator: str) -> tuple[str, ...]:
+    identity = report.stream_identity
+    if identity is None:
+        return ()
+    label = tr(_STREAM_KIND_LABELS[identity.kind], language=language)
+    return (f"  {tr('Stream content', language=language)}{separator}{label}",)
+
+
+def _stream_content_section(report: CaptureReport, language: str, separator: str) -> list[str]:
+    """Identification evidence; it describes only the bytes the parser saw, so its scope is stated."""
+
+    identity = report.stream_identity
+    if identity is None:
+        return []
+    evidence = identity.evidence
+
+    def field(label: str, value: object) -> str:
+        return f"  {tr(label, language=language)}{separator}{value}"
+
+    scope = "all saved data" if report.parser_complete else "parsed portion only"
+    return [
+        "",
+        f"{tr('Stream content', language=language)}{separator.rstrip()}",
+        field("Identified as", tr(_STREAM_KIND_LABELS[identity.kind], language=language)),
+        field("Evidence scope", tr(scope, language=language)),
+        field("Parsed bytes outside BLE Log frames", evidence.gap_bytes),
+        field("Of which after BLE Log was identified", evidence.gap_bytes_after_ble),
+        field("Frames from known BLE Log sources", evidence.known_frames),
+        field("Firmware identity records", evidence.identity_records),
+    ]
 
 
 def _status(sequence: SequenceSummary) -> str:

@@ -14,11 +14,12 @@ from typing import Any
 
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.parser_events import ReceivedChunk
+from src.backend.analysis.stream_identification import DEFAULT_IDENTIFICATION_RULES, IdentificationRules
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus, run_analysis_loop, run_analysis_process
 from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC, ReaderCommand, ReaderProcessEvent
 from src.backend.io.worker import run_io_loop, run_io_process
 from src.backend.io.writer import Clock, FileFactory, WriterConfig, WriterEvent
-from src.backend.models import ChecksumMode, TransportConfig
+from src.backend.models import CONSOLE_TEXT_MODES, ChecksumMode, TransportConfig, TransportMode
 from src.backend.support.transport import TransportReader, create_transport_reader
 
 PARSE_QUEUE_SIZE = 512
@@ -48,6 +49,10 @@ class CapturePipelineResult:
     writer_finalized: bool = False
     aggregator_finalized: bool = False
     final_snapshot: AggregatorSnapshot | None = None
+
+
+def _parser_identification(mode: TransportMode, rules: IdentificationRules) -> IdentificationRules | None:
+    return rules if mode in CONSOLE_TEXT_MODES else None
 
 
 def _drain_events(ui_queue: Any) -> list[Any]:
@@ -165,6 +170,7 @@ def run_capture_pipeline_inprocess(
     parser_checksum_mode: ChecksumMode | None = None,
     writer_clock: Clock | None = None,
     writer_file_factory: FileFactory | None = None,
+    identification_rules: IdentificationRules = DEFAULT_IDENTIFICATION_RULES,
 ) -> CapturePipelineResult:
     """Run the capture pipeline in-process for tests and local validation."""
 
@@ -179,6 +185,7 @@ def run_capture_pipeline_inprocess(
         kwargs={
             "bitrate": reader.bitrate_config,
             "checksum_mode": parser_checksum_mode,
+            "identification": _parser_identification(reader.status().mode, identification_rules),
         },
     )
     io_thread = threading.Thread(
@@ -213,6 +220,7 @@ class CapturePipeline:
         queue_put_timeout: float = QUEUE_PUT_TIMEOUT_SEC,
         drain_rounds: int = 10,
         parser_checksum_mode: ChecksumMode | None = None,
+        identification_rules: IdentificationRules = DEFAULT_IDENTIFICATION_RULES,
     ) -> None:
         self._transport_config = transport_config
         self._writer_config = writer_config
@@ -221,6 +229,7 @@ class CapturePipeline:
         self._queue_put_timeout = queue_put_timeout
         self._drain_rounds = drain_rounds
         self._parser_checksum_mode = parser_checksum_mode
+        self._identification = _parser_identification(transport_config.mode, identification_rules)
         self._ctx = multiprocessing.get_context()
         self._parse_queue: Any | None = None
         self._raw_stats_queue: Any | None = None
@@ -252,6 +261,7 @@ class CapturePipeline:
                 self._ui_queue,
                 bitrate,
                 self._parser_checksum_mode,
+                self._identification,
             ),
         )
         self._io_process = self._ctx.Process(

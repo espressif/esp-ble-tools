@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import NamedTuple, TypeAlias
 
+from src.backend.analysis.stream_identification import StreamIdentity
 from src.backend.models import (
     FinalStatEntry,
     InternalDecoderResult,
@@ -90,6 +91,7 @@ class ParseBatch(NamedTuple):
     consumed: int  # Bytes retired from prior carry plus this batch.
     carried_bytes: int  # Bytes retained for the next batch.
     events: tuple[BleLogEvent, ...]
+    identity: StreamIdentity | None = None  # Cumulative; None when the transport carries no console text.
 
 
 class ParseSummary(NamedTuple):
@@ -98,3 +100,4 @@ class ParseSummary(NamedTuple):
     raw_bytes: int
     parsed_frames: int
     carried_bytes: int
+    identity: StreamIdentity | None = None

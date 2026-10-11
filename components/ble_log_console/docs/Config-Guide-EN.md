@@ -173,6 +173,7 @@ Run the BLE application and record briefly. Confirm that **RX and Frames keep in
 | --- | --- |
 | RX stays at 0 | Check that the firmware is running with logging enabled, then check the port, wiring, and power. |
 | RX increases, but Frames does not | Check the transport mode, UART baud rate, and compatibility between the firmware and tool. |
+| Status shows `PLAIN TEXT` (UART or USJ) | The port carries ordinary console text instead of BLE Log. Text before BLE Log starts is expected. If the warning repeats, check that the firmware sends BLE Log to this port. Recording continues. |
 | Report says `READY FOR ANALYSIS` | Proceed to reproduce the problem. Still confirm that the recording contains the logs required for this investigation. |
 | Report says `SAVED WITH WARNINGS` | Use the report to assess whether the warnings affect the investigation. Keep both the report and logs. |
 | Report says `CHECK CONFIGURATION` or `RECORD AGAIN RECOMMENDED` | Follow the report's guidance. If the issue persists, contact technical support with the report and logs. |

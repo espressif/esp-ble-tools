@@ -216,6 +216,15 @@ On this port, the DTR and RTS lines control the chip's reset and boot mode. Whil
 
 The raw `.bin` file keeps every byte the tool receives; if a transport or save failure is reported, the file may be incomplete. If `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure.
 
+### UART and USJ stream content
+
+The tool also identifies what the port carries:
+
+- **Plain text:** The status bar shows `PLAIN TEXT` and a warning appears at once, then every 10 seconds while it continues. Recording continues. Plain text usually means that the firmware does not send BLE Log to this port.
+- **BLE Log:** The status bar shows `BLE LOG` after one firmware identity record or three valid frames from known BLE Log sources. Text before that point, such as boot messages, is expected. Identification does not change back when the port is quiet or prints text later.
+
+The quality report states the identified content and how much data arrived outside BLE Log frames. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. Bytes outside BLE Log frames are written to the `.bin` file; a write failure can leave them out of the file, and the quality report states whether the raw recording was confirmed complete. Identification alone does not make a recording ready for analysis: a recording that contains only identity records still requires a configuration check. SPI Bridge and USB Output modes do not identify stream content.
+
 ## Shortcuts
 
 The following shortcuts are commonly used while the application is running. They can be used to view statistics, reset the device, exit the application, and more.

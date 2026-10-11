@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.analysis.stream_identification import StreamEvidence, StreamIdentity, StreamKind
 from src.backend.models import (
     CaptureSegmentSummary,
     CaptureVerdict,
@@ -287,6 +288,55 @@ def test_no_decoded_regular_frames_recommends_recapture() -> None:
     )
 
 
+_UART_NO_FRAME_ADVICE = (
+    (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
+        "configuration, then record again."
+    ),
+    "没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。",
+)
+_NO_BAUD_NO_FRAME_ADVICE = (
+    (
+        "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log "
+        "configuration, then record again."
+    ),
+    "没有录到有效 BLE Log 帧。请检查传输模式、端口、接线和固件日志配置后重新录制。",
+)
+
+
+@pytest.mark.parametrize(
+    ("mode", "kind", "advice"),
+    [
+        (TransportMode.UART, StreamKind.NO_INPUT, _UART_NO_FRAME_ADVICE),
+        (TransportMode.USJ, StreamKind.NO_INPUT, _NO_BAUD_NO_FRAME_ADVICE),
+        (TransportMode.USJ, StreamKind.UNRECOGNIZED, _NO_BAUD_NO_FRAME_ADVICE),
+        (TransportMode.SPI_USB_BRIDGE, None, _NO_BAUD_NO_FRAME_ADVICE),
+    ],
+    ids=["uart-no-input", "usj-no-input", "usj-unrecognized", "spi-no-identity"],
+)
+def test_no_frame_advice_mentions_baud_rate_only_for_uart(
+    mode: TransportMode, kind: StreamKind | None, advice: tuple[str, str]
+) -> None:
+    english, chinese = advice
+    result = _result(regular_frames=0)
+    assert result.final_snapshot is not None
+    identity = None if kind is None else StreamIdentity(kind, StreamEvidence(received_bytes=100))
+    result = replace(result, final_snapshot=replace(result.final_snapshot, stream_identity=identity))
+    report = build_capture_report(
+        result,
+        TransportConfig(mode, "port", "port"),
+        started_at=datetime(2026, 1, 1, 12, 0, 0).astimezone(),
+        ended_at=datetime(2026, 1, 1, 12, 0, 10).astimezone(),
+        duration_sec=10.0,
+        console_log_paths=(),
+        report_path=Path("capture_report.txt"),
+    )
+
+    assert report.verdict is CaptureVerdict.CHECK_CONFIGURATION
+    assert format_capture_summary(report, language="en").splitlines()[0] == f"Recommendation: {english}"
+    assert format_capture_summary(report, language="zh_CN").splitlines()[0] == f"建议：{chinese}"
+
+
 def test_incomplete_parser_with_no_frames_keeps_warning_advice() -> None:
     report = _report(_result(regular_frames=0, parse_backlog=True, parser_raw_bytes=60, parse_dropped_bytes=40))
 
@@ -509,6 +559,127 @@ def test_a_proven_counter_contract_carries_no_such_remark() -> None:
     assert "unproven" not in text
 
 
+def _with_identity(result: CapturePipelineResult, kind: StreamKind, **evidence: int) -> CapturePipelineResult:
+    assert result.final_snapshot is not None
+    identity = StreamIdentity(kind, StreamEvidence(received_bytes=result.parser_raw_bytes, **evidence))
+    return replace(result, final_snapshot=replace(result.final_snapshot, stream_identity=identity))
+
+
+def test_text_identity_from_a_partly_parsed_recording_keeps_the_coverage_warning_and_states_its_scope() -> None:
+    result = _with_identity(
+        _result(regular_frames=0, raw_bytes=4096, parser_raw_bytes=1024, parse_dropped_bytes=3072),
+        StreamKind.LIKELY_TEXT,
+        gap_bytes=1024,
+    )
+
+    report = _report(result)
+
+    assert report.verdict is CaptureVerdict.WARNING
+    assert not report.parser_complete
+    assert "Live parsing did not cover all saved raw data; sequence integrity is not fully verified." in report.reasons
+    assert any(reason.startswith("Received data looks like plain console text") for reason in report.reasons)
+    text = format_capture_report(report, language="en")
+    assert "Evidence scope: parsed portion only" in text
+    assert "Parsed bytes outside BLE Log frames: 1024" in text
+
+
+def test_ble_identity_with_clean_frames_stays_ready_without_content_warnings() -> None:
+    report = _report(_with_identity(_result(), StreamKind.BLE_LOG, known_frames=2, identity_records=1))
+
+    assert report.verdict is CaptureVerdict.READY
+    assert report.warnings == ()
+    assert "Identified as: BLE Log" in format_capture_report(report, language="en")
+
+
+def test_content_warning_does_not_replace_the_record_again_threshold() -> None:
+    result = _with_identity(
+        _result(regular_frames=10, missing_frames=2), StreamKind.BLE_LOG, known_frames=10, gap_bytes_after_ble=40
+    )
+
+    report = _report(result)
+
+    assert report.verdict is CaptureVerdict.RECAPTURE
+    assert report.reasons[0] == "Sequence discontinuity rate exceeded the 5% record-again threshold."
+    assert report.reasons[-1].startswith("Data outside BLE Log frames arrived after BLE Log was identified")
+
+
+@pytest.mark.parametrize(
+    ("writer_error", "promise", "replacement"),
+    [
+        (None, "those bytes are written to the raw file", "could not be confirmed complete"),
+        ("raw sync EIO", "could not be confirmed complete", "those bytes are written to the raw file"),
+    ],
+    ids=["raw finalized", "writer failed"],
+)
+def test_gap_warning_promises_the_raw_file_only_when_it_was_finalized(
+    writer_error: str | None, promise: str, replacement: str
+) -> None:
+    """A writer failure must not be reported as if every original byte had been kept."""
+    result = _with_identity(
+        _result(regular_frames=10, writer_error=writer_error),
+        StreamKind.BLE_LOG,
+        known_frames=10,
+        gap_bytes_after_ble=40,
+    )
+
+    report = _report(result)
+
+    assert report.raw_complete is (writer_error is None)
+    assert any(promise in reason for reason in report.reasons)
+    assert not any(replacement in reason for reason in report.reasons)
+    text = format_capture_report(report, language="en")
+    assert promise in text
+    assert replacement not in text
+
+
+def test_reader_error_clears_the_raw_completeness_claim() -> None:
+    """A transport that ended unexpectedly must not be reported as a complete raw recording."""
+    result = _with_identity(
+        _result(regular_frames=10, reader_error="device disconnected"),
+        StreamKind.BLE_LOG,
+        known_frames=10,
+        gap_bytes_after_ble=40,
+    )
+
+    report = _report(result)
+
+    assert report.verdict is CaptureVerdict.WARNING
+    assert not report.raw_complete
+    text = format_capture_report(report, language="en")
+    assert "Saved raw data: Not confirmed" in text
+    assert "Saved raw data: Confirmed" not in text
+    assert "The transport ended unexpectedly" in text
+    assert "could not be confirmed complete" in text
+    assert "those bytes are written to the raw file" not in text
+    assert "Saved data (not confirmed)" in format_capture_summary(report, language="en")
+
+
+def test_parser_error_stays_an_error_next_to_the_content_warning() -> None:
+    result = _with_identity(
+        _result(parser_error="decoder crashed"), StreamKind.BLE_LOG, known_frames=3, gap_bytes_after_ble=9
+    )
+
+    report = _report(result)
+
+    assert report.verdict is CaptureVerdict.WARNING
+    assert report.errors == ("Parser: decoder crashed",)
+    assert (
+        "The raw recording was saved, but live verification failed; retain the raw files for support." in report.reasons
+    )
+    assert any(reason.startswith("Data outside BLE Log frames") for reason in report.reasons)
+
+
+def test_content_labels_and_warnings_are_translated() -> None:
+    report = _report(_with_identity(_result(regular_frames=0), StreamKind.LIKELY_TEXT, gap_bytes=100))
+
+    text = format_capture_report(report, language="zh_CN")
+
+    assert report.verdict is CaptureVerdict.CHECK_CONFIGURATION
+    assert "识别结果：普通控制台文本" in text
+    assert "收到的数据像是普通控制台文本" in text
+    assert "数据内容：普通控制台文本" in format_capture_summary(report, language="zh_CN")
+
+
 CONSOLE_LOG_INCOMPLETE = "The console log could not be saved completely; this error does not itself stop raw recording."
 
 
@@ -593,62 +764,3 @@ def test_save_error_copy_preserves_each_recording_outcome(
     assert summary_label in summary
     if writer_error:
         assert ("Writer: raw sync EIO" if language == "en" else "写入器: raw sync EIO") in text
-
-
-def test_reader_error_clears_the_raw_completeness_claim() -> None:
-    """A transport that ended unexpectedly must not be reported as a complete raw recording."""
-    result = _result(regular_frames=10, reader_error="device disconnected")
-
-    report = _report(result)
-
-    assert report.verdict is CaptureVerdict.WARNING
-    assert not report.raw_complete
-    text = format_capture_report(report, language="en")
-    assert "Saved raw data: Not confirmed" in text
-    assert "Saved raw data: Confirmed" not in text
-    assert "The transport ended unexpectedly" in text
-    assert "Saved data (not confirmed)" in format_capture_summary(report, language="en")
-
-
-_UART_NO_FRAME_ADVICE = (
-    (
-        "No valid BLE Log frames were recorded. Check the transport mode, port, baud rate, wiring, and firmware log "
-        "configuration, then record again."
-    ),
-    "没有录到有效 BLE Log 帧。请检查传输模式、端口、波特率、接线和固件日志配置后重新录制。",
-)
-_NO_BAUD_NO_FRAME_ADVICE = (
-    (
-        "No valid BLE Log frames were recorded. Check the transport mode, port, wiring, and firmware log "
-        "configuration, then record again."
-    ),
-    "没有录到有效 BLE Log 帧。请检查传输模式、端口、接线和固件日志配置后重新录制。",
-)
-
-
-@pytest.mark.parametrize(
-    ("mode", "advice"),
-    [
-        (TransportMode.UART, _UART_NO_FRAME_ADVICE),
-        (TransportMode.USJ, _NO_BAUD_NO_FRAME_ADVICE),
-        (TransportMode.SPI_USB_BRIDGE, _NO_BAUD_NO_FRAME_ADVICE),
-    ],
-    ids=["uart-no-input", "usj-no-input", "spi-no-identity"],
-)
-def test_no_frame_advice_mentions_baud_rate_only_for_uart(mode: TransportMode, advice: tuple[str, str]) -> None:
-    english, chinese = advice
-    result = _result(regular_frames=0)
-    assert result.final_snapshot is not None
-    report = build_capture_report(
-        result,
-        TransportConfig(mode, "port", "port"),
-        started_at=datetime(2026, 1, 1, 12, 0, 0).astimezone(),
-        ended_at=datetime(2026, 1, 1, 12, 0, 10).astimezone(),
-        duration_sec=10.0,
-        console_log_paths=(),
-        report_path=Path("capture_report.txt"),
-    )
-
-    assert report.verdict is CaptureVerdict.CHECK_CONFIGURATION
-    assert format_capture_summary(report, language="en").splitlines()[0] == f"Recommendation: {english}"
-    assert format_capture_summary(report, language="zh_CN").splitlines()[0] == f"建议：{chinese}"

@@ -10,8 +10,10 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widget import Widget
 
+from src.backend.analysis.stream_identification import StreamKind
 from src.backend.models import FrameStats, format_bitrate, format_bytes
 from src.frontend.rendering import terminal_border_style
+from src.i18n import tr
 
 
 def _format_speed(bits_per_sec: float) -> str:
@@ -38,6 +40,14 @@ def _compact_customer_state_markup(s: FrameStats, disconnected: bool) -> str:
     return "[cyan]CONN[/cyan]"
 
 
+def _stream_kind_markup(kind: StreamKind | None) -> str:
+    if kind is StreamKind.LIKELY_TEXT:
+        return f" | [bold yellow]{tr('PLAIN TEXT')}[/bold yellow]"
+    if kind is StreamKind.BLE_LOG:
+        return f" | [green]{tr('BLE LOG')}[/green]"
+    return ""
+
+
 COMPACT_STATUS_WIDTH = 56
 MEDIUM_STATUS_WIDTH = 88
 
@@ -56,6 +66,7 @@ class StatusPanel(Widget):
     disconnected: reactive[bool] = reactive(False)
     finalizing: reactive[bool] = reactive(False)
     chip_label: reactive[str] = reactive("")
+    stream_kind: reactive[StreamKind | None] = reactive(None)
 
     def render(self) -> Text:
         s = self.stats
@@ -74,16 +85,16 @@ class StatusPanel(Widget):
             return Text.from_markup(f"{line1}\n{line2}")
 
         t = s.transport
-        chip = f" | [dim]{self.chip_label}[/dim]" if self.chip_label else ""
+        labels = (f" | [dim]{self.chip_label}[/dim]" if self.chip_label else "") + _stream_kind_markup(self.stream_kind)
 
         if width < COMPACT_STATUS_WIDTH:
-            line1 = f"{_compact_customer_state_markup(s, self.disconnected)}{chip} | RX {format_bytes(t.rx_bytes)}"
+            line1 = f"{_compact_customer_state_markup(s, self.disconnected)}{labels} | RX {format_bytes(t.rx_bytes)}"
             line2 = _format_speed(t.rx_bits_per_sec)
         elif width < MEDIUM_STATUS_WIDTH:
-            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{chip} | [bold]h[/bold]: help"
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{labels} | [bold]h[/bold]: help"
             line2 = f"RX: {format_bytes(t.rx_bytes)}  Frames: {t.rx_frames}  Speed: {_format_speed(t.rx_bits_per_sec)}"
         else:
-            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{chip} | Press [bold]h[/bold] for help"
+            line1 = f"Status: {_customer_state_markup(s, self.disconnected)}{labels} | Press [bold]h[/bold] for help"
             line2 = (
                 f"RX: {format_bytes(t.rx_bytes)}  "
                 f"Frames: {t.rx_frames}  "
