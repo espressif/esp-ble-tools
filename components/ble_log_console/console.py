@@ -72,20 +72,20 @@ def _should_auto_install_udev(ctx: click.Context) -> bool:
     )
 
 
-def _echo_saved_paths(label: str, paths: list[Path]) -> None:
+def _echo_paths(label: str, paths: list[Path]) -> None:
     if not paths:
         return
     if len(paths) == 1:
-        click.echo(f"{label} saved to: {paths[0]}")
+        click.echo(f"{label}: {paths[0]}")
         return
 
-    click.echo(f"{label} saved to {len(paths)} files:")
+    click.echo(f"{label}: {len(paths)} files")
     if len(paths) <= 5:
-        for saved_path in paths:
-            click.echo(f"  {saved_path}")
+        for path in paths:
+            click.echo(f"  {path}")
         return
 
-    same_dir = all(saved_path.parent == paths[0].parent for saved_path in paths)
+    same_dir = all(path.parent == paths[0].parent for path in paths)
     if same_dir:
         first = paths[0]
         last = paths[-1]
@@ -200,10 +200,10 @@ def cli(
         debug=debug,
     )
     app.run()
-    _echo_saved_paths("Recording", app.saved_capture_paths)
-    _echo_saved_paths("Console log", app.saved_console_log_paths)
+    _echo_paths("Recording file", app.saved_capture_paths)
+    _echo_paths("Console log", app.saved_console_log_paths)
     if app.saved_report_path is not None:
-        _echo_saved_paths("Recording report", [app.saved_report_path])
+        _echo_paths("Recording report", [app.saved_report_path])
 
 
 @cli.command(name="ports")

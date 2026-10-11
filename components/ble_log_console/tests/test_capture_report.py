@@ -35,6 +35,7 @@ def _result(
     missing_frames: int = 0,
     duplicate_frames: int = 0,
     writer_error: str | None = None,
+    reader_error: str | None = None,
     parser_error: str | None = None,
     parse_backlog: bool = False,
     parser_raw_bytes: int | None = None,
@@ -99,7 +100,7 @@ def _result(
     )
     return CapturePipelineResult(
         raw_paths=(Path("capture.bin"),) if raw_bytes else (),
-        reader_error=None,
+        reader_error=reader_error,
         writer_error=writer_error,
         parser_error=parser_error,
         aggregator_error=None,
@@ -164,7 +165,7 @@ def test_screen_summary_only_shows_customer_decision_fields() -> None:
     text = format_capture_summary(report, language="zh_CN")
 
     assert "建议：数据可以提交分析，但录制质量存在警告。" in text
-    assert "已保存数据（可信）" in text
+    assert "已保存数据（已确认）" in text
     assert "持续时间：10.0 s" in text
     assert "原始数据：100 B，共 1 个文件" in text
     assert "有效日志帧：100" in text
@@ -351,7 +352,7 @@ def test_parser_backlog_preserves_raw_but_marks_report_warning() -> None:
     assert report.raw_bytes == 100
     assert not report.parser_complete
     text = format_capture_summary(report, language="zh_CN")
-    assert "已保存数据（可信）" in text
+    assert "已保存数据（已确认）" in text
     assert "解析覆盖：60 B / 100 B（60.0%）" in text
     assert "已解析部分识别到的有效日志帧：2" in text
     assert "整份录制的序列号连续性：无法确认" in text
@@ -602,6 +603,57 @@ def test_content_warning_does_not_replace_the_record_again_threshold() -> None:
     assert report.reasons[-1].startswith("Data outside BLE Log frames arrived after BLE Log was identified")
 
 
+@pytest.mark.parametrize(
+    ("writer_error", "promise", "replacement"),
+    [
+        (None, "those bytes are written to the raw file", "could not be confirmed complete"),
+        ("raw sync EIO", "could not be confirmed complete", "those bytes are written to the raw file"),
+    ],
+    ids=["raw finalized", "writer failed"],
+)
+def test_gap_warning_promises_the_raw_file_only_when_it_was_finalized(
+    writer_error: str | None, promise: str, replacement: str
+) -> None:
+    """A writer failure must not be reported as if every original byte had been kept."""
+    result = _with_identity(
+        _result(regular_frames=10, writer_error=writer_error),
+        StreamKind.BLE_LOG,
+        known_frames=10,
+        gap_bytes_after_ble=40,
+    )
+
+    report = _report(result)
+
+    assert report.raw_complete is (writer_error is None)
+    assert any(promise in reason for reason in report.reasons)
+    assert not any(replacement in reason for reason in report.reasons)
+    text = format_capture_report(report, language="en")
+    assert promise in text
+    assert replacement not in text
+
+
+def test_reader_error_clears_the_raw_completeness_claim() -> None:
+    """A transport that ended unexpectedly must not be reported as a complete raw recording."""
+    result = _with_identity(
+        _result(regular_frames=10, reader_error="device disconnected"),
+        StreamKind.BLE_LOG,
+        known_frames=10,
+        gap_bytes_after_ble=40,
+    )
+
+    report = _report(result)
+
+    assert report.verdict is CaptureVerdict.WARNING
+    assert not report.raw_complete
+    text = format_capture_report(report, language="en")
+    assert "Saved raw data: Not confirmed" in text
+    assert "Saved raw data: Confirmed" not in text
+    assert "The transport ended unexpectedly" in text
+    assert "could not be confirmed complete" in text
+    assert "those bytes are written to the raw file" not in text
+    assert "Saved data (not confirmed)" in format_capture_summary(report, language="en")
+
+
 def test_parser_error_stays_an_error_next_to_the_content_warning() -> None:
     result = _with_identity(
         _result(parser_error="decoder crashed"), StreamKind.BLE_LOG, known_frames=3, gap_bytes_after_ble=9
@@ -643,7 +695,7 @@ def test_console_log_failure_is_a_warning_that_leaves_the_raw_recording_reliable
     assert "Console log error: [Errno 28] No space left on device" in english
     assert "串口转发日志错误：[Errno 28] No space left on device" in chinese
     assert "串口转发日志未能完整保存；此错误本身不会停止原始录制。" in chinese
-    assert "Saved raw data: Complete and reliable" in english
+    assert "Saved raw data: Confirmed" in english
 
 
 @pytest.mark.parametrize(
@@ -699,15 +751,15 @@ def test_save_error_copy_preserves_each_recording_outcome(
     assert (console_label + "console sync EIO" in text) is (console_error is not None)
     raw_label = "Saved raw data: " if language == "en" else "已保存原始数据："
     state = (
-        ("Complete and reliable" if raw_complete else "Incomplete")
+        ("Confirmed" if raw_complete else "Not confirmed")
         if language == "en"
-        else ("完整且可信" if raw_complete else "不完整")
+        else ("已确认" if raw_complete else "未确认")
     )
     assert raw_label + state in text
     summary_label = (
-        ("Saved data (reliable)" if raw_complete else "Saved data (incomplete)")
+        ("Saved data (confirmed)" if raw_complete else "Saved data (not confirmed)")
         if language == "en"
-        else ("已保存数据（可信）" if raw_complete else "已保存数据（不完整）")
+        else ("已保存数据（已确认）" if raw_complete else "已保存数据（未确认）")
     )
     assert summary_label in summary
     if writer_error:

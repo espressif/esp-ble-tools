@@ -28,6 +28,13 @@ scenarios("features/usj_output.feature")
 
 _COMPORTS = "serial.tools.list_ports.comports"
 
+# A pty has no physical baud rate: macOS termios has no B3000000 and routes the request through
+# the IOSSIOSPEED ioctl, which a pty answers with ENOTTY. 115200 keeps both platforms on the
+# plain tcsetattr path, so the modem-line scenarios reach the logic they exist to check. The
+# product default of 3_000_000 is only asserted as a value (the launch screen and the USJ bitrate
+# query); no scenario opens a port at that rate any more.
+PTY_BAUDRATE = 115_200
+
 
 class ModemLineModel:
     """DTR/RTS of one device node, driven by the real pyserial ioctls on a virtual tty.
@@ -148,7 +155,7 @@ def _virtual_usj_port(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, o
         None if opened is None else dict(zip(("DTR", "RTS"), (bit == "1" for bit in opened.split("/")), strict=True))
     )
     world.lines = ModemLineModel(path, state, monkeypatch)
-    world.reader = UsjTransport(path, 3_000_000)
+    world.reader = UsjTransport(path, PTY_BAUDRATE)
 
 
 @given(parsers.parse("一个 USJ 虚拟串口，设备打开后 DTR/RTS 为 {opened}"))

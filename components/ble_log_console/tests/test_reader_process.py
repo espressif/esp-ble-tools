@@ -19,19 +19,18 @@ class FakeReader:
         self,
         blocks: list[bytes],
         stop_event: Event,
-        drain_blocks: list[bytes] | None = None,
         *,
         reset_result: bool = False,
+        fail_after: int | None = None,
     ) -> None:
         self.blocks = list(blocks)
-        self.drain_blocks = list(drain_blocks or [])
         self.stop_event = stop_event
         self.reset_result = reset_result
+        self.fail_after = fail_after
         self.opened = False
         self.rx_bytes = 0
         self.rx_chunks = 0
         self.read_calls = 0
-        self.drain_calls = 0
         self.reset_calls = 0
 
     @property
@@ -51,6 +50,8 @@ class FakeReader:
 
     def read(self, size: int | None = None) -> bytes:
         self.read_calls += 1
+        if self.fail_after is not None and self.read_calls > self.fail_after:
+            raise OSError("reader failed")
         if not self.blocks:
             self.stop_event.set()
             return b""
@@ -60,8 +61,8 @@ class FakeReader:
         return block
 
     def drain(self, max_rounds: int = 10) -> list[bytes]:
-        self.drain_calls += 1
-        return self.drain_blocks[:max_rounds]
+        del max_rounds
+        return []
 
     def close(self) -> None:
         self.opened = False
@@ -153,12 +154,13 @@ class TestReaderProcessLoop:
         assert parse_queue.get_nowait() == ReceivedChunk(b"two", 200)
         assert parse_queue.get_nowait() is None
         assert [event.kind for event in _events(ui_queue)] == ["opened", "opened", "finalized", "stopped"]
-        assert reader.read_calls == 3
+        # Two blocks plus the read that found the replay exhausted, and one more while checking for trailing data.
+        assert reader.read_calls == 4
 
-    def test_stop_drains_remaining_transport_data(self) -> None:
+    def test_stop_records_remaining_transport_data(self) -> None:
         stop_event = Event()
         stop_event.set()
-        reader = FakeReader([], stop_event, drain_blocks=[b"last"])
+        reader = FakeReader([b"last"], stop_event)
         writer = FakeWriter()
         parse_queue: Queue[ReceivedChunk | None] = Queue()
         ui_queue: Queue[object] = Queue()
@@ -168,7 +170,23 @@ class TestReaderProcessLoop:
         assert writer.blocks == [b"last"]
         assert parse_queue.get_nowait() == ReceivedChunk(b"last", 300)
         assert parse_queue.get_nowait() is None
-        assert reader.drain_calls == 1
+        assert reader.read_calls == 2
+
+    def test_read_error_after_stop_keeps_the_blocks_already_read(self) -> None:
+        stop_event = Event()
+        stop_event.set()
+        reader = FakeReader([b"last"], stop_event, fail_after=1)
+        writer = FakeWriter()
+        parse_queue: Queue[ReceivedChunk | None] = Queue()
+        ui_queue: Queue[object] = Queue()
+
+        run_reader_loop(reader, writer, parse_queue, ui_queue, stop_event, wall_clock_ms=lambda: 300)
+
+        assert writer.blocks == [b"last"]
+        assert parse_queue.get_nowait() == ReceivedChunk(b"last", 300)
+        kinds = [event.kind for event in _events(ui_queue)]
+        assert "error" in kinds
+        assert kinds[-1] == "stopped"
 
     def test_writer_error_reports_error(self) -> None:
         stop_event = Event()

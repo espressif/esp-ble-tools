@@ -32,6 +32,7 @@ from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import WriterConfig
 from src.backend.models import (
     BleLogSource,
+    CaptureFinished,
     CaptureVerdict,
     LogLine,
     TransportConfig,
@@ -42,10 +43,16 @@ from src.backend.pipeline import CapturePipeline, controller
 from src.backend.support.transport import TransportStatus
 from src.backend.support.transport.spi_usb_bridge_transport import CDC_ENDPOINT_PREFIX
 from src.frontend.capture_events import CaptureEventPresenter, _default_text_file_factory
-from src.frontend.capture_report import build_capture_report, format_capture_report, format_capture_summary
+from src.frontend.capture_report import (
+    CaptureReportScreen,
+    build_capture_report,
+    format_capture_report,
+    format_capture_summary,
+)
 from src.frontend.log_view import LogView
 from src.frontend.status_panel import StatusPanel
 from src.i18n import tr
+from textual.pilot import Pilot
 from textual.widgets import Button
 
 from tests.helpers import BytesReader, build_frame, snapshot_payload, xor_checksum
@@ -88,6 +95,20 @@ class ModeBytesReader(BytesReader):
 
     def status(self) -> TransportStatus:
         return replace(super().status(), mode=self._mode)
+
+
+class DisconnectingBytesReader(ModeBytesReader):
+    """Byte replay whose transport fails after handing over everything it had."""
+
+    def __init__(self, data: bytes, stop_event: Event, mode: TransportMode) -> None:
+        super().__init__(data, stop_event, mode)
+        self._served = False
+
+    def read(self, size: int | None = None) -> bytes:
+        if self._served:
+            raise OSError("device disconnected")
+        self._served = True
+        return super().read(size)
 
 
 @pytest.fixture
@@ -193,6 +214,7 @@ def _record(
     monkeypatch: pytest.MonkeyPatch,
     *,
     fail_sync: bool = False,
+    disconnect: bool = False,
     rules: IdentificationRules = DEFAULT_IDENTIFICATION_RULES,
 ) -> None:
     if fail_sync:
@@ -212,7 +234,7 @@ def _record(
     output = world.tmp_path / f"recording_{len(world.records)}.bin"
     stop = Event()
     result = controller.run_capture_pipeline_inprocess(
-        ModeBytesReader(world.data, stop, world.mode),
+        (DisconnectingBytesReader if disconnect else ModeBytesReader)(world.data, stop, world.mode),
         WriterConfig(output),
         stop_requested=stop,
         identification_rules=rules,
@@ -252,6 +274,11 @@ def _finish_recording(world: SimpleNamespace, output: Path, events: list[Any], r
 @when("Console 录制这段数据直到结束")
 def record_until_end(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
     _record(world, monkeypatch)
+
+
+@when("Console 录制这段数据，直到传输中断")
+def record_until_transport_failure(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    _record(world, monkeypatch, disconnect=True)
 
 
 @when("Console 用默认规则录制这段数据直到结束")
@@ -664,6 +691,16 @@ def binary_between_frames(world: SimpleNamespace, mode: str, count: int) -> Simp
     return _set_stream(world, mode, [_host_frames(3), b"\xff" * count, _host_frames(3, first_sn=3)])
 
 
+@given(
+    parsers.parse("一个 {mode} 端口在 BLE Log 帧之间输出 {count:d} 字节二进制数据，随后传输中断"),
+    target_fixture="world",
+)
+def binary_between_frames_then_disconnect(world: SimpleNamespace, mode: str, count: int) -> SimpleNamespace:
+    world.binary_gap = count
+    world.disconnect = True
+    return _set_stream(world, mode, [_host_frames(3), b"\xff" * count, _host_frames(3, first_sn=3)])
+
+
 AFTER_FAILURE_TEXT = b"AFTER FAILURE line\r\n" * 3
 
 
@@ -731,14 +768,31 @@ def console_sync_fails(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
     world.sync_paths = []
     world.sync_hits = []
     world.sync_error = "[Errno 5] console sync refused"
+    world.double_failure = getattr(world, "double_failure", False)
+    world.close_hits = []
     world.rotating = operation == "切换分片"
     world.child_pids = {process.pid for process in multiprocessing.active_children()}
 
     def factory(path):
         world.sync_paths.append(path)
         file = _default_text_file_factory(path)
-        world.sync_files.append(file)
-        return file
+        if world.double_failure:
+
+            class CloseFailure:
+                def __getattr__(self, name):
+                    return getattr(file, name)
+
+                def close(self):
+                    file.close()
+                    world.close_hits.append(path)
+                    if len(world.close_hits) == 1:
+                        raise OSError(errno.ENOSPC, "secondary console close failure")
+
+            sink = CloseFailure()
+        else:
+            sink = file
+        world.sync_files.append(sink)
+        return sink
 
     def sync(fd):
         if os.getpid() == parent_pid and any(not file.closed and file.fileno() == fd for file in world.sync_files):
@@ -751,6 +805,12 @@ def console_sync_fails(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
         "src.frontend.capture_session.CaptureEventPresenter",
         partial(CaptureEventPresenter, text_file_factory=factory, console_part_max_bytes=1 if world.rotating else 1024),
     )
+
+
+@given(parsers.parse("console.log 在{operation}时先同步失败，随后关闭返回不同错误"))
+def console_sync_and_close_fail(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
+    world.double_failure = True
+    console_sync_fails(world, monkeypatch, operation)
 
 
 @given("console.log 写入一部分后磁盘写满")
@@ -792,6 +852,9 @@ def record_in_app(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> No
             stop = app.query_one("#stop-review", Button)
             try:
                 await wait_for(lambda: not stop.disabled, "recording start")
+                # Opening the port discards whatever it already buffered, so the first write has to
+                # wait for the reader process to report the port as connected.
+                await wait_for(lambda: any("Connected to" in row for row in _rendered_rows(app)), "reader open")
                 for index, (data, ready) in enumerate(world.phases):
                     os.write(master_fd, data)
                     await wait_for(lambda ready=ready: ready(app), f"phase {index}")
@@ -803,6 +866,13 @@ def record_in_app(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> No
                     if not stop.disabled:
                         await pilot.click("#stop-review")
                     await wait_for(lambda: app.saved_report_path is not None, "report after Stop & Review", 40.0)
+                    await wait_for(
+                        lambda: (
+                            isinstance(app.screen, CaptureReportScreen)
+                            and any(widget.is_mounted for widget in app.screen.query("#capture-report-verdict"))
+                        ),
+                        "mounted recording report",
+                    )
             world.rendered = _rendered_rows(app)
             world.session = app._capture_session
 
@@ -836,21 +906,42 @@ def report_counts_eof_carry(world: SimpleNamespace, count: int) -> None:
         assert identity.evidence.gap_bytes_after_ble == 0
 
 
-@then(parsers.parse("报告判定为「{label}」并说明全部原始字节都在原始数据文件中"))
+@then(parsers.parse("报告判定为「{label}」并说明帧外字节都写入了原始数据文件"))
 def report_binary_gap_kept_in_raw(world: SimpleNamespace, label: str) -> None:
     recording = world.recording
     assert recording.report.verdict is _verdict_from_label(label)
     assert recording.report.stream_identity.evidence.gap_bytes_after_ble == world.binary_gap
     assert recording.report.reasons == (
         (
-            "Data outside BLE Log frames arrived after BLE Log was identified; all original bytes are kept in the raw "
+            "Data outside BLE Log frames arrived after BLE Log was identified; those bytes are written to the raw "
             "file, and the console log holds at most their displayable text."
         ),
     )
     assert (
-        "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；全部原始字节都保存在原始数据文件中，"
+        "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；这些字节都会写入原始数据文件，"
         "串口转发日志最多只包含其中可显示的文本。"
     ) in recording.report_text_zh
+
+
+@then("报告不说明帧外字节都已写入原始数据文件，而说明原始录制未能确认完整")
+def report_gap_warning_without_a_raw_promise(world: SimpleNamespace) -> None:
+    recording = world.recording
+    assert not recording.report.raw_complete
+    assert "those bytes are written to the raw file" not in recording.report_text
+    assert "could not be confirmed complete" in recording.report_text
+    assert "这些字节都会写入原始数据文件" not in recording.report_text_zh
+    assert "原始录制未能确认完整" in recording.report_text_zh
+
+
+@then(parsers.parse("报告判定为「{label}」，原始数据不完整且传输意外中断"))
+def report_marks_transport_failure_incomplete(world: SimpleNamespace, label: str) -> None:
+    recording = world.recording
+    assert recording.report.verdict is _verdict_from_label(label)
+    assert not recording.report.raw_complete
+    assert "The transport ended unexpectedly" in recording.report_text
+    assert "Saved raw data: Not confirmed" in recording.report_text
+    assert "Saved raw data: Confirmed" not in recording.report_text
+    assert "Saved data (not confirmed)" in recording.summary_text
 
 
 @then("没有生成 console.log")
@@ -890,10 +981,12 @@ def app_console_failure_notice_once(world: SimpleNamespace) -> None:
     assert sum("forwarded through BLE Log" in row for row in after) == 3
 
 
-@then("识别出 BLE Log 时，界面说明之前的文本保存在原始数据文件中，不再提到 console.log")
+@then("识别出 BLE Log 时，界面说明之前的文本已作为未解码数据显示，不承诺保存到文件")
 def app_transition_notice_without_console_log(world: SimpleNamespace) -> None:
     transition = [row for row in world.rendered if "BLE Log frames identified" in row]
-    assert transition == ["[INFO] BLE Log frames identified; earlier text is kept in the raw file."]
+    assert transition == ["[INFO] BLE Log frames identified; earlier text is shown as undecoded data."]
+    assert "raw file" not in transition[0]
+    assert "console.log" not in transition[0]
 
 
 @then(parsers.parse("界面报告判定为「{label}」，说明 console.log 不完整且此错误本身不会停止原始录制"))
@@ -904,7 +997,7 @@ def app_report_console_incomplete(world: SimpleNamespace, label: str) -> None:
         "Reasons:\n  - The console log could not be saved completely; this error does not itself stop raw recording.\n"
         in text
     )
-    assert "Saved raw data: Complete and reliable" in text
+    assert "Saved raw data: Confirmed" in text
     assert "Console log error: [Errno 28] No space left on device" in text
     assert "Writer:" not in text
 
@@ -915,6 +1008,9 @@ def app_sync_failure_visible_once(world: SimpleNamespace) -> None:
     assert len(notices) == 1 and world.sync_error in world.rendered[notices[0]]
     assert len(world.sync_hits) == 1 and len(world.sync_paths) == 1
     assert all(file.closed for file in world.sync_files)
+    if world.double_failure:
+        assert world.close_hits
+        assert "secondary console close failure" not in world.app.report_text
     if world.rotating:
         assert sum("AFTER SYNC" in row for row in world.rendered[notices[0] :]) == 3
     report = world.session.report
@@ -939,3 +1035,49 @@ def console_log_keeps_prefix(world: SimpleNamespace) -> None:
     saved = path.read_text(encoding="utf-8")
     assert 0 < len(saved) <= 300
     assert tr(BEGIN) in saved and "entry 0" in saved
+
+
+def test_record_in_app_observes_mounted_report_after_saved_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deferred = []
+    post_message = BLELogApp.post_message
+    pause = Pilot.pause
+    rendered_rows = _rendered_rows
+    snapshots = []
+
+    def defer_finished(app, message):
+        if isinstance(message, CaptureFinished):
+            deferred.append((app, message))
+            return True
+        return post_message(app, message)
+
+    async def deliver_on_next_pause(pilot, *args, **kwargs):
+        while deferred:
+            app, message = deferred.pop(0)
+            post_message(app, message)
+        await pause(pilot, *args, **kwargs)
+
+    def observe_rows(app):
+        if app.saved_report_path is not None:
+            assert isinstance(app.screen, CaptureReportScreen), "saved path precedes report message delivery"
+            assert app.screen.query_one("#capture-report-verdict").is_mounted
+            snapshots.append(app.saved_report_path)
+        return rendered_rows(app)
+
+    monkeypatch.setattr(BLELogApp, "post_message", defer_finished)
+    monkeypatch.setattr(Pilot, "pause", deliver_on_next_pause)
+    monkeypatch.setattr(__name__ + "._rendered_rows", observe_rows)
+    world = SimpleNamespace(
+        tmp_path=tmp_path,
+        mode=TransportMode.UART,
+        phases=[
+            (_redir_frames(3), lambda app: sum("forwarded through BLE Log" in row for row in _rendered_rows(app)) == 3)
+        ],
+    )
+
+    record_in_app(world, monkeypatch)
+
+    assert len(snapshots) == 1
+    assert world.app.raw == _redir_frames(3)
+    assert world.session.finished and not world.session._pipeline.is_alive()
