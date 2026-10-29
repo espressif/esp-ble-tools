@@ -43,7 +43,7 @@ class CaptureSession:
         self._join_timeout_sec = join_timeout_sec
         self._analysis_drain_timeout_sec = analysis_drain_timeout_sec
         self._clock = clock
-        self._event_presenter = CaptureEventPresenter(output_path, debug=debug)
+        self._event_presenter = CaptureEventPresenter(output_path, debug=debug, mode=transport_config.mode)
         self._pipeline = CapturePipeline(
             transport_config,
             WriterConfig(output_path),

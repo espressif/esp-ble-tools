@@ -27,6 +27,7 @@ from src.backend.models import (
     LogLine,
     StatsUpdated,
     StreamKindChanged,
+    TransportMode,
     UserNotice,
     format_bytes,
 )
@@ -108,12 +109,14 @@ class CaptureEventPresenter:
         output_path: Path,
         *,
         debug: bool = False,
+        mode: TransportMode = TransportMode.UART,
         console_part_max_bytes: int = CAPTURE_PART_MAX_BYTES,
         text_file_factory: TextFileFactory = _default_text_file_factory,
         clock: Clock = time.monotonic,
     ) -> None:
         self._output_path = output_path
         self._debug = debug
+        self._mode = mode
         self._console_part_max_bytes = console_part_max_bytes
         self._text_file_factory = text_file_factory
         self._clock = clock
@@ -329,7 +332,7 @@ class CaptureEventPresenter:
         for console_event in event.console_events:
             if isinstance(console_event, UndecodedEvent):
                 messages.extend(self._write_undecoded(console_event))
-            else:
+            elif self._mode is not TransportMode.SPI_USB_BRIDGE:
                 messages.extend(self._write_redir_text(console_event.text, console_event.received_at_ms))
         return tuple(messages)
 

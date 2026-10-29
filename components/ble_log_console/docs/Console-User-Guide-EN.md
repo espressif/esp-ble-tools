@@ -182,6 +182,8 @@ The first line of each group of console log messages includes the PC receive tim
 
 In UART and USJ modes, data that is not part of any BLE Log frame, such as ROM boot messages or a panic dump, is also shown and saved to `_console.log` between `Undecoded data` and `End of undecoded data` markers. Only printable text is kept. A text line appears on screen when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a screen refresh does not split it. A partial frame that may still complete is not shown early; the remaining undecoded tail is shown once when recording stops. This text does not count as log frames.
 
+In SPI Bridge mode, REDIR text is neither displayed nor written to `_console.log`. The original frames are still saved in full to the `.bin` file and included in frame statistics.
+
 ### 4.3 Stop the Recording and Check the Result
 
 #### 4.3.1 Stop & Review
