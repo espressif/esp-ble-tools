@@ -193,6 +193,17 @@ Download the package for your operating system from the [BLE Log Console stable 
 
 On Windows 10 or later, double-click `ble_log_console_windows_v1.1.0.exe` to start.
 
+CDC reception uses the Microsoft `usbser.sys` serial driver. Check that the CDC
+interface appears under **Ports (COM & LPT)** in Device Manager, then select its
+COM port (including COM10 and higher). If that interface was previously bound to
+WinUSB/libusb for Bulk reception, restore its CDC driver before using Console;
+do not replace a separate JTAG/HID interface. See [Microsoft's USB serial driver documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-driver-installation-based-on-compatible-ids).
+
+Close other serial monitors before connecting. Enumeration only reads port
+metadata, so a missing product/chip description does not prevent selection.
+Windows build and hardware verification for this CDC integration are pending.
+
+
 #### 5.1.2 Linux System
 
 On Ubuntu 22.04 or later, first grant execute permission in the tool's directory:
@@ -201,19 +212,13 @@ On Ubuntu 22.04 or later, first grant execute permission in the tool's directory
 chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
-**CDC serial reception:** SPI Bridge prefers CDC on every platform, sharing the serial receiver used by USB OTG and USJ. On Linux, check that your user can read and write the serial port; access is typically granted through the `dialout` group. CDC does not require the direct USB access rule below. Close other programs using the Bridge. If an earlier Bulk receiver detached its serial driver, close that receiver and reconnect the Bridge.
-
-**Direct Bulk fallback:** when no Bridge CDC port is found, the tool uses Bulk. If USB permissions are missing, install the rule below, then unplug and reconnect the Bridge:
-
-```bash
-sudo ./ble_log_console_ubuntu_v1.1.0
-```
-
-Then start the tool. Normal use does not require `sudo`:
+SPI Bridge, USB OTG and USJ use CDC serial reception. Your user needs read and write access to the serial port, typically through the `dialout` group. Start the tool without `sudo`:
 
 ```bash
 ./ble_log_console_ubuntu_v1.1.0
 ```
+
+Close other programs using the port before recording. If the Bridge CDC port is missing, close any direct Bulk receiver, reconnect the Bridge and refresh the port list. Console does not detach the system driver or fall back to direct Bulk.
 
 ### 5.2 Start a Recording
 
@@ -262,12 +267,16 @@ In UART and USJ modes, printable text such as forwarded console logs and startup
 
 SPI Bridge mode does not display forwarded text. The `_console.log` file does not replace the `.bin` file needed for analysis.
 
-Host logs are displayed live and saved to `_console.log` in every mode. Compressed Host logs require a dictionary matching the firmware. The tool looks for `ble_log_database/BLE_HOST_logs.json` in the working directory, then `BLE_HOST_logs.json` directly in that directory. Select its directory in **Log Database**, or use `--log-database <directory>`; leave the field empty to skip compressed log decoding.
+Before recording, select **Host** or **HCI** under **Live display**; UART also offers **Console**. All categories default to off. Switching to SPI/USB hides and clears the console selection. USJ boot or panic text can still be recorded and saved, and can be displayed explicitly with `--show-log console`. Live display requires the corresponding selection; raw recording, saved decoded logs, statistics, errors, and quality warnings are unaffected. From the CLI, repeat `--show-log host`, `--show-log hci`, or `--show-log console` as needed. **Record Again** retains the selection; a new launch defaults to none. This option does not add rate limiting or deduplication.
+
+Host logs can be displayed live and are saved to `_console.log` in every mode. Compressed Host logs require a dictionary matching the firmware. The tool looks for `ble_log_database/BLE_HOST_logs.json` in the working directory, then `BLE_HOST_logs.json` directly in that directory. Select its directory in **Host dictionary**, or use `--log-database <directory>`; leave the field empty to skip compressed log decoding. After recording starts successfully, the selected directory is remembered across launches; clearing it is remembered too. An explicit `--log-database` takes priority. If the remembered dictionary is missing or unreadable, automatic discovery is used instead. Preferences are stored in the current user's application settings, so source and standalone launches share them.
 
 HCI and LL_HCI share one HCI display showing time, direction, packet type and hexadecimal data. They are saved to `_hci.log` and `_hci_btsnoop.log` without a log database. Packets with an unknown clock unit are displayed and saved as text only. LL_TASK and LL_ISR are not decoded; all original data remains in `.bin`. Fragmented compressed messages appear when complete; unresolved messages are marked incomplete when recording stops.
 
 
 ### 5.3 Stop the Recording and Check the Result
+
+If opening v8 snapshots confirm old buffered data followed by stable reception, the tool checks the fresh interval from already decoded frames during recording and bases the report on that range. Stopping does not rescan the raw file or create a trimmed copy. Original bytes, Host task bindings and full parser-coverage totals are retained; the report also shows the original-stream gap count and selected byte offset. Missing frames after that boundary still affect the verdict. Ambiguous evidence or an incomplete interval check retains the original assessment.
 
 #### 5.3.1 Stop & Review
 
@@ -411,19 +420,13 @@ Please check:
 - Whether the correct firmware is running on the device.
 - Whether the port is already occupied by another program.
 - In USB Output or USJ mode, whether a USB data cable connects to the chip's native USB port and the selected port matches the firmware output. The USB Output port appears after the firmware starts BLE Log; click **Refresh** after reconnecting.
-- On Linux, check serial port permissions for CDC (typically the `dialout` group). The USB permission rule installed with `sudo ./ble_log_console_ubuntu_v1.1.0` is for the direct Bulk fallback. Close other Bridge receivers and reconnect the device if the CDC port is missing.
+- On Linux, check serial port permissions for CDC (typically the `dialout` group). Close other Bridge receivers and reconnect the device if the CDC port is missing. Console does not fall back to direct Bulk.
 
-When a SPI Bridge is plugged in but cannot be opened, the port list also states the reason instead of staying empty:
+The setup screen and `ports` command show permission diagnostics for SPI Bridge, USB OTG, and USJ CDC ports. On Linux and macOS, a port without read/write permission is omitted from the selectable list and identified by its serial path, for example `SPI Bridge /dev/ttyACM0: no read/write permission.` On most Linux distributions, add your user to the `dialout` group with `sudo usermod -aG dialout $USER`, then log out and log in again. No libusb installation or Bulk access rule is needed.
 
-- `SPI Bridge (bus 1, addr 95): no USB access permission.` means the Linux USB access rule for the bridge is missing on this PC. Run the tool once with `sudo` and no arguments; that installs `/etc/udev/rules.d/99-ble-log-spi-bridge.rules` (see [Linux System](#412-linux-system)). Then unplug and replug the bridge and start the tool normally.
-- `libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0` means the USB library the tool uses to reach the bridge is not installed.
-- `SPI Bridge (bus 1, addr 95) cannot be opened: ...` repeats the USB error the system reported, for example a device that is busy in another program.
+Discovery reads port metadata and filesystem permissions without opening devices. It cannot detect a port held by another application; that error is reported when recording starts. Windows COM ports remain selectable and report access errors when opened.
 
-In USJ mode, a port is listed only when the current user can read and write it. A USJ port that cannot be opened is left out of the list and states the reason instead:
-
-- `USJ /dev/ttyACM0: no read/write permission.` means the current user is not allowed to use this serial port. On most Linux distributions, add the user to the `dialout` group with `sudo usermod -aG dialout $USER`, then log out and log in again. Then start the tool again.
-
-These lines follow the display language, which comes from the system message locale. To get Chinese, set `LANG=zh_CN.UTF-8` (or `LC_MESSAGES=zh_CN.UTF-8`) before starting the tool, or choose `简体中文` on the setup screen.
+Diagnostics follow the selected display language and refresh immediately when it changes. The default is English; choose `简体中文` on the setup screen for Chinese.
 
 <a id="faq-no-logs"></a>
 

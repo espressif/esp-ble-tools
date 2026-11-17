@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from ble_log_frame_decoder import (
 )
 
 from src.backend.analysis.hci import hci_event, ll_hci_event
+from src.backend.analysis.opening_quality import OpeningChecker, OpeningQuality
 from src.backend.analysis.parser_events import (
     BleLogEvent,
     EnhStatEvent,
@@ -66,6 +68,8 @@ DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
 
 _KNOWN_SOURCES = frozenset(int(source) for source in BleLogSource)
 _TAB_TO_SPACE = bytes.maketrans(b"\t", b" ")
+# Compressed dictionaries retain C line endings; paired backslashes are literal text.
+_HOST_LINE_END = re.compile(r'(?<!\\)((?:\\\\)*)(?:\\r\\n|\\n|\\r)+(?="$|$)')
 
 # INTERNAL payload: [4B os_ts][1B int_src_code][sub-payload]
 _INTERNAL_SUBTYPE_OFFSET = 4
@@ -187,6 +191,8 @@ class BleLogParser:
         self._chip_name: str | None = None
         self._host_warnings: set[str] = set()
         self.startup = StartupDetector()
+        self._opening_checker: OpeningChecker | None = None
+        self.opening_quality: OpeningQuality | None = None
         self._rules = identification
         self._pending = b""
         self._text_open = False
@@ -273,6 +279,15 @@ class BleLogParser:
         first = len(events)
         _append_frame_event(frame, events, received_at_ms)
         self.startup.observe(frame, events[first] if len(events) > first else None)
+        candidate = self.startup.candidate
+        offset = candidate.offset_bytes if candidate is not None else 0
+        if self._opening_checker is not None and self._opening_checker.offset != offset:
+            self._opening_checker.close()
+            self._opening_checker = None
+        if offset:
+            if self._opening_checker is None:
+                self._opening_checker = OpeningChecker(offset)
+            self._opening_checker.feed(frame, tuple(events[first:]))
         for event in events[first:]:
             if isinstance(event, InternalEvent):
                 if event.int_src == InternalSource.INIT_DONE:
@@ -300,7 +315,10 @@ class BleLogParser:
                 if record.incomplete and not record.reason:
                     continue
                 reason = record.reason if record.incomplete else ""
-                events.append(HostLogEvent(record.text.rstrip("\r\n") + "\n", received_at_ms, reason))
+                text = record.text.rstrip("\r\n")
+                if record.source == BleLogSource.ENCODE:
+                    text = _HOST_LINE_END.sub(r"\1", text)
+                events.append(HostLogEvent(text + "\n", received_at_ms, reason))
             elif record.reason and record.reason not in self._host_warnings:
                 self._host_warnings.add(record.reason)
                 events.append(HostLogEvent("", received_at_ms, record.reason))
@@ -309,12 +327,20 @@ class BleLogParser:
     def close(self) -> None:
         """Release Checker scratch resources on cancellation or parse failure."""
         self._session.close()
+        if self._opening_checker is not None:
+            self._opening_checker.close()
 
     def finalize(self) -> ParseSummary:
         """Return final parser totals and resolve the undecoded tail without reparsing raw data."""
 
         result = self._session.finish()
         stats = result.scan
+        decision = self.startup.finish()
+        if self._opening_checker is not None:
+            if decision.offset_bytes == self._opening_checker.offset:
+                self.opening_quality = self._opening_checker.finish(stats.bytes_received, stats.trailing_bytes)
+            else:
+                self._opening_checker.close()
         if result.integrity is not None and self._decoder.unchecked_frames:
             result.integrity.notes.append(
                 f"Console retained {self._decoder.unchecked_frames} frame(s) outside the Checker protocol contract."

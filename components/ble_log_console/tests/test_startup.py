@@ -75,7 +75,7 @@ def test_normal_start_and_mid_recording_gap_are_never_trimmed():
 
 
 @pytest.mark.parametrize(
-    "condition", ["host_pause", "reset", "wrap", "bindings", "input_gap", "short", "invalid_clock"]
+    "condition", ["host_pause", "reset", "wrap", "metadata", "input_gap", "short", "invalid_clock"]
 )
 def test_ambiguous_or_context_dependent_prefix_is_not_selected(condition):
     items = chunks()
@@ -85,8 +85,8 @@ def test_ambiguous_or_context_dependent_prefix_is_not_selected(condition):
         items[1] = items[1]._replace(data=snapshot(70, 300, 70, reason=11))
     elif condition == "wrap":
         items[0] = items[0]._replace(data=snapshot(4000, 100, 10))
-    elif condition == "bindings":
-        binding = build_frame(struct.pack("<IB", 1, 9) + b"binding", 0, 0, xor_checksum)
+    elif condition == "metadata":
+        binding = build_frame(struct.pack("<IB", 1, 3) + b"metadata", 0, 0, xor_checksum)
         items = [ReceivedChunk(binding, 0, 0.0, 0)] + [
             c._replace(raw_offset=c.raw_offset + len(binding)) for c in items
         ]
@@ -135,3 +135,48 @@ def test_wall_clock_adjustment_does_not_change_the_startup_decision():
     items = [c._replace(received_at_ms=-i * 100_000) for i, c in enumerate(chunks())]
     decision, _ = parse_items(items)
     assert decision.offset_bytes == len(items[0].data)
+
+
+def test_replaced_candidate_uses_the_later_live_check():
+    parser = BleLogParser()
+    rows = [(10, 100, 10, 0.0), (70, 300, 70, 0.1), (130, 500, 130, 0.2), (131, 501, 131, 1.2), (132, 502, 132, 2.2)]
+    offset = 0
+    selected_offset = 0
+    for i, (device, sn, count, host) in enumerate(rows):
+        if i == 2:
+            selected_offset = offset
+        data = snapshot(device, sn, count)
+        parser.feed(data, received_monotonic=host, raw_offset=offset)
+        offset += len(data)
+    parser.finalize()
+    assert parser.opening_quality.offset_bytes == selected_offset
+    assert parser.opening_quality.snapshot.parser_frames == 3
+    assert parser.opening_quality.snapshot.sequence.missing_frames == 0
+    parser.close()
+
+
+def test_rejected_candidate_releases_checker_resources():
+    parser = BleLogParser()
+    items = chunks()
+    for c in items[:2]:
+        parser.feed(c.data, received_monotonic=c.received_monotonic, raw_offset=c.raw_offset)
+    checker = parser._opening_checker._checker
+    archive = checker.archive_path
+    c = items[2]
+    parser.feed(snapshot(71, 301, 71, reason=11), received_monotonic=c.received_monotonic, raw_offset=c.raw_offset)
+    parser.finalize()
+    assert parser.opening_quality is None
+    assert not archive.exists()
+    parser.close()
+
+
+def test_selected_check_retains_unknown_frame_warning():
+    parser = BleLogParser()
+    items = chunks()
+    for c in items:
+        parser.feed(c.data, received_monotonic=c.received_monotonic, raw_offset=c.raw_offset)
+    unknown = build_frame(b"unknown source", 63, 303, xor_checksum)
+    parser.feed(unknown, raw_offset=sum(len(c.data) for c in items), received_monotonic=2.2)
+    parser.finalize()
+    assert parser.opening_quality.snapshot.sequence.uncertain
+    parser.close()

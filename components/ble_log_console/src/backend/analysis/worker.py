@@ -14,11 +14,11 @@ from queue import Empty, Queue
 from typing import Any
 
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, CaptureAggregator
+from src.backend.analysis.opening_quality import OpeningQuality
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk, ReceivedEnd
 from src.backend.analysis.startup import StartupDecision
 from src.backend.analysis.stream_identification import IdentificationRules
-from src.backend.io.analysis_copy import AnalysisCopyResult, copy_recording_suffix
 from src.backend.io.writer import WriterConfig
 from src.backend.models import ChecksumMode, TransportBitrate
 
@@ -50,7 +50,7 @@ class AggregatorProcessEvent:
     message: str = ""
 
 
-ParserEvent = ParseBatch | ParseSummary | ParserStatus | StartupDecision | AnalysisCopyResult
+ParserEvent = ParseBatch | ParseSummary | ParserStatus | StartupDecision | OpeningQuality
 
 
 def _put_parser_event(output_queue: Any, event: ParserEvent) -> None:
@@ -65,7 +65,7 @@ def _put_analysis_event(
     | AggregatorProcessEvent
     | ParserStatus
     | StartupDecision
-    | AnalysisCopyResult,
+    | OpeningQuality,
 ) -> None:
     if ui_queue is not None:
         ui_queue.put(event)
@@ -147,17 +147,13 @@ def run_parser_loop(
             decision = parser.startup.finish()
             _put_parser_event(output_queue, decision)
             if decision.offset_bytes:
-                copy = (
-                    copy_recording_suffix(
-                        analysis_output,
-                        end.raw_paths,
-                        offset=decision.offset_bytes,
-                        raw_bytes=end.raw_bytes,
-                    )
-                    if end is not None and end.raw_complete and contiguous and end.raw_bytes == summary.raw_bytes
-                    else AnalysisCopyResult(error="Raw saving or analysis coverage is incomplete; no suffix was copied")
+                safe = end is not None and end.raw_complete and contiguous and end.raw_bytes == summary.raw_bytes
+                quality = (
+                    parser.opening_quality
+                    if safe and parser.opening_quality is not None
+                    else OpeningQuality(decision.offset_bytes, error="Raw saving or analysis coverage is incomplete")
                 )
-                _put_parser_event(output_queue, copy)
+                _put_parser_event(output_queue, quality)
         _put_parser_event(output_queue, summary)
     except Exception as e:
         _put_parser_event(output_queue, ParserStatus(kind="error", message=str(e)))
@@ -211,7 +207,7 @@ def _handle_parser_item(
     aggregator: CaptureAggregator,
     updates: list[AggregatorUpdate] | None = None,
 ) -> tuple[bool, bool]:
-    if isinstance(item, (StartupDecision, AnalysisCopyResult)):
+    if isinstance(item, (StartupDecision, OpeningQuality)):
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
         _put_analysis_event(ui_queue, item)

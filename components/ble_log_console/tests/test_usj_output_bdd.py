@@ -119,7 +119,7 @@ def world(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     # The fake devices below exist nowhere, so a real permission check would
     # hide them. Listing decides usability; tests/features/usj_port_access_hint.feature
     # covers the port this user cannot open.
-    monkeypatch.setattr("src.backend.support.transport.usj_transport._can_open", lambda _device: True)
+    monkeypatch.setattr("src.backend.support.transport.serial_reader.os.access", lambda device, mode: True)
     yield namespace
     if namespace.held_fd is not None:
         os.close(namespace.held_fd)
@@ -335,6 +335,8 @@ def launch_and_connect(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
             app.screen.query_one("#mode-select", Select).value = "usb"
             await pilot.pause()
             world.baud_visible = app.screen.query_one("#baud-select", Select).display
+            app.screen.query_one("#connect-btn").scroll_visible(animate=False)
+            await pilot.pause()
             await pilot.click("#connect-btn")
             await pilot.pause()
 

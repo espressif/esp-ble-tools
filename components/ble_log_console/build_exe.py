@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import importlib
 import re
 import subprocess
 import sys
@@ -33,6 +34,22 @@ DOCUMENT_VERSION_RE = re.compile(
     re.MULTILINE,
 )
 PROJECT_VERSION_RE = re.compile(r'^version = "\d+\.\d+\.\d+"$', re.MULTILINE)
+NATIVE_MODULES = (
+    "ble_log_frame_decoder._native",
+    "ble_log_frame_decoder.checking._native",
+    "ble_log_frame_decoder.analysis.ordering._linearize_native",
+)
+
+
+def _check_native_dependencies() -> None:
+    for module in NATIVE_MODULES:
+        try:
+            importlib.import_module(module)
+        except ImportError as error:
+            raise RuntimeError(
+                f"Cannot package without {module}. Reinstall the dependencies for this platform. "
+                "Building BLFD from source on Windows requires MSVC C/C++ Build Tools and a Windows SDK."
+            ) from error
 
 
 def _read_version() -> tuple[int, int, int]:
@@ -118,6 +135,7 @@ def main() -> None:
     else:
         version = _format_version(_read_version())
 
+    _check_native_dependencies()
     artifact_base_name = _artifact_base_name(version)
     artifact_name = f"{artifact_base_name}.exe" if sys.platform == "win32" else artifact_base_name
     cmd = [
@@ -140,12 +158,10 @@ def main() -> None:
         "textual.css",
         "--hidden-import",
         "textual_fspicker",
-        "--hidden-import",
+        "--exclude-module",
         "usb",
-        "--hidden-import",
-        "usb.core",
-        "--hidden-import",
-        "usb.util",
+        "--exclude-module",
+        "tools.spi_bulk_transport",
         "--hidden-import",
         "serial",
         "--hidden-import",
@@ -154,24 +170,18 @@ def main() -> None:
         "serial.tools.list_ports",
         "--hidden-import",
         "serial.tools.list_ports_common",
-        "--hidden-import",
-        "serial.tools.list_ports_linux",
-        "--hidden-import",
-        "serial.tools.list_ports_windows",
-        "--hidden-import",
-        "serial.tools.list_ports_osx",
-        "--hidden-import",
-        "ble_log_frame_decoder._native",
-        "--hidden-import",
-        "ble_log_frame_decoder.checking._native",
-        "--hidden-import",
-        "ble_log_frame_decoder.analysis.ordering._linearize_native",
         "--collect-data",
         "textual",
         "--collect-data",
         "textual_fspicker",
         "--noconfirm",
     ]
+    serial_modules = {
+        "win32": ("serial.serialwin32", "serial.win32", "serial.tools.list_ports_windows"),
+        "darwin": ("serial.serialposix", "serial.tools.list_ports_osx"),
+    }.get(sys.platform, ("serial.serialposix", "serial.tools.list_ports_linux"))
+    for module in (*serial_modules, *NATIVE_MODULES):
+        cmd.extend(("--hidden-import", module))
 
     print(f"Packaging version: {version}")
     print(f"Running: {' '.join(cmd)}")

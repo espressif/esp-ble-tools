@@ -127,7 +127,7 @@ def mounted_app(tmp_path: Path) -> Iterator[SimpleNamespace]:
     """A mounted console with the transport stubbed out, so no device is opened."""
     runner = asyncio.Runner()
     with patch.object(BLELogApp, "_start_capture", lambda self: None):
-        app = BLELogApp(port="bdd-stub", log_dir=tmp_path)
+        app = BLELogApp(port="bdd-stub", log_dir=tmp_path, show_logs=frozenset({"console"}))
         run = app.run_test()
         pilot = runner.run(run.__aenter__())
     try:
@@ -841,7 +841,9 @@ def record_in_app(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> No
     port = os.ttyname(slave_fd)
     if world.mode is TransportMode.SPI_USB_BRIDGE:
         port = f"{CDC_ENDPOINT_PREFIX}{port}"
-    app = BLELogApp(mode=world.mode, port=port, baudrate=115_200, log_dir=world.tmp_path / "app")
+    app = BLELogApp(
+        mode=world.mode, port=port, baudrate=115_200, log_dir=world.tmp_path / "app", show_logs=frozenset({"console"})
+    )
 
     async def drive() -> None:
         async with app.run_test(size=(140, 40)) as pilot:

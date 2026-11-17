@@ -7,7 +7,6 @@ Usage:
     python console.py                        # interactive setup
     python console.py --port /dev/ttyUSB0  --baudrate 3000000   # direct connect
     python console.py --mode spi --port cdc:/dev/ttyACM0
-    python console.py --mode spi --port 1:8:0:129
     python console.py --mode usb --port /dev/ttyACM0          # USB Output (CDC-ACM)
     python console.py --mode usj --port /dev/ttyACM0          # USB Serial/JTAG
     python console.py ports                  # list transport endpoints
@@ -15,30 +14,21 @@ Usage:
 """
 
 import multiprocessing
-import os
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import click
-from src.backend.models import TransportMode, format_bytes
+from src.backend.models import LOG_DISPLAY_CATEGORIES, TransportMode, format_bytes
 from src.backend.support.transport.registry import (
     get_transport_provider,
     list_transport_modes,
     list_transport_port_scan,
 )
-from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID, VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
 from src.frontend.port_diagnostics import describe_port_issues
 from src.i18n import tr
 
 MODE_CHOICES = ("uart", "spi", "usb", "usj")
-UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ble-log-spi-bridge.rules")
-UDEV_RULE = (
-    f'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{VENDOR_ID:04x}", '
-    f'ATTR{{idProduct}}=="{PRODUCT_ID:04x}", MODE="0666", TAG+="uaccess"\n'
-)
 
 
 def _parse_transport_mode(mode: str) -> TransportMode:
@@ -62,16 +52,6 @@ def _endpoint_display_label(mode: TransportMode, label: str, value: str) -> str:
     if mode is TransportMode.SPI_USB_BRIDGE:
         return f"SPI-BRIDGE  {value}"
     return label
-
-
-def _should_auto_install_udev(ctx: click.Context) -> bool:
-    return (
-        sys.platform == "linux"
-        and hasattr(os, "geteuid")
-        and os.geteuid() == 0
-        and ctx.invoked_subcommand is None
-        and len(sys.argv) == 1
-    )
 
 
 def _echo_paths(label: str, paths: list[Path]) -> None:
@@ -101,30 +81,6 @@ def _echo_paths(label: str, paths: list[Path]) -> None:
         click.echo(f"  Last:  {paths[-1]}")
 
 
-def _install_udev_rules() -> None:
-    try:
-        already_installed = UDEV_RULE_PATH.exists() and UDEV_RULE_PATH.read_text(encoding="utf-8") == UDEV_RULE
-    except OSError:
-        already_installed = False
-
-    if not already_installed:
-        try:
-            UDEV_RULE_PATH.write_text(UDEV_RULE, encoding="utf-8")
-        except OSError as e:
-            raise click.ClickException(f"Failed to write {UDEV_RULE_PATH}: {e}") from e
-
-    for cmd in (
-        ("udevadm", "control", "--reload-rules"),
-        ("udevadm", "trigger"),
-    ):
-        result = subprocess.run(cmd, check=False)
-        if result.returncode != 0:
-            raise click.ClickException(f"Command failed: {' '.join(cmd)}")
-
-    click.echo(f"Installed Linux USB permission rule: {UDEV_RULE_PATH}")
-    click.echo("Unplug and replug the USB-SPI bridge, then run ble_log_console without sudo.")
-
-
 @click.group(invoke_without_command=True)
 @click.option(
     "--mode",
@@ -138,11 +94,17 @@ def _install_udev_rules() -> None:
     "--port",
     "-p",
     default=None,
-    help="Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or bus:addr:intf:ep,"
+    help="Transport endpoint. UART: /dev/ttyUSB0, SPI Bridge: cdc:/dev/ttyACM0 or COM7,"
     " USB Output or USJ: /dev/ttyACM0 or /dev/cu.usbmodem*.",
 )
 @click.option("--baudrate", "-b", type=int, default=3_000_000, show_default=True, help="UART baud rate.")
 @click.option("--debug", is_flag=True, help="Show internal traffic and firmware state events in the log view.")
+@click.option(
+    "--show-log",
+    type=click.Choice(LOG_DISPLAY_CATEGORIES),
+    multiple=True,
+    help=tr("Show a live log category; repeat to select more. Default: none. Saved logs are unaffected."),
+)
 @click.option(
     "--log-dir",
     "-d",
@@ -174,12 +136,9 @@ def cli(
     log_dir: str | None,
     output: str | None,
     log_database: Path | None,
+    show_log: tuple[str, ...],
 ) -> None:
     """BLE Log Console — real-time BLE log monitor."""
-    if _should_auto_install_udev(ctx):
-        _install_udev_rules()
-        return
-
     if ctx.invoked_subcommand is not None:
         return
 
@@ -216,6 +175,7 @@ def cli(
         log_dir=resolved_log_dir,
         log_database=log_database.resolve() if log_database else None,
         debug=debug,
+        show_logs=frozenset(show_log),
     )
     app.run()
     _echo_paths("Recording file", app.saved_capture_paths)

@@ -1,5 +1,7 @@
 # language: zh-CN
 
+# 界面场景在录制前显式开启“设备控制台文本”显示；默认关闭与分类选择由 log_display.feature 验证。
+
 # 观察边界：字节以真实帧和文本进入 Console 自己的链路。录制路径经过进程内 pipeline 的 Writer、
 # Parser、Aggregator、Presenter 与报告，观察实际写出的原始文件、console.log、界面行与报告文本；
 # 进程内场景会替换 os.fsync 或让 reader 报错，以模拟保存失败与传输中断。实时路径把同一个 Parser 和

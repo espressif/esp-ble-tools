@@ -192,6 +192,15 @@ USB Output 和 USJ 都通过一根 USB 数据线将目标设备直接连接到�
 
 Windows 10 及以上版本，双击 `ble_log_console_windows_v1.1.0.exe` 启动。
 
+CDC 接收使用 Windows 自带的 `usbser.sys` 串口驱动。请在设备管理器的
+**端口（COM 和 LPT）** 中确认 CDC 接口出现，再选择对应 COM 端口（支持 COM10 及以上编号）。
+如果之前为 Bulk 接收把该接口绑定到了 WinUSB/libusb，需要先恢复该接口的 CDC 驱动；
+不要替换设备上独立的 JTAG/HID 接口。参见 [Microsoft USB 串口驱动说明](https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-driver-installation-based-on-compatible-ids)。
+
+连接前先关闭其他串口监视器。枚举只读取端口元数据，没有产品或芯片描述也可以选择。
+本次 CDC 整合的 Windows 构建和真机验证尚待完成。
+
+
 #### 5.1.2 Linux 系统
 
 Ubuntu 22.04 及以上版本，先在工具所在目录赋予执行权限：
@@ -200,19 +209,13 @@ Ubuntu 22.04 及以上版本，先在工具所在目录赋予执行权限：
 chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
-**CDC 串口接收：** SPI Bridge 在所有平台优先使用 CDC，与 USB OTG、USJ 共用串口接收实现。Linux 下确认当前用户有串口读写权限，通常由 `dialout` 组提供；CDC 不需要安装下面的直接 USB 访问规则。先关闭其他占用 Bridge 的程序。如果之前的 Bulk 接收器解绑了串口驱动，关闭该接收器后重新插拔 Bridge。
-
-**直接 Bulk 回退：** 没有 Bridge CDC 端口时，工具使用 Bulk。如果缺少 USB 访问权限，执行以下命令安装规则，再重新拔插 Bridge：
-
-```bash
-sudo ./ble_log_console_ubuntu_v1.1.0
-```
-
-随后启动工具，正常使用无需 `sudo`：
+SPI Bridge、USB OTG、USJ 统一使用 CDC 串口接收。当前用户需要串口读写权限，通常由 `dialout` 组提供。无需 `sudo`，直接启动：
 
 ```bash
 ./ble_log_console_ubuntu_v1.1.0
 ```
+
+录制前先关闭占用端口的其他程序。如果 Bridge CDC 端口未出现，关闭直接 Bulk 接收程序，重新插拔 Bridge 后刷新端口列表。Console 不会解绑系统驱动或回退到直接 Bulk。
 
 ### 5.2 开始录制
 
@@ -257,16 +260,20 @@ sudo ./ble_log_console_ubuntu_v1.1.0
 
 #### 5.2.3 查看 Console Log
 
+录制前在“实时显示”中按需勾选 **Host**、**HCI**，UART 模式还可选择“控制台”，默认全部关闭。切换到 SPI/USB 后隐藏并取消控制台文本选择；USJ 可能收到的启动或崩溃文本仍正常录制、保存，也可通过命令行 `--show-log console` 显示。下面描述的实时显示仅在对应类别开启后生效；原始数据、解码日志文件、统计、错误和质量警告不受影响。命令行使用 `--show-log host`、`--show-log hci`、`--show-log console`，可重复指定多个类别。**Record Again** 保留本次选择，新启动默认全部关闭。此选项不增加限速或去重。
+
 UART 和 USJ 模式下，固件转发的普通日志、启动信息等可打印文本会显示在日志区域，并保存到 `_console.log`。仅收到此类文本时才生成该文件。
 
 SPI Bridge 模式不显示转发文本。`_console.log` 不能替代用于分析的 `.bin` 文件。
 
-所有模式均支持 Host 日志的实时显示，并保存到 `_console.log`。压缩 Host 日志需要与固件匹配的字典：默认查找当前工作目录下的 `ble_log_database/BLE_HOST_logs.json`，其次查找当前目录的 `BLE_HOST_logs.json`。可在启动界面的 **Log Database** 中选择所在目录，或使用 `--log-database <目录>`；留空则跳过压缩日志解析。
+所有模式均支持 Host 日志的实时显示，并保存到 `_console.log`。压缩 Host 日志需要与固件匹配的字典：默认查找当前工作目录下的 `ble_log_database/BLE_HOST_logs.json`，其次查找当前目录的 `BLE_HOST_logs.json`。可在启动界面的 **Host 字典** 中选择所在目录，或使用 `--log-database <目录>`；留空则跳过压缩日志解析。 成功开始录制后会记住字典目录，重新启动自动恢复；主动清空也会记住。显式 `--log-database` 优先，已记忆目录失效或不可读取时回退到自动发现。配置保存于当前用户的应用设置目录，源码与二进制版本共用。
 
 HCI 和 LL_HCI 统一显示为 HCI，展示时间、收发方向、包类型和十六进制内容，并保存到 `_hci.log` 与 `_hci_btsnoop.log`，无需日志字典。时间单位未知的包仅显示和保存文本，不写入 BTSnoop。LL_TASK 和 LL_ISR 不解码，全部原始数据仍完整保存在 `.bin` 中。压缩日志等待分片拼齐后显示；停止时仍未拼齐的内容会标记为不完整。
 
 
 ### 5.3 结束录制并检查结果
+
+开录 v8 快照确认旧缓存后恢复稳定接收时，程序在实时解析时复用已解码帧检查新数据区间，并据此生成结论。停止时不重扫原始文件，也不自动生成裁剪副本。原始字节、Host 任务映射和完整解析覆盖统计均保留，同时显示原始流缺号数及区间偏移。边界之后的真实丢包仍影响结论；证据不明确或区间检查不完整时保留原始流判定。
 
 #### 5.3.1 Stop & Review
 
@@ -410,19 +417,13 @@ python console.py --mode spi --port <PORT>
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
 - USB Output 或 USJ 模式下，是否使用数据线连接了芯片的原生 USB 口，所选端口是否与固件输出对应。USB Output 端口需要固件启动 BLE Log 后才会出现；重新插拔后请点击 **Refresh**。
-- Linux 下 CDC 接收需检查串口读写权限，通常由 `dialout` 组提供。`sudo ./ble_log_console_ubuntu_v1.1.0` 安装的 USB 权限规则用于直接 Bulk 回退路径。CDC 端口未出现时，先关闭其他 Bridge 接收程序，再重新插拔设备。
+- Linux 下 CDC 接收需检查串口读写权限，通常由 `dialout` 组提供。CDC 端口未出现时，先关闭其他 Bridge 接收程序，再重新插拔设备；Console 不再回退到直接 Bulk。
 
-SPI Bridge 插着却打不开时，端口列表会直接说明原因，不再只是一片空白：
+设置页和 `ports` 命令会显示 SPI Bridge、USB OTG 和 USJ CDC 端口的权限诊断。Linux 和 macOS 下，没有读写权限的端口不会列为可选项，而是按串口路径说明原因，例如 `SPI Bridge /dev/ttyACM0：没有读写权限。` 多数 Linux 发行版可用 `sudo usermod -aG dialout $USER` 把用户加入 `dialout` 组，然后注销并重新登录。不需要安装 libusb 或 Bulk 访问规则。
 
-- `SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。` 表示这台电脑还没有安装 SPI Bridge 的 Linux 访问权限规则。请用 `sudo` 不带参数运行一次工具，它会安装 `/etc/udev/rules.d/99-ble-log-spi-bridge.rules`（见 [Linux 系统](#412-linux-系统)）；然后重新拔插 Bridge 设备，再正常启动工具。
-- `未找到 libusb-1.0，请先安装：sudo apt install libusb-1.0-0` 表示工具访问 Bridge 所需的 USB 库没有安装。
-- `SPI Bridge（bus 1，addr 95）无法打开：……` 会原样列出系统报告的 USB 错误，例如设备已被其他程序占用。
+枚举只读取端口元数据和文件权限，不打开设备，因此无法检查串口是否已被其他程序占用；这类错误在开始录制时报告。Windows 的 COM 端口保持可选，在实际打开时报告访问错误。
 
-USJ 模式下，只有当前用户能读写的端口才会列出来。打不开的 USJ 端口不会出现在列表里，而是直接说明原因：
-
-- `USJ /dev/ttyACM0：没有读写权限。` 表示当前用户没有使用这个串口的权限。多数 Linux 发行版可用 `sudo usermod -aG dialout $USER` 把用户加入 `dialout` 组，注销并重新登录后重新启动工具。
-
-这些提示跟随界面语言，界面语言取自系统的消息区域设置。需要中文时，可在启动工具前设置 `LANG=zh_CN.UTF-8`（或 `LC_MESSAGES=zh_CN.UTF-8`），也可以在启动界面中选择「简体中文」。
+诊断提示跟随所选界面语言，切换语言后立即更新。默认语言为英文，需要中文时在设置页选择「简体中文」。
 
 <a id="faq-no-logs"></a>
 

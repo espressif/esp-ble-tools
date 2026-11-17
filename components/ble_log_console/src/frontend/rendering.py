@@ -71,7 +71,8 @@ def launch_control_css() -> str:
     }}
 
     #refresh-btn,
-    #browse-btn {{
+    #browse-btn,
+    #database-browse-btn {{
         padding: 0 1;
         height: 3;
         min-height: 3;
@@ -99,14 +100,14 @@ def launch_width_stable_css() -> str:
     """
     return f"""
     #launch-container {{
-        width: 60;
-        min-width: 60;
-        max-width: 60;
+        width: 72;
+        min-width: 0;
+        max-width: 100%;
     }}
 
     #mode-select,
     #baud-select {{
-        width: 100%;
+        width: 1fr;
         min-width: 0;
     }}
 

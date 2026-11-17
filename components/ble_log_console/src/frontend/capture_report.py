@@ -147,23 +147,31 @@ def build_capture_report(
         and result.parser_raw_bytes == result.raw_bytes
     )
     excluded = result.startup.offset_bytes if result.startup is not None else 0
-    analysis_paths: tuple[Path, ...] = ()
-    analysis_error = None
+    quality_snapshot = snapshot
+    quality_start_offset = 0
+    original_sequence = None
+    quality_error = False
     if excluded:
-        copy = result.analysis_copy
+        quality = result.opening_quality
         if (
-            copy is not None
-            and copy.paths
-            and copy.error is None
-            and copy.bytes_written == result.raw_bytes - excluded
-            and raw_complete
+            raw_complete
             and parser_complete
+            and quality is not None
+            and quality.error is None
+            and quality.offset_bytes == excluded
+            and quality.snapshot is not None
+            and quality.snapshot.parser_raw_bytes == result.raw_bytes - excluded
         ):
-            analysis_paths = copy.paths
+            quality_snapshot = quality.snapshot
+            quality_start_offset = excluded
+            original_sequence = sequence
+            sequence = quality_snapshot.sequence
+            segments = quality_snapshot.capture_segments
+            firmware_loss = quality_snapshot.capture_firmware_loss
+            firmware_written_bytes = quality_snapshot.capture_firmware_written_bytes
+            firmware_lost_bytes = quality_snapshot.capture_firmware_lost_bytes
         else:
-            analysis_error = (copy.error if copy is not None else None) or (
-                "Analysis output could not be confirmed complete; use the original raw recording."
-            )
+            quality_error = True
     firmware_source_rates = _firmware_source_rates(firmware_loss)
     # Every source is scored on its own loss rate, so a source that lost more
     # than 5% of its own bytes fails the capture on its own evidence: INTERNAL
@@ -193,8 +201,8 @@ def build_capture_report(
         findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
     if hci_error is not None:
         findings.append("HCI files could not be saved completely; retain the original raw recording.")
-    if analysis_error is not None:
-        findings.append("The analysis copy could not be saved completely; retain the original raw recording.")
+    if quality_error:
+        findings.append("The fresh interval could not be verified; quality metrics describe the original recording.")
 
     if result.writer_error is not None or not result.writer_finalized:
         reasons.append("Raw recording could not be finalized safely.")
@@ -209,10 +217,10 @@ def build_capture_report(
         verdict = CaptureVerdict.RECAPTURE
     else:
         warnings.extend(findings)
-        if snapshot is not None and snapshot.integrity is not None:
-            if snapshot.integrity.conclusion == "failed":
+        if quality_snapshot is not None and quality_snapshot.integrity is not None:
+            if quality_snapshot.integrity.conclusion == "failed":
                 warnings.append("Checker detected missing or duplicate sequence numbers in the checked ranges.")
-            if any(row.snapshot_conflict for row in snapshot.integrity.intervals):
+            if any(row.snapshot_conflict for row in quality_snapshot.integrity.intervals):
                 warnings.append("Firmware snapshot anchors conflict; retain the original recording for review.")
         if not parser_complete:
             warnings.append("Live parsing did not cover all saved raw data; sequence integrity is not fully verified.")
@@ -296,10 +304,11 @@ def build_capture_report(
         stream_identity=stream_identity,
         console_log_error=console_log_error,
         startup=result.startup,
-        analysis_paths=analysis_paths,
-        analysis_error=analysis_error,
-        integrity=snapshot.integrity if snapshot is not None else None,
-        firmware=snapshot.firmware if snapshot is not None else None,
+        quality_regular_frames=quality_snapshot.regular_frames if quality_start_offset else None,
+        quality_start_offset=quality_start_offset,
+        original_sequence=original_sequence,
+        integrity=quality_snapshot.integrity if quality_snapshot is not None else None,
+        firmware=quality_snapshot.firmware if quality_snapshot is not None else None,
     )
 
 
@@ -371,15 +380,13 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
         CaptureVerdict.CHECK_CONFIGURATION: _no_regular_frames_advice(report),
         CaptureVerdict.RECAPTURE: "Check the connection and configuration, then record again.",
     }[report.verdict]
-    if report.analysis_paths:
-        advice = "A trimmed file is available for separate analysis. The verdict and metrics describe the original recording."
     report_path = (
         f"{tr('NOT SAVED', language=language)} ({report.report_write_error})"
         if report.report_write_error
         else report.report_path
     )
     raw_path = report.raw_paths[0] if report.raw_paths else tr("NOT SAVED", language=language)
-    parser_scope = "all saved data" if report.parser_complete else "parsed portion only"
+    parser_scope = _quality_scope(report)
     scope_left, scope_right = ("（", "）") if language == "zh_CN" else ("(", ")")
     scope_space = "" if language == "zh_CN" else " "
     sequence_result = (
@@ -405,7 +412,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
             f"  {tr('Parser coverage summary', language=language)}{separator}{_coverage_text(report, language)}",
             (
                 f"  {tr('Regular BLE Log frames' if report.parser_complete else 'Frames found in parsed portion', language=language)}"
-                f"{separator}{report.regular_frames}"
+                f"{separator}{report.quality_regular_frames if report.quality_regular_frames is not None else report.regular_frames}"
             ),
             (
                 f"  {tr('Possible sequence loss' if report.parser_complete else 'Full-recording sequence continuity', language=language)}"
@@ -416,29 +423,43 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
             "",
             f"{tr('Detailed report', language=language)}{separator}{report_path}",
             f"{tr('Raw data file', language=language)}{separator}{raw_path}",
-            *(
-                [f"{tr('File for analysis', language=language)}{separator}{report.analysis_paths[0]}"]
-                if report.analysis_paths
-                else []
-            ),
         )
     )
+
+
+def _quality_scope(report: CaptureReport) -> str:
+    if report.quality_start_offset:
+        return "confirmed fresh interval"
+    return "all saved data" if report.parser_complete else "parsed portion only"
 
 
 def _startup_summary(report: CaptureReport, language: str) -> list[str]:
     if report.startup is None or not report.startup.offset_bytes:
         return []
-    return [
+    lines = [
         tr(
             "Opening backlog detected. Suggested raw file offset: {bytes} bytes. Original data is retained.",
             language=language,
             bytes=report.startup.offset_bytes,
         ),
         tr(
-            "Quality metrics describe the original recording; the suffix has not been evaluated separately.",
+            "Quality metrics cover the confirmed fresh interval; parser coverage includes all saved data."
+            if report.quality_start_offset
+            else "The fresh interval could not be verified; quality metrics describe the original recording.",
             language=language,
         ),
     ]
+    if report.original_sequence is not None:
+        lines.append(
+            tr(
+                "Original stream missing sequence numbers (including opening backlog): {count}.",
+                language=language,
+                count=report.original_sequence.missing_frames,
+            )
+        )
+    if report.startup.preserve_prefix:
+        lines.append(tr("Use the original raw file to retain Host task bindings.", language=language))
+    return lines
 
 
 def format_capture_report(report: CaptureReport, language: str | None = None) -> str:
@@ -453,7 +474,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         tr("BLE Log Recording Report", language=language),
         "=" * 72,
         field(
-            "Original recording verdict" if report.analysis_paths else "Verdict",
+            "Verdict",
             tr(report.verdict.value, language=language),
         ),
         "",
@@ -462,7 +483,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         "",
         f"{tr('Reliability', language=language)}{separator.rstrip()}",
         f"  {field('Saved raw data', tr('Confirmed' if report.raw_complete else 'Not confirmed', language=language))}",
-        f"  {field('Automated quality check', tr('all saved data' if report.parser_complete else 'parsed portion only', language=language))}",
+        f"  {field('Automated quality check', tr(_quality_scope(report), language=language))}",
         f"  {field('Parser coverage summary', _coverage_text(report, language))}",
         "",
         f"{tr('Recording', language=language)}{separator.rstrip()}",
@@ -586,10 +607,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
             )
 
     lines.extend(("", f"{tr('Files', language=language)}{separator.rstrip()}"))
-    lines.extend(f"  {field('File for analysis', path)}" for path in report.analysis_paths)
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
-    if report.analysis_error:
-        lines.append(f"  {field('Analysis copy error', tr(report.analysis_error, language=language))}")
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
     lines.extend(f"  {field('HCI log', path)}" for path in report.hci_paths)
     if report.hci_error:
@@ -876,8 +894,7 @@ class CaptureReportScreen(ModalScreen[str]):
         separator = "：" if language == "zh_CN" else ": "
         with Vertical(id="capture-report-container"):
             yield Static(
-                f"{tr('Original recording verdict' if self.report.analysis_paths else 'Verdict', language=language)}"
-                f"{separator}{tr(self.report.verdict.value, language=language)}",
+                f"{tr('Verdict', language=language)}{separator}{tr(self.report.verdict.value, language=language)}",
                 id="capture-report-verdict",
                 classes=self.report.verdict.name.lower(),
             )

@@ -13,8 +13,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-import usb.core
 from pytest_bdd import given, parsers, scenarios, then, when
+from serial import SerialException
 from src.app import BLELogApp, unique_capture_path
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.parser_events import RedirEvent
@@ -96,23 +96,19 @@ def refuse_storage(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
         monkeypatch.setattr(Path, "mkdir", mkdir)
 
 
-@given("SPI 端口枚举时报 USB 错误")
-def failing_usb_enumeration(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A bridge scan that fails for a reason the transport does not classify.
+@given("SPI CDC 串口枚举失败")
+def failed_cdc_discovery(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_discovery():
+        raise SerialException("CDC discovery failed")
 
-    A missing libusb backend is reported as a PortIssue instead of raised, so the
-    setup screen's own failure path needs an error the scan really propagates.
-    """
-
-    def refuse_find(**kwargs: object) -> None:
-        raise usb.core.USBError("Resource busy")
-
-    monkeypatch.setattr("usb.core.find", refuse_find)
+    monkeypatch.setattr(
+        "src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", fail_discovery
+    )
     monkeypatch.setattr(
         "serial.tools.list_ports.comports", lambda: [SimpleNamespace(device="/dev/ttyACM-stub", vid=0, pid=0)]
     )
     monkeypatch.setattr("src.frontend.launch_screen.list_transport_port_scan", list_transport_port_scan)
-    with pytest.raises(usb.core.USBError, match="Resource busy"):
+    with pytest.raises(SerialException, match="CDC discovery failed"):
         list_transport_port_scan(TransportMode.SPI_USB_BRIDGE)
     config = start_world.config
     start_world.config = TransportConfig(config.mode, "attempted CDC", "cdc:attempted", config.baudrate)
@@ -255,7 +251,11 @@ def retry_refused(start_world: SimpleNamespace) -> None:
 @when("用户改用可写目录并点击 Connect")
 def correct_directory(start_world: SimpleNamespace) -> None:
     start_world.app.screen.query_one("#dir-input", Input).value = str(start_world.good_dir)
-    start_world.runner.run(start_world.pilot.click("#connect-btn"))
+    start_world.app.screen.query_one("#connect-btn", Button).scroll_visible(animate=False)
+    _pause(start_world)
+    button = start_world.app.screen.query_one("#connect-btn", Button)
+    hit = start_world.app.get_widget_at(button.region.x, button.region.y)
+    assert start_world.runner.run(start_world.pilot.click("#connect-btn")), (button.region, hit)
     _pause(start_world)
 
 
@@ -374,18 +374,19 @@ def test_refresh_discovery_failure_preserves_seed_and_storage_error(
     attempt_start(world)
     screen = world.app.screen
     error = screen.query_one("#start-error", Label).render().plain
-    failing_usb_enumeration(world, monkeypatch)
+    failed_cdc_discovery(world, monkeypatch)
     monkeypatch.setattr("src.i18n._language", language)
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == "attempted"
     assert screen.query_one("#start-error", Label).render().plain == error
     messages = [notification.message for notification in world.app._notifications]
-    # The failure reason is carried verbatim; only the prefix is translated.
-    prefix = "Failed to list ports: " if language == "en" else "无法列出端口："
-    assert any(message.startswith(prefix) and "Resource busy" in message for message in messages), messages
+    expected = (
+        "Failed to list ports: CDC discovery failed" if language == "en" else "无法列出端口：CDC discovery failed"
+    )
+    assert expected in messages
     recording_untouched(world)
-    monkeypatch.setattr("usb.core.find", lambda **kwargs: [])
+    monkeypatch.setattr("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", list)
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == "attempted"

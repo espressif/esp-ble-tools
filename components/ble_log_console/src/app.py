@@ -48,7 +48,7 @@ from src.frontend.shortcut_screen import ShortcutScreen
 from src.frontend.stats_screen import BufUtilScreen, StatsScreen
 from src.frontend.status_panel import StatusPanel
 from src.i18n import tr
-from src.preferences import load_log_dir, save_log_dir
+from src.preferences import load_log_database, load_log_dir, save_log_database, save_log_dir
 
 PIPELINE_POLL_INTERVAL_SEC = 0.05
 
@@ -189,10 +189,14 @@ class BLELogApp(App):
         log_dir: Path | None = None,
         debug: bool = False,
         log_database: Path | None = None,
+        show_logs: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__()
         self._debug = debug
-        self._log_database = log_database if log_database is not None else find_log_database()
+        self._show_logs = show_logs
+        self._log_database = (
+            log_database if log_database is not None else load_log_database(default=find_log_database())
+        )
         self._transport_config: TransportConfig | None = (
             TransportConfig(mode=mode, label=port, port=port, baudrate=baudrate) if port is not None else None
         )
@@ -222,7 +226,7 @@ class BLELogApp(App):
             self._begin_capture()
         else:
             self.push_screen(
-                LaunchScreen(default_log_dir=self._log_dir, log_database=self._log_database),
+                LaunchScreen(default_log_dir=self._log_dir, log_database=self._log_database, show_logs=self._show_logs),
                 callback=self._on_launch_result,
             )
 
@@ -265,6 +269,7 @@ class BLELogApp(App):
         self._transport_config = config.transport_config
         self._log_dir = config.log_dir
         self._log_database = config.log_database
+        self._show_logs = config.show_logs
         self._begin_capture()
 
     def _begin_capture(self) -> None:
@@ -276,6 +281,7 @@ class BLELogApp(App):
                     default_log_dir=self._log_dir,
                     log_database=self._log_database,
                     default_transport_config=self._transport_config,
+                    show_logs=self._show_logs,
                     start_error=tr(
                         "Recording could not start in {path}: {message}. "
                         "Choose another log directory or fix the storage error, then select Connect.",
@@ -330,6 +336,7 @@ class BLELogApp(App):
         if self._capture_session.finished:
             return
         save_log_dir(self._log_dir)
+        save_log_database(self._log_database)
 
     def _poll_pipeline(self) -> None:
         capture_session = self._capture_session
@@ -384,6 +391,8 @@ class BLELogApp(App):
         self.query_one(StatusPanel).stream_kind = msg.kind
 
     def on_log_line(self, msg: LogLine) -> None:
+        if msg.category is not None and msg.category not in self._show_logs:
+            return
         self.query_one(LogView).write_ascii(msg.text)
 
     def on_user_notice(self, msg: UserNotice) -> None:

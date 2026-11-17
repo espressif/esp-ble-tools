@@ -429,8 +429,9 @@ class CaptureReport:
     hci_error: str | None = None
     console_log_error: str | None = None
     startup: "StartupDecision | None" = None
-    analysis_paths: tuple[Path, ...] = ()
-    analysis_error: str | None = None
+    quality_regular_frames: int | None = None
+    quality_start_offset: int = 0
+    original_sequence: SequenceSummary | None = None
     integrity: "CheckResult | None" = None
     firmware: "FirmwareSnapshot | None" = None
 
@@ -464,6 +465,8 @@ def resolve_lbm_name(pool: int, index: int) -> str:
 
 # --- UI/control contract ---
 
+LOG_DISPLAY_CATEGORIES = ("host", "hci", "console")
+
 
 @dataclass(slots=True)
 class LaunchConfig:
@@ -472,6 +475,7 @@ class LaunchConfig:
     transport_config: TransportConfig
     log_dir: Path
     log_database: Path | None = None
+    show_logs: frozenset[str] = frozenset()
 
 
 class StatsUpdated(Message):
@@ -495,9 +499,10 @@ class InternalFrameDecoded(Message):
 
 
 class LogLine(Message):
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, category: str | None = "console") -> None:
         super().__init__()
         self.text = text
+        self.category = category
 
 
 class StreamKindChanged(Message):

@@ -95,6 +95,37 @@ def test_stop_preserves_incomplete_host_text(database):
     assert "data=" in events[0].text
 
 
+@pytest.mark.parametrize(
+    ("log_format", "expected"),
+    [
+        ('"hello\\n"', '"hello"'),
+        ('"hello\\r\\n"', '"hello"'),
+        ('"hello\\n\\n"', '"hello"'),
+        ("hello\\n", "hello"),
+        ('"中文\\n"', '"中文"'),
+        (r'"literal \\n"', r'"literal \\n"'),
+        (r'"path C:\\new\\n"', r'"path C:\\new\\n"'),
+        (r'"slash \\\n"', r'"slash \\"'),
+        (r'"first\nsecond\n"', r'"first\nsecond"'),
+    ],
+)
+def test_compressed_host_trailing_line_endings(database, log_format, expected):
+    (database / "BLE_HOST_logs.json").write_text(json.dumps({"logs": {"2": {"id": 2, "format": log_format}}}))
+    parser = BleLogParser(log_database=database)
+    events = host_events(parser.feed(frame(0, 0, snapshot_payload()) + encoded(1, log_id=2)))
+    events += host_events(parser.finalize())
+    assert len(events) == 1
+    assert events[0].text.endswith(" | " + expected + "\n")
+    assert events[0].text.count("\n") == 1
+
+
+def test_plain_host_literal_line_ending_is_preserved():
+    parser = BleLogParser()
+    payload = struct.pack("<I", 10) + b"literal \\n"
+    events = host_events(parser.feed(frame(5, 0, payload))) + host_events(parser.finalize())
+    assert len(events) == 1 and events[0].text == "literal \\n\n"
+
+
 def test_missing_database_warns_once_and_keeps_checking():
     parser = BleLogParser()
     events = host_events(parser.feed(frame(0, 0, snapshot_payload()) + encoded(1) + encoded(2)))

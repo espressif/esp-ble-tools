@@ -346,7 +346,9 @@ class CaptureEventPresenter:
             if isinstance(console_event, HciLogEvent):
                 messages.extend(self._end_undecoded(console_event.received_at_ms))
                 messages.extend(self._separate_console_line(console_event.received_at_ms))
-                self._append_redir_log_lines(messages, [console_event.text], console_event.received_at_ms)
+                self._append_redir_log_lines(
+                    messages, [console_event.text], console_event.received_at_ms, category="hci"
+                )
                 self._write_hci(console_event)
                 if console_event.reason and console_event.reason not in self._hci_reasons:
                     self._hci_reasons.add(console_event.reason)
@@ -361,14 +363,20 @@ class CaptureEventPresenter:
                 messages.extend(self._hci_failure_notice())
             elif isinstance(console_event, HostLogEvent):
                 if console_event.reason:
-                    warning = (
-                        tr("No log database selected; compressed Host logs are not decoded. Raw data is retained.")
-                        if console_event.reason == "missing_database"
-                        else tr(
+                    if console_event.reason == "missing_database":
+                        warning = tr(
+                            "No log database selected; compressed Host logs are not decoded. Raw data is retained."
+                        )
+                    elif console_event.reason == "unknown_protocol":
+                        warning = tr(
+                            "Some compressed Host frames arrived before protocol version information; "
+                            "those frames were not decoded. Raw data is retained."
+                        )
+                    else:
+                        warning = tr(
                             "Host log decoding incomplete ({reason}); raw data is retained.",
                             reason=console_event.reason,
                         )
-                    )
                     messages.append(UserNotice(warning, level="warning"))
                 if console_event.text:
                     messages.extend(self._end_undecoded(console_event.received_at_ms))
@@ -376,7 +384,7 @@ class CaptureEventPresenter:
                     text = console_event.text
                     if console_event.reason:
                         text = tr("[Incomplete Host log: {reason}] ", reason=console_event.reason) + text
-                    messages.extend(self._write_redir_text(text, console_event.received_at_ms))
+                    messages.extend(self._write_redir_text(text, console_event.received_at_ms, category="host"))
             elif isinstance(console_event, UndecodedEvent):
                 messages.extend(self._write_undecoded(console_event))
             elif self._mode is not TransportMode.SPI_USB_BRIDGE:
@@ -444,7 +452,7 @@ class CaptureEventPresenter:
             self._saved_capture_paths = list(event.status.paths)
 
         if event.kind == "opened" and event.status is not None and event.status.paths:
-            return (LogLine(f"Saving to {event.status.paths[-1]}"),)
+            return (LogLine(f"Saving to {event.status.paths[-1]}", category=None),)
         if event.kind == "rotated" and event.status is not None and event.status.paths:
             return (UserNotice(f"Recording file rotated to {event.status.paths[-1]}"),)
         if event.kind == "error":
@@ -528,7 +536,7 @@ class CaptureEventPresenter:
         messages.extend(self._write_redir_text(text, event.received_at_ms))
         return messages
 
-    def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
+    def _write_redir_text(self, text: str, received_at_ms: int, *, category: str = "console") -> list[Message]:
         messages: list[Message] = []
         self._console_timestamp_pending = not self._console_line_prefixed
         old_console_path_count = len(self._saved_console_log_paths)
@@ -558,9 +566,9 @@ class CaptureEventPresenter:
         if "\n" in self._redir_line_buf:
             lines = self._redir_line_buf.split("\n")
             self._redir_line_buf = lines.pop()
-            self._append_redir_log_lines(messages, lines, received_at_ms)
+            self._append_redir_log_lines(messages, lines, received_at_ms, category=category)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
-            messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
+            messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT], category=category))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
         messages.extend(self._console_log_failure_notice())
         return messages
@@ -587,14 +595,16 @@ class CaptureEventPresenter:
         except OSError as error:
             self._console_log_failed(error)
 
-    def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
+    def _append_redir_log_lines(
+        self, messages: list[Message], lines: list[str], received_at_ms: int, *, category: str = "console"
+    ) -> None:
         non_empty_lines = [line for line in lines if line]
         if non_empty_lines:
             non_empty_lines[0] = f"[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}"
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:
-                messages.append(LogLine("\n".join(batch)))
+                messages.append(LogLine("\n".join(batch), category=category))
 
     def _flush_console_log_if_due(self) -> None:
         if self._console_log_file is None:
@@ -642,8 +652,7 @@ class CaptureEventPresenter:
         return [
             UserNotice(
                 tr(
-                    "Console log could not be saved: {message}. The text is still shown here; this error does not "
-                    "itself stop raw recording.",
+                    "Console log could not be saved: {message}. This error does not itself stop raw recording.",
                     message=self._console_log_error,
                 ),
                 level="warning",

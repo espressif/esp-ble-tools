@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from pytest_bdd import given, scenarios, then, when
 from src.app import BLELogApp
+from src.backend.support.transport.base import PortScan
 from textual.widgets import Input, Select
 
 scenarios("features/directory_memory.feature")
@@ -15,7 +16,9 @@ scenarios("features/directory_memory.feature")
 @given("用户在设置页选择包含中文和空格的录制目录", target_fixture="directory_world")
 def directory_world(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("src.frontend.launch_screen.list_transport_port_options", lambda mode: [("test", "test")])
+    monkeypatch.setattr(
+        "src.frontend.launch_screen.list_transport_port_scan", lambda mode: PortScan(options=[("test", "test")])
+    )
     return SimpleNamespace(directory=tmp_path / "日志 recording", tmp_path=tmp_path)
 
 

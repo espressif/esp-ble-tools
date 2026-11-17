@@ -69,14 +69,10 @@ class CaptureSession:
 
     @property
     def saved_capture_path(self) -> Path | None:
-        if self._report is not None and self._report.analysis_paths:
-            return self._report.analysis_paths[0]
         return self._event_presenter.state.saved_capture_path
 
     @property
     def saved_capture_paths(self) -> list[Path]:
-        if self._report is not None and self._report.analysis_paths:
-            return list(self._report.analysis_paths)
         return list(self._event_presenter.state.saved_capture_paths)
 
     @property

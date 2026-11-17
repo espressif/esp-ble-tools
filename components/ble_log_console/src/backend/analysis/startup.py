@@ -10,7 +10,7 @@ here. Other streams pass through unchanged. A decision is made once per opening.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ble_log_frame_decoder import INIT, PERIODIC, TS_VALID, BleLogFrame, Snapshot
 
@@ -30,6 +30,7 @@ class StartupDecision:
     device_jump_sec: float = 0.0
     host_elapsed_sec: float = 0.0
     anchor_sn: int | None = None
+    preserve_prefix: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,13 @@ class StartupDetector:
         self._previous: _Anchor | None = None
         self._candidate: StartupDecision | None = None
         self._stable = 0
+        self._preserve_prefix = False
         self.decision: StartupDecision | None = None
+
+    @property
+    def candidate(self) -> StartupDecision | None:
+        """Current proposed boundary, or the final decision once observation ends."""
+        return self.decision if self.decision is not None else self._candidate
 
     def begin_chunk(self, size: int, raw_offset: int | None, received: float | None) -> None:
         if self.decision is not None:
@@ -72,13 +79,12 @@ class StartupDetector:
         if self.decision is not None or frame.source_code != 0 or len(frame.payload) < 5:
             return
         subtype = frame.payload[4]
+        if subtype == 9:
+            # Keep task names in the raw file while evaluating a later snapshot interval.
+            self._preserve_prefix = True
+            return
         if subtype != 8:
-            reason = (
-                "Task bindings require the original prefix"
-                if subtype == 9
-                else "Opening metadata requires the original prefix"
-            )
-            self.decision = StartupDecision(reason=reason)
+            self.decision = StartupDecision(reason="Opening metadata requires the original prefix")
             return
         if not isinstance(event, InternalEvent) or not isinstance(event.decoded, Snapshot):
             self.decision = StartupDecision(reason="Invalid opening snapshot")
@@ -138,4 +144,5 @@ class StartupDetector:
         return None
 
     def finish(self) -> StartupDecision:
-        return self.decision or StartupDecision(reason="Recording ended before opening was confirmed")
+        decision = self.decision or StartupDecision(reason="Recording ended before opening was confirmed")
+        return replace(decision, preserve_prefix=self._preserve_prefix)

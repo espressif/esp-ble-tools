@@ -18,20 +18,17 @@ a given host resets the chip.
 from __future__ import annotations
 
 import errno
-import os
 
 import serial
 import serial.tools.list_ports
 
 from src.backend.models import TransportBitrate, TransportConfig
 from src.backend.support.transport.base import (
-    PortIssue,
-    PortIssueKind,
     PortScan,
     TransportMode,
     TransportProvider,
 )
-from src.backend.support.transport.serial_reader import SerialReader
+from src.backend.support.transport.serial_reader import SerialReader, serial_port_issue
 
 VENDOR_ID = 0x303A
 PRODUCT_ID = 0x1001
@@ -43,22 +40,6 @@ USJ_READ_TIMEOUT = 0.1
 
 def _is_usj_port(port: object) -> bool:
     return getattr(port, "vid", None) == VENDOR_ID and getattr(port, "pid", None) == PRODUCT_ID
-
-
-def _can_open(device: str) -> bool:
-    """Whether this user may read and write one enumerated serial port.
-
-    Only the tty node's permission bits are read: opening the port drives
-    DTR/RTS and can reset the chip, so listing ports must not open one.
-    """
-    return os.access(device, os.R_OK | os.W_OK)
-
-
-def _port_issue(device: str) -> PortIssue | None:
-    """Why this user cannot use one enumerated USJ port, or None when usable."""
-    if _can_open(device):
-        return None
-    return PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port=device)
 
 
 def scan_usj_ports() -> PortScan:
@@ -73,7 +54,7 @@ def scan_usj_ports() -> PortScan:
         if not _is_usj_port(port):
             continue
         device = str(port.device)
-        issue = _port_issue(device)
+        issue = serial_port_issue(device, MODE_LABEL)
         if issue is not None:
             scan.issues.append(issue)
             continue
