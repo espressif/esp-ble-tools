@@ -12,7 +12,7 @@ import serial
 import serial.tools.list_ports
 
 from src.backend.models import TransportBitrate, TransportConfig
-from src.backend.support.transport.base import TransportMode, TransportProvider
+from src.backend.support.transport.base import PortScan, TransportMode, TransportProvider
 from src.backend.support.transport.serial_reader import SerialReader
 
 UART_BITS_PER_BYTE = 10
@@ -78,8 +78,8 @@ class UartTransportProvider:
     def mode(self) -> TransportMode:
         return TransportMode.UART
 
-    def list_options(self) -> list[tuple[str, str]]:
-        return list_uart_options()
+    def scan_ports(self) -> PortScan:
+        return PortScan(options=list_uart_options())
 
     def create_reader(self, config: TransportConfig) -> UartTransport:
         return UartTransport(config.port, config.baudrate)

@@ -198,7 +198,7 @@ Subcommands:
 
 | Command | Description |
 | --- | --- |
-| `ports` | List UART serial ports and SPI Bridge ports. Use `--mode` to filter |
+| `ports` | List UART serial ports and SPI Bridge ports, and state why an attached SPI Bridge cannot be used. Use `--mode` to filter |
 | `ls` | List `ble_log_*.bin` recording files in the specified directory |
 
 `--output/-o` is still kept as a hidden option for compatibility with older versions. `--log-dir` is recommended.

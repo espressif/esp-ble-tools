@@ -25,10 +25,11 @@ from src.backend.models import TransportMode, format_bytes
 from src.backend.support.transport.registry import (
     get_transport_provider,
     list_transport_modes,
-    list_transport_port_options,
+    list_transport_port_scan,
 )
 from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID, VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
+from src.frontend.port_diagnostics import describe_port_issues
 
 MODE_CHOICES = ("uart", "spi", "usb")
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ble-log-spi-bridge.rules")
@@ -224,18 +225,22 @@ def list_ports(mode: str | None) -> None:
         click.echo(f"{provider.label}:")
 
         try:
-            options = list_transport_port_options(transport_mode)
+            scan = list_transport_port_scan(transport_mode)
         except Exception as e:
             click.echo(f"  Failed to list endpoints: {e}")
             continue
 
-        if not options:
+        if not scan.options:
             click.echo("  (none)")
-            continue
 
-        for label, value in options:
+        for label, value in scan.options:
             click.echo(f"  {_endpoint_display_label(transport_mode, label, value)}")
             click.echo(f"    use: --mode {_mode_cli_name(transport_mode)} --port {value}")
+
+        # A device can be present and still unusable; say why instead of
+        # leaving the user with an empty list.
+        for issue_text in describe_port_issues(scan.issues):
+            click.echo(f"  {issue_text}")
 
 
 @cli.command(name="ls")

@@ -5,8 +5,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src.backend.models import LaunchConfig, TransportMode
+from src.backend.support.transport.base import PortIssue, PortIssueKind, PortScan
 from src.frontend.launch_screen import BAUD_RATES, DEFAULT_BAUD_RATE, SPI_PORT_LABEL_PREFIX, LaunchScreen
 from src.i18n import get_language, set_language
+
+from tests.helpers import usb_bridge_device, usb_bridge_unreadable_configuration
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -66,10 +69,10 @@ class TestLaunchScreenInit:
 
 
 class TestRefreshPorts:
-    @patch("src.frontend.launch_screen.list_transport_port_options")
-    def test_refresh_updates_select_with_ports(self, mock_list_options: MagicMock) -> None:
+    @patch("src.frontend.launch_screen.list_transport_port_scan")
+    def test_refresh_updates_select_with_ports(self, mock_scan: MagicMock) -> None:
         """refresh_ports should scan ports and update the Select widget."""
-        mock_list_options.return_value = [("/dev/ttyUSB0", "/dev/ttyUSB0"), ("/dev/ttyUSB1", "/dev/ttyUSB1")]
+        mock_scan.return_value = PortScan(options=[("/dev/ttyUSB0", "/dev/ttyUSB0"), ("/dev/ttyUSB1", "/dev/ttyUSB1")])
         screen = LaunchScreen()
 
         mock_select = MagicMock()
@@ -77,16 +80,16 @@ class TestRefreshPorts:
 
         screen.refresh_ports()
 
-        mock_list_options.assert_called_once_with(TransportMode.UART)
+        mock_scan.assert_called_once_with(TransportMode.UART)
         mock_select.set_options.assert_called_once_with(
             [("/dev/ttyUSB0", "/dev/ttyUSB0"), ("/dev/ttyUSB1", "/dev/ttyUSB1")]
         )
         assert mock_select.value == "/dev/ttyUSB0"
 
-    @patch("src.frontend.launch_screen.list_transport_port_options")
-    def test_refresh_empty_ports_no_value_set(self, mock_list_options: MagicMock) -> None:
+    @patch("src.frontend.launch_screen.list_transport_port_scan")
+    def test_refresh_empty_ports_no_value_set(self, mock_scan: MagicMock) -> None:
         """When no ports found, set_options is called with empty list and value is not set."""
-        mock_list_options.return_value = []
+        mock_scan.return_value = PortScan()
         screen = LaunchScreen()
 
         mock_select = MagicMock()
@@ -97,6 +100,91 @@ class TestRefreshPorts:
         mock_select.set_options.assert_called_once_with([])
         # value should NOT have been reassigned when ports list is empty
         assert mock_select.value != "/dev/ttyUSB0"
+
+    @patch("src.frontend.launch_screen.list_transport_port_scan")
+    def test_refresh_shows_why_a_present_bridge_is_missing(self, mock_scan: MagicMock) -> None:
+        """An unusable bridge must not leave the user with a bare empty list."""
+        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=8)])
+        screen = LaunchScreen()
+        screen._mode = TransportMode.SPI_USB_BRIDGE
+        try:
+            set_language("en")
+            label = MagicMock()
+            screen.query_one = MagicMock(return_value=label)  # type: ignore[method-assign]
+
+            screen.refresh_ports()
+        finally:
+            set_language("en")
+
+        assert label.display is True
+        assert (
+            label.update.call_args[0][0] == "SPI Bridge (bus 1, addr 8): no USB access permission. "
+            "Run this tool once with sudo (no arguments), then replug the bridge."
+        )
+
+    @patch("src.frontend.launch_screen.list_transport_port_scan")
+    def test_refresh_shows_the_chinese_hint_when_the_app_language_is_chinese(self, mock_scan: MagicMock) -> None:
+        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=95)])
+        screen = LaunchScreen()
+        screen._mode = TransportMode.SPI_USB_BRIDGE
+        label = MagicMock()
+        screen.query_one = MagicMock(return_value=label)  # type: ignore[method-assign]
+        try:
+            set_language("zh_CN")
+            screen.refresh_ports()
+        finally:
+            set_language("en")
+
+        assert label.display is True
+        assert (
+            label.update.call_args[0][0]
+            == "SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
+        )
+
+    @patch("src.frontend.launch_screen.list_transport_port_scan")
+    def test_switching_the_app_language_re_renders_the_visible_hint(self, mock_scan: MagicMock) -> None:
+        """The hint is already on screen when the user picks 简体中文."""
+        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=95)])
+        screen = LaunchScreen()
+        screen._mode = TransportMode.SPI_USB_BRIDGE
+        label = MagicMock()
+        screen.query_one = MagicMock(return_value=label)  # type: ignore[method-assign]
+        try:
+            set_language("en")
+            screen.refresh_ports()
+            event = MagicMock()
+            event.value = "zh_CN"
+
+            screen.language_changed(event)
+        finally:
+            set_language("en")
+
+        assert (
+            label.update.call_args[0][0]
+            == "SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
+        )
+
+    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
+    def test_refresh_shows_a_usb_error_raised_while_reading_endpoints(
+        self, mock_find: MagicMock, _mock_windows: MagicMock
+    ) -> None:
+        """The real scan runs; only pyusb's enumeration is faked."""
+        mock_find.return_value = [usb_bridge_device(configuration=usb_bridge_unreadable_configuration())]
+        screen = LaunchScreen()
+        screen._mode = TransportMode.SPI_USB_BRIDGE
+        label = MagicMock()
+        screen.query_one = MagicMock(return_value=label)  # type: ignore[method-assign]
+        try:
+            set_language("en")
+            screen.refresh_ports()
+        finally:
+            set_language("en")
+
+        assert label.display is True
+        assert (
+            label.update.call_args[0][0] == "SPI Bridge (bus 1, addr 8) cannot be opened: [Errno 5] Input/output error"
+        )
 
 
 # ---------------------------------------------------------------------------

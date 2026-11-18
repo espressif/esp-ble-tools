@@ -317,6 +317,14 @@ Please check:
 - Whether the port is already occupied by another program.
 - On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.1.0` once and unplugged/reconnected the device after running it.
 
+When a SPI Bridge is plugged in but cannot be opened, the port list also states the reason instead of staying empty:
+
+- `SPI Bridge (bus 1, addr 95): no USB access permission.` means the Linux USB access rule for the bridge is missing on this PC. Run the tool once with `sudo` and no arguments; that installs `/etc/udev/rules.d/99-ble-log-spi-bridge.rules` (see [Linux System](#412-linux-system)). Then unplug and replug the bridge and start the tool normally.
+- `libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0` means the USB library the tool uses to reach the bridge is not installed.
+- `SPI Bridge (bus 1, addr 95) cannot be opened: ...` repeats the USB error the system reported, for example a device that is busy in another program.
+
+These lines follow the display language, which comes from the system message locale. To get Chinese, set `LANG=zh_CN.UTF-8` (or `LC_MESSAGES=zh_CN.UTF-8`) before starting the tool, or choose `简体中文` on the setup screen.
+
 <a id="faq-no-logs"></a>
 
 ### The program starts, but no logs appear.
