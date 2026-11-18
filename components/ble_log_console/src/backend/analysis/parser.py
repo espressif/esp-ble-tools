@@ -30,6 +30,16 @@ from src.backend.analysis.parser_events import (
     ParseChunkResult,
     ParseSummary,
     RedirEvent,
+    UndecodedEvent,
+)
+from src.backend.analysis.stream_identification import (
+    NON_TEXT_BYTES,
+    IdentificationRules,
+    StreamEvidence,
+    StreamIdentity,
+    identify_stream,
+    recorded_version,
+    text_window_counts,
 )
 from src.backend.models import (
     FRAME_OVERHEAD,
@@ -42,6 +52,9 @@ from src.backend.models import (
 )
 
 DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
+
+_KNOWN_SOURCES = frozenset(int(source) for source in BleLogSource)
+_TAB_TO_SPACE = bytes.maketrans(b"\t", b" ")
 
 # INTERNAL payload: [4B os_ts][1B int_src_code][sub-payload]
 _INTERNAL_SUBTYPE_OFFSET = 4
@@ -98,38 +111,148 @@ def parse_ble_log_chunk(
 
 
 class BleLogParser:
-    """Stateful streaming parser holding a persistent esp-blfd FrameDecoder."""
+    """Stateful streaming parser holding a persistent esp-blfd FrameDecoder.
 
-    def __init__(self, checksum_mode: ChecksumMode | None = None) -> None:
+    With ``identification`` rules the parser also owns the console-text view of
+    the stream: it mirrors the decoder's unresolved tail so the bytes no frame
+    claims can be shown as undecoded text, and it keeps the cumulative evidence
+    that identifies what the stream carries. Without rules (transports that
+    never carry console text) it emits frame events only.
+    """
+
+    def __init__(
+        self,
+        checksum_mode: ChecksumMode | None = None,
+        *,
+        identification: IdentificationRules | None = None,
+    ) -> None:
         self._decoder = _decoder_for_mode(checksum_mode)
+        self._rules = identification
+        self._pending = b""
+        self._text_open = False
+        self._escape_held = False
+        self._last_received_at_ms = 0
+        self._gap_bytes = 0
+        self._gap_bytes_after_ble = 0
+        self._known_frames = 0
+        self._identity_records = 0
+        self._window = bytearray()
 
     def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
-        buffered_before = self._decoder.stats.buffered_bytes
+        self._last_received_at_ms = received_at_ms
+        before = self._decoder.stats
+        buffered_before = before.buffered_bytes
         frames = self._decoder.feed(chunk)
         buffered_after = self._decoder.stats.buffered_bytes
+        consumed = buffered_before + len(chunk) - buffered_after
         events: list[BleLogEvent] = []
-        for frame in frames:
-            _append_frame_event(frame, events, received_at_ms)
+        rules = self._rules
+        if rules is None:
+            for frame in frames:
+                _append_frame_event(frame, events, received_at_ms)
+        else:
+            data = self._pending + chunk
+            base_offset = before.bytes_received - buffered_before
+            cursor = 0
+            for frame in frames:
+                start = frame.offset - base_offset
+                self._take_gap(rules, data[cursor:start], received_at_ms, events, end=True)
+                cursor = start + frame.size
+                first_frame_event = len(events)
+                _append_frame_event(frame, events, received_at_ms)
+                self._observe_frame(frame, events[first_frame_event:])
+            self._take_gap(rules, data[cursor:consumed], received_at_ms, events, end=False)
+            # Mirror only the decoder's unresolved tail: a pending frame is never shown as text.
+            self._pending = data[consumed:]
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
-            consumed=buffered_before + len(chunk) - buffered_after,
+            consumed=consumed,
             carried_bytes=buffered_after,
             events=tuple(events),
+            identity=self._identity(),
         )
 
     def finalize(self) -> ParseSummary:
-        """Return final parser totals without reparsing raw data."""
+        """Return final parser totals and resolve the undecoded tail without reparsing raw data."""
 
         stats = self._decoder.finish()
+        events: list[BleLogEvent] = []
+        if self._rules is not None:
+            # The carry may be a frame the recording cut off, so it is shown and read as text evidence but not
+            # counted as data outside frames; the summary reports it as carried bytes.
+            self._take_gap(self._rules, self._pending, self._last_received_at_ms, events, end=True, eof_carry=True)
+            self._pending = b""
         return ParseSummary(
             raw_bytes=stats.bytes_received,
             parsed_frames=stats.frames_decoded,
             carried_bytes=stats.trailing_bytes,
+            events=tuple(event for event in events if isinstance(event, UndecodedEvent)),
+            identity=self._identity(),
         )
+
+    def _take_gap(
+        self,
+        rules: IdentificationRules,
+        gap: bytes,
+        received_at_ms: int,
+        events: list[BleLogEvent],
+        *,
+        end: bool,
+        eof_carry: bool = False,
+    ) -> None:
+        """Account original undecoded bytes, then emit their display text and span end."""
+
+        if gap:
+            if not eof_carry:
+                self._gap_bytes += len(gap)
+                if rules.confirms_ble_log(self._known_frames, self._identity_records):
+                    self._gap_bytes_after_ble += len(gap)
+            self._window += gap
+            overflow = len(self._window) - rules.window_bytes
+            if overflow > 0:
+                del self._window[:overflow]
+            text = ("\x1b" if self._escape_held else "") + gap.translate(_TAB_TO_SPACE, NON_TEXT_BYTES).decode("ascii")
+            self._escape_held = False
+            if text.replace("\x1b", "") or (text and self._text_open):
+                events.append(UndecodedEvent(text, received_at_ms))
+                self._text_open = True
+            elif text:
+                # An ESC-only run may start a colored line that the next chunk continues; only its last ESC can.
+                self._escape_held = True
+        if end:
+            # An ESC-only run that a frame or EOF ends shows nothing, so it opens no span.
+            self._escape_held = False
+            if self._text_open:
+                events.append(UndecodedEvent("", received_at_ms, end=True))
+                self._text_open = False
+
+    def _observe_frame(self, frame: BleLogFrame, frame_events: list[BleLogEvent]) -> None:
+        self._window.clear()
+        if frame.payload and frame.source_code in _KNOWN_SOURCES:
+            self._known_frames += 1
+        for event in frame_events:
+            if isinstance(event, InternalEvent) and (recorded_version(event.decoded) or 0) > 0:
+                self._identity_records += 1
+
+    def _identity(self) -> StreamIdentity | None:
+        if self._rules is None:
+            return None
+        text_bytes, line_breaks = text_window_counts(self._window)
+        evidence = StreamEvidence(
+            received_bytes=self._decoder.stats.bytes_received,
+            gap_bytes=self._gap_bytes,
+            known_frames=self._known_frames,
+            identity_records=self._identity_records,
+            gap_bytes_after_ble=self._gap_bytes_after_ble,
+            window_bytes=len(self._window),
+            window_text_bytes=text_bytes,
+            window_line_breaks=line_breaks,
+        )
+        return identify_stream(evidence, self._rules)
 
 
 def _append_frame_event(frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:

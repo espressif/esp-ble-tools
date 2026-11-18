@@ -8,20 +8,21 @@ Download: [BLE Log Console stable release][ble-log-console]. For PC-side operati
 
 This guide helps determine a usable BLE Log sdkconfig and wiring setup based on the available hardware and peripheral usage. Start with the project's existing sdkconfig, determine the transport, port, GPIOs, and baud rate where applicable, then verify the setup with a trial recording. Available configuration options depend on the target chip and SDK version.
 
-**Reading order: Select SPI or UART → Configure and wire → Verify a recording → Submit the files.**
+**Reading order: Select SPI, UART, or USJ → Configure and wire → Verify a recording → Submit the files.**
 
-[SPI configuration](#spi) · [UART configuration](#uart) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
+[SPI configuration](#spi) · [UART configuration](#uart) · [USJ configuration](#usj) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
 
 ## Quick Selection
 
-Once a transport is selected, read its SPI or UART section, then continue to capture verification. Buffer and log level adjustments are covered in the appendix.
+Once a transport is selected, read its SPI, UART, or USJ section, then continue to capture verification. Buffer and log level adjustments are covered in the appendix.
 
 | Priority | Conditions | Selection and next step |
 | --- | --- | --- |
 | 1. Prefer SPI | Three signal wires and GND can be connected, SPI resources are available, and a Bridge device is available. | Connect the Bridge and use [SPI Log](#spi). |
 | 2. Reuse an existing serial connection | SPI requirements cannot be met; the UART connected to the onboard USB-to-UART converter is available for BLE Log and supports the required baud rate. | Use [UART Log](#uart), usually without extra wiring. A UART used only for ordinary log output may also be reused. |
-| 3. Use an external USB-to-UART adapter | The onboard connection cannot be reused, but a UART and accessible TX and GND connections are available. | Connect an external adapter and use [UART Log](#uart). |
-| 4. No available transport | None of the above conditions can be met. | Contact technical support to assess a feasible configuration using the sdkconfig and hardware constraints already collected. |
+| 3. Use the built-in USB Serial/JTAG port (USJ) | The onboard UART connection cannot be reused; the PC connects to the chip's built-in USB Serial/JTAG port; the ESP-IDF used for the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`; and no console, esp_trace, or OpenThread RCP needs that port. | Use [USJ Log](#usj), without extra wiring. If the firmware does not offer the option, USJ is not available; continue with the next row. |
+| 4. Use an external USB-to-UART adapter | The onboard connection cannot be reused, but a UART and accessible TX and GND connections are available. | Connect an external adapter and use [UART Log](#uart). |
+| 5. No available transport | None of the above conditions can be met. | Contact technical support to assess a feasible configuration using the sdkconfig and hardware constraints already collected. |
 
 <a id="spi"></a>
 
@@ -77,7 +78,7 @@ For log file details, see “View Console Logs” and “Find and Submit Recordi
 
 | Item | Explanation | Suggested action |
 | --- | --- | --- |
-| Onboard USB-to-UART converter | Some boards connect a UART to a USB-to-UART chip, allowing connection to the PC by USB. Confirm the actual UART and TX GPIO. A native USB port is not the same as a USB-to-UART connection. | Prefer an available onboard connection. |
+| Onboard USB-to-UART converter | Some boards connect a UART to a USB-to-UART chip, allowing connection to the PC by USB. Confirm the actual UART and TX GPIO. A chip's native USB port is not a USB-to-UART connection; for the built-in USB Serial/JTAG port, see [USJ Log](#usj). | Prefer an available onboard connection. |
 | UART usage | A UART used only for ordinary logs may be reused. If it also handles command input, peripheral traffic, or fixture communication, check for conflicts. | Use the tool with a logging-only UART; prefer another UART if the existing one carries application communication. |
 | Baud rate support | The USB-to-UART device must support the baud rate configured in the firmware. If uncertain, check the chip's documentation or run the script below. | First check support for 3000000, then make a trial recording at the same baud rate on both sides. |
 | External connection points (without an onboard connection) | Confirm the available UART's TX GPIO and GND locations. The UART number and GPIO number must be checked separately. | Connect an external USB-to-UART adapter. |
@@ -114,57 +115,98 @@ After building and flashing the firmware, close serial monitors using the port. 
 
 **Next: [Capture verification](#verification).**
 
+<a id="usj"></a>
+
+## 3. USJ Log Configuration (Depends on Firmware Support)
+
+USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. It needs no extra wiring and no baud rate.
+
+> **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
+
+USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CONFIG_BLE_LOG_PRPH_USB`, USB ID `303A:10B1`); it is a separate mode that this guide does not cover. USJ uses the built-in USB Serial/JTAG controller, which keeps USB ID `303A:1001`.
+
+### 3.1 Connection Requirements
+
+| Item | Requirement and explanation | Suggested action |
+| --- | --- | --- |
+| Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
+| Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
+| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj`, or the port list in USJ mode, which lists only `303A:1001` ports. |
+| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool shows and saves this text, warns if text continues, and keeps recording. |
+
+### 3.2 Configuration and Connection
+
+| Configuration / connection | Value | Connection / explanation |
+| --- | --- | --- |
+| `CONFIG_BLE_LOG_ENABLED` | `y` | Enable BLE Log. |
+| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | Not set | Select another primary console channel, such as the default UART0. |
+| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | Disable the secondary console on USB Serial/JTAG. |
+| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | Select USB Serial/JTAG output. Shown only when the firmware offers it and the port is free. |
+| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | Keep the default `2048` | TX ring in bytes, from 2048 to 10240, and at least `CONFIG_BLE_LOG_POOL_TRANS_SIZE`. A larger ring does not raise the link rate. |
+| USB | No configuration option | Chip's built-in USB Serial/JTAG port → PC. |
+
+The USJ link rate is not configurable. Use the trial recording and quality report to check whether it carries the required log volume.
+
+### 3.3 Connect the Tool
+
+After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USJ** and the port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
+
+> The tool does not send a reset sequence. While opening the port it releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, and then leaves both lines released. The operating system or its USB driver can still change these lines while opening the device, which can reset the board. Connect when the application can be interrupted, and check whether connecting resets the board on this PC.
+
+**Next: [Capture verification](#verification).**
+
 <a id="verification"></a>
 
-## 3. Capture Verification
+## 4. Capture Verification
 
-### 3.1 Check the Configuration and Make a Trial Recording
+### 4.1 Check the Configuration and Make a Trial Recording
 
-After reconfiguring and building, check the effective sdkconfig: the output mode must match the chosen transport, and GPIOs must match the wiring. For UART, also check the port and baud rate. Flash the firmware from this build before making a trial recording.
+After reconfiguring and building, check the effective sdkconfig: the output mode must match the chosen transport, and GPIOs must match the wiring. For UART, also check the port and baud rate; for USJ, check that USB Serial/JTAG output is selected and that no console uses the port. Flash the firmware from this build before making a trial recording.
 
 Run the BLE application and record briefly. Confirm that **RX and Frames keep increasing and the application operates normally**, then select **Stop & Review** to check the quality report.
 
 > **Check application behavior during the trial as well.** Logging can affect timing. If application behavior or the problem changes, assess the effect of the configuration on reproduction. An intermittent problem not appearing during a short trial does not mean it has disappeared.
 
-### 3.2 Assess the Capture Result
+### 4.2 Assess the Capture Result
 
 | Result | Suggested action |
 | --- | --- |
 | RX stays at 0 | Check that the firmware is running with logging enabled, then check the port, wiring, and power. |
 | RX increases, but Frames does not | Check the transport mode, UART baud rate, and compatibility between the firmware and tool. |
+| Status shows `PLAIN TEXT` (UART or USJ) | The port carries ordinary console text instead of BLE Log. Text before BLE Log starts is expected. If the warning repeats, check that the firmware sends BLE Log to this port. Recording continues. |
 | Report says `READY FOR ANALYSIS` | Proceed to reproduce the problem. Still confirm that the recording contains the logs required for this investigation. |
 | Report says `SAVED WITH WARNINGS` | Use the report to assess whether the warnings affect the investigation. Keep both the report and logs. |
 | Report says `CHECK CONFIGURATION` or `RECORD AGAIN RECOMMENDED` | Follow the report's guidance. If the issue persists, contact technical support with the report and logs. |
 
-### 3.3 Reproduce the Problem
+### 4.3 Reproduce the Problem
 
 For the full capture, **start recording before triggering the problem**. Note the approximate time of the problem and the actions performed.
 
 <a id="deliverables"></a>
 
-## 4. Deliverables and Files to Submit
+## 5. Deliverables and Files to Submit
 
-### 4.1 Delivery Checklist
+### 5.1 Delivery Checklist
 
 A complete delivery includes the recording files, the log database matching the firmware where required, and the [configuration record](#records).
 
-| Deliverable | UART | SPI | Purpose |
-| --- | --- | --- | --- |
-| `ble_log_*.bin` | **Required** | **Required** | Raw BLE Log, including all `part` files. |
-| `ble_log_*_report.txt` | **Required** | **Required** | Quality report from the same recording. |
-| `ble_log_*_console.log` | Include if generated | Currently not generated | Readable copy of ordinary serial logs; does not replace `.bin`. |
-| Entire `ble_log_database/` directory | Required for compressed logs | Required for compressed logs | Database needed to decode compressed logs. |
-| `sdkconfig` and configuration record | **Required** | **Required** | Firmware configuration, versions, and reproduction details; see [Configuration record](#records). |
+| Deliverable | UART | USJ | SPI | Purpose |
+| --- | --- | --- | --- | --- |
+| `ble_log_*.bin` | **Required** | **Required** | **Required** | Raw BLE Log, including all `part` files. |
+| `ble_log_*_report.txt` | **Required** | **Required** | **Required** | Quality report from the same recording. |
+| `ble_log_*_console.log` | Include if generated | Include if generated | Currently not generated | Readable copy of ordinary serial logs and text; does not replace `.bin`. |
+| Entire `ble_log_database/` directory | Required for compressed logs | Required for compressed logs | Required for compressed logs | Database needed to decode compressed logs. |
+| `sdkconfig` and configuration record | **Required** | **Required** | **Required** | Firmware configuration, versions, and reproduction details; see [Configuration record](#records). |
 
-### 4.2 Recording File Location
+### 5.2 Recording File Location
 
 Recordings are saved in the directory selected when starting a recording. The default is `logs/` under the directory from which the tool was started. The tool prints the actual file paths when it exits.
 
 - `.bin`, `_report.txt`, and any generated `_console.log` are saved in the same directory and must come from **the same recording**.
 - For split recordings, include **all `part` files**.
-- UART generates `_console.log` only when redirected ordinary logs are received. The file may be absent when using another UART or when no such logs are received.
+- UART and USJ generate `_console.log` only when ordinary text is received: redirected ordinary logs, or text outside BLE Log frames such as boot messages. The file may be absent when no such text is received.
 
-### 4.3 Log Database Location and Version
+### 5.3 Log Database Location and Version
 
 > **The log database must come from the same build as the firmware flashed onto the target.** It is generated by the firmware build and is not in the PC tool's recording directory.
 
@@ -180,7 +222,7 @@ Builds without compressed log modules may not generate a database. If a recordin
 
 <a id="records"></a>
 
-## 5. Configuration Record
+## 6. Configuration Record
 
 Save the verified sdkconfig together with the wiring and receiver settings for subsequent captures. Verify again after changing hardware or configuration.
 
@@ -188,13 +230,13 @@ Save the verified sdkconfig together with the wiring and receiver settings for s
 | --- | --- |
 | Versions | Target chip, SDK, BLE Log Console, and Bridge firmware version (if used). |
 | Firmware configuration | sdkconfig from the build that passed capture verification. |
-| Hardware connection | SPI / UART, GPIOs, and physical connection points. |
+| Hardware connection | SPI / UART / USJ, GPIOs, and physical connection points. |
 | Receiver settings | PC-side mode, port, and UART baud rate. |
 | Capture result | Log files, quality report, time of the problem, and actions performed. |
 
 <a id="advanced"></a>
 
-## Appendix: Additional Configuration (SPI / UART)
+## Appendix: Additional Configuration (SPI / UART / USJ)
 
 Buffers hold logs awaiting transmission and absorb short bursts to help reduce log loss. Log levels and source switches control the amount and content of logs.
 
@@ -219,6 +261,6 @@ Buffers cannot solve sustained log generation exceeding transport capacity and d
 | NimBLE log level / Bluedroid module Trace Levels | Control Host log detail. | Examples include `CONFIG_BT_NIMBLE_LOG_LEVEL_INFO` and `CONFIG_BT_LOG_HCI_TRACE_LEVEL_EVENT`. More detailed logs generally require more bandwidth. |
 | `CONFIG_BLE_LOG_HOST_LOG`, `CONFIG_BLE_LOG_LL_ENABLED`, `CONFIG_BLE_LOG_HCI_LOG_ENABLED` | Control Host, link-layer, and HCI log sources. | Disabling a source can reduce log volume but may remove information needed for diagnosis. Availability depends on the protocol stack and Controller configuration. |
 
-Switching between SPI and UART does not automatically restore existing log levels. Log coverage must include the problem being investigated. Verify transport quality with a trial recording after adjustments.
+Switching between SPI, UART, and USJ does not automatically restore existing log levels. Log coverage must include the problem being investigated. Verify transport quality with a trial recording after adjustments.
 
 [ble-log-console]: https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable
