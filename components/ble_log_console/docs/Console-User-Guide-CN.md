@@ -321,6 +321,14 @@ python console.py --mode spi --port <PORT>
 - 端口是否已经被其他程序占用。
 - Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.1.0`，并在执行后拔插过设备。
 
+SPI Bridge 插着却打不开时，端口列表会直接说明原因，不再只是一片空白：
+
+- `SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。` 表示这台电脑还没有安装 SPI Bridge 的 Linux 访问权限规则。请用 `sudo` 不带参数运行一次工具，它会安装 `/etc/udev/rules.d/99-ble-log-spi-bridge.rules`（见 [Linux 系统](#412-linux-系统)）；然后重新拔插 Bridge 设备，再正常启动工具。
+- `未找到 libusb-1.0，请先安装：sudo apt install libusb-1.0-0` 表示工具访问 Bridge 所需的 USB 库没有安装。
+- `SPI Bridge（bus 1，addr 95）无法打开：……` 会原样列出系统报告的 USB 错误，例如设备已被其他程序占用。
+
+这些提示跟随界面语言，界面语言取自系统的消息区域设置。需要中文时，可在启动工具前设置 `LANG=zh_CN.UTF-8`（或 `LC_MESSAGES=zh_CN.UTF-8`），也可以在启动界面中选择「简体中文」。
+
 <a id="faq-no-logs"></a>
 
 ### 程序启动了，但一直没有日志。

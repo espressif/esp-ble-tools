@@ -21,7 +21,7 @@ import serial
 import serial.tools.list_ports
 
 from src.backend.models import TransportBitrate, TransportConfig
-from src.backend.support.transport.base import TransportMode, TransportProvider
+from src.backend.support.transport.base import PortScan, TransportMode, TransportProvider
 from src.backend.support.transport.serial_reader import SerialReader
 
 VENDOR_ID = 0x303A
@@ -175,8 +175,8 @@ class UsbOutputTransportProvider:
     def mode(self) -> TransportMode:
         return TransportMode.USB_OUTPUT
 
-    def list_options(self) -> list[tuple[str, str]]:
-        return list_usb_output_ports()
+    def scan_ports(self) -> PortScan:
+        return PortScan(options=list_usb_output_ports())
 
     def create_reader(self, config: TransportConfig) -> UsbOutputTransport:
         return UsbOutputTransport(config.port, config.baudrate)

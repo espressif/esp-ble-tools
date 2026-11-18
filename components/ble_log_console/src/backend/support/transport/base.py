@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Protocol
 
 from src.backend.models import TransportBitrate, TransportConfig, TransportMode
@@ -22,6 +23,43 @@ class TransportStatus:
     rx_bytes: int = 0
     rx_chunks: int = 0
     last_error: str | None = None
+
+
+class PortIssueKind(str, Enum):
+    """Why an enumerated device cannot be opened.
+
+    The kind carries the decision; the wording shown to the user belongs to
+    the frontend, which can translate it.
+    """
+
+    PERMISSION_DENIED = "permission_denied"
+    LIBUSB_MISSING = "libusb_missing"
+    DEVICE_ERROR = "device_error"
+
+
+@dataclass(frozen=True)
+class PortIssue:
+    """A device that enumerated but cannot be used, and the reason it cannot."""
+
+    kind: PortIssueKind
+    # Absent when the failure happens before any single device is identified,
+    # such as a missing libusb backend.
+    bus: int | None = None
+    address: int | None = None
+    detail: str = ""
+
+
+@dataclass
+class PortScan:
+    """One enumeration pass over a transport backend's ports.
+
+    ``options`` is what the user can select; ``issues`` explains the devices
+    that are present but did not make it into ``options``, so an empty list is
+    never silent. Both are empty when no device of that backend is attached.
+    """
+
+    options: list[tuple[str, str]] = field(default_factory=list)
+    issues: list[PortIssue] = field(default_factory=list)
 
 
 class TransportReader(Protocol):
@@ -63,6 +101,6 @@ class TransportProvider(Protocol):
     @property
     def mode(self) -> TransportMode: ...
 
-    def list_options(self) -> list[tuple[str, str]]: ...
+    def scan_ports(self) -> PortScan: ...
 
     def create_reader(self, config: TransportConfig) -> TransportReader: ...

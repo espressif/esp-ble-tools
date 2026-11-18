@@ -9,7 +9,7 @@ Each transport backend owns its enumerate/open logic and exposes a PROVIDER..
 from __future__ import annotations
 
 from src.backend.models import TransportConfig
-from src.backend.support.transport.base import TransportMode, TransportProvider, TransportReader
+from src.backend.support.transport.base import PortScan, TransportMode, TransportProvider, TransportReader
 from src.backend.support.transport.spi_usb_bridge_transport import PROVIDER as SPI_USB_BRIDGE_PROVIDER
 from src.backend.support.transport.uart_transport import PROVIDER as UART_PROVIDER
 from src.backend.support.transport.usb_output_transport import PROVIDER as USB_PROVIDER
@@ -32,8 +32,9 @@ def list_transport_modes() -> list[tuple[str, TransportMode]]:
     return [(provider.label, provider.mode) for provider in _PROVIDERS]
 
 
-def list_transport_port_options(mode: TransportMode) -> list[tuple[str, str]]:
-    return get_transport_provider(mode).list_options()
+def list_transport_port_scan(mode: TransportMode) -> PortScan:
+    """List one backend's selectable ports, plus the devices it cannot use."""
+    return get_transport_provider(mode).scan_ports()
 
 
 def create_transport_reader(config: TransportConfig) -> TransportReader:

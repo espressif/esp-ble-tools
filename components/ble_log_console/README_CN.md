@@ -195,7 +195,7 @@ python console.py --mode spi --port <PORT>
 
 | 命令 | 说明 |
 | --- | --- |
-| `ports` | 列出 UART 串口和 SPI Bridge 端口，可用 `--mode` 过滤 |
+| `ports` | 列出 UART 串口和 SPI Bridge 端口，并说明插着却用不了的 SPI Bridge 的原因；可用 `--mode` 过滤 |
 | `ls` | 列出指定目录中的 `ble_log_*.bin` 录制文件 |
 
 `--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。

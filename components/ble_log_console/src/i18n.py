@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import gettext
 import locale
+import os
 
 ENGLISH = "en"
 CHINESE = "zh_CN"
@@ -142,6 +143,16 @@ _ZH_CN = {
     "USB Output cannot reset the target; use the reset button on the board": "USB Output 无法复位目标设备，请按开发板上的复位键",
     "Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.": "正在结束录制：保存数据后，质量检查最多等待 20 秒。",
     "Live quality check did not finish within 20 seconds.": "实时质量检查未能在 20 秒内完成。",
+    "SPI Bridge (bus {bus}, addr {address}): no USB access permission. Run this tool once with sudo (no arguments), then replug the bridge.": (
+        "SPI Bridge（bus {bus}，addr {address}）：没有 USB 访问权限。"
+        "请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
+    ),
+    "libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0": (
+        "未找到 libusb-1.0，请先安装：sudo apt install libusb-1.0-0"
+    ),
+    "SPI Bridge (bus {bus}, addr {address}) cannot be opened: {detail}": (
+        "SPI Bridge（bus {bus}，addr {address}）无法打开：{detail}"
+    ),
 }
 
 
@@ -154,9 +165,39 @@ class _CatalogTranslations(gettext.NullTranslations):
         return self._catalog.get(message, message)
 
 
+def _language_of(locale_value: str) -> str | None:
+    """The language this tool ships for one locale string, or None for another language."""
+    normalized = locale_value.strip().lower()
+    if normalized.startswith(("zh", "chinese")):
+        return CHINESE
+    if normalized.startswith(("en", "english")):
+        return ENGLISH
+    return None
+
+
 def _system_language() -> str:
-    language = locale.getlocale()[0] or ""
-    return CHINESE if language.lower().startswith("zh") else ENGLISH
+    """The UI language from the message locale, then from the locale table.
+
+    Only message categories count: `LC_TIME` or `LC_NUMERIC` say how to format
+    dates and numbers, not which language the user reads. `locale.getlocale()`
+    reads the same variables through the C library, but it reports
+    `(None, None)` when the named locale is not generated on the machine, so the
+    environment is consulted first.
+    """
+    # LANGUAGE is a colon-separated priority list; skip languages not shipped here.
+    for candidate in os.environ.get("LANGUAGE", "").split(":"):
+        language = _language_of(candidate)
+        if language is not None:
+            return language
+
+    # Each of these names exactly one locale, and LC_ALL wins over LANG, so an
+    # unsupported language here falls back to English instead of LANG.
+    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return _language_of(value) or ENGLISH
+
+    return _language_of(locale.getlocale()[0] or "") or ENGLISH
 
 
 _language = _system_language()

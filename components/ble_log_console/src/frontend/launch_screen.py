@@ -20,7 +20,8 @@ from textual.widgets import Button, Input, Label, Select
 from textual_fspicker import SelectDirectory
 
 from src.backend.models import LaunchConfig, TransportConfig, TransportMode
-from src.backend.support.transport import list_transport_modes, list_transport_port_options
+from src.backend.support.transport import PortIssue, PortScan, list_transport_modes, list_transport_port_scan
+from src.frontend.port_diagnostics import describe_port_issues
 from src.frontend.rendering import (
     launch_control_css,
     launch_screen_safe_css,
@@ -116,8 +117,11 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     __LAUNCH_CONTROL_CSS__
 
-    #no-ports-label {
+    #port-diagnostic-label {
         color: $warning;
+        width: 100%;
+        height: auto;
+        text-wrap: wrap;
     }
     __WINDOWS_SAFE_WIDGET_CSS__
     __LAUNCH_WIDTH_STABLE_CSS__
@@ -146,11 +150,40 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         super().__init__()
         self._mode = DEFAULT_TRANSPORT_MODE
         self._default_log_dir = default_log_dir or Path.cwd() / "logs"
+        self._port_issues: list[PortIssue] = []
+
+    def _scan_ports(self) -> PortScan:
+        """Enumerate ports for the launch screen; a failed scan leaves it usable."""
+        try:
+            port_scan = list_transport_port_scan(self._mode)
+        except Exception:
+            return PortScan()
+        self._port_issues = port_scan.issues
+        return port_scan
+
+    def _port_diagnostic_label(self, issues: list[PortIssue]) -> Label:
+        """The reason a device that is plugged in is absent from the list."""
+        label = Label("", id="port-diagnostic-label")
+        self._show_port_issues(label, issues)
+        return label
+
+    def _show_port_issues(self, label: Label, issues: list[PortIssue]) -> None:
+        text = "\n".join(describe_port_issues(issues))
+        label.display = bool(text)
+        if text:
+            label.update(text)
+
+    def _refresh_port_diagnostics(self) -> None:
+        try:
+            label = self.query_one("#port-diagnostic-label", Label)
+        except NoMatches:
+            return
+        self._show_port_issues(label, self._port_issues)
 
     def compose(self) -> ComposeResult:
         mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
-        raw_port_options = list_transport_port_options(self._mode)
-        port_options = self._display_port_options(raw_port_options)
+        port_scan = self._scan_ports()
+        port_options = self._display_port_options(port_scan.options)
         baud_options = [(str(b), b) for b in BAUD_RATES]
 
         with Vertical(id="launch-container"):
@@ -174,6 +207,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
                 else:
                     yield Select([], id="port-select", prompt="No ports detected")
                 yield Button("Refresh", id="refresh-btn")
+            yield self._port_diagnostic_label(port_scan.issues)
 
             yield Label("Baud Rate", classes="field-label", id="baud-label")
             yield Select(baud_options, value=DEFAULT_BAUD_RATE, id="baud-select")
@@ -193,6 +227,8 @@ class LaunchScreen(Screen[LaunchConfig | None]):
     def language_changed(self, event: Select.Changed) -> None:
         if event.value is not Select.BLANK:
             set_language(str(event.value))
+            # The diagnostics were rendered in the previous language.
+            self._refresh_port_diagnostics()
 
     @on(Button.Pressed, "#refresh-btn")
     def refresh_ports(self) -> None:
@@ -219,19 +255,22 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     def _refresh_port_options(self) -> None:
         try:
-            raw_port_options = list_transport_port_options(self._mode)
-            port_options = self._display_port_options(raw_port_options)
+            port_scan = list_transport_port_scan(self._mode)
         except Exception as e:
             self.notify(f"Failed to list ports: {e}")
-            port_options = []
+            port_scan = PortScan()
+        self._port_issues = port_scan.issues
+        port_options = self._display_port_options(port_scan.options)
 
         try:
             port_select = self.query_one("#port-select", Select)
+            diagnostic_label = self.query_one("#port-diagnostic-label", Label)
         except NoMatches:
             return
         port_select.set_options(port_options)
         if port_options:
             port_select.value = port_options[0][1]
+        self._show_port_issues(diagnostic_label, port_scan.issues)
 
     def _truncate_port_label(self, label: str) -> str:
         if len(label) <= MAX_PORT_LABEL_LEN:

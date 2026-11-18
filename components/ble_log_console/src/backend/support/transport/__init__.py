@@ -3,15 +3,26 @@
 
 """Transport backends for raw BLE log byte streams."""
 
-from src.backend.support.transport.base import TransportMode, TransportProvider, TransportReader, TransportStatus
+from src.backend.support.transport.base import (
+    PortIssue,
+    PortIssueKind,
+    PortScan,
+    TransportMode,
+    TransportProvider,
+    TransportReader,
+    TransportStatus,
+)
 from src.backend.support.transport.registry import (
     create_transport_reader,
     get_transport_provider,
     list_transport_modes,
-    list_transport_port_options,
+    list_transport_port_scan,
 )
 
 __all__ = [
+    "PortIssue",
+    "PortIssueKind",
+    "PortScan",
     "TransportMode",
     "TransportProvider",
     "TransportReader",
@@ -19,5 +30,5 @@ __all__ = [
     "create_transport_reader",
     "get_transport_provider",
     "list_transport_modes",
-    "list_transport_port_options",
+    "list_transport_port_scan",
 ]
