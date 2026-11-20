@@ -55,6 +55,9 @@ def test_start_failures_and_unwritable_preferences(tmp_path, failure):
     previous_db.mkdir()
     (previous_db / "BLE_HOST_logs.json").write_text('{"logs": {}}')
     save_log_database(previous_db)
+    selected_db = tmp_path / "new_db"
+    selected_db.mkdir()
+    (selected_db / "BLE_HOST_logs.json").write_text('{"logs": {}}')
     chosen = tmp_path / "chosen"
     if failure == "storage":
         chosen.write_bytes(b"not a directory")
@@ -76,11 +79,14 @@ def test_start_failures_and_unwritable_preferences(tmp_path, failure):
             pipeline.return_value.check_io_shutdown.return_value = []
             if failure == "pipeline":
                 pipeline.return_value.start.side_effect = OSError("cannot start")
-            app = BLELogApp(port="test", log_dir=chosen, log_database=tmp_path / "new_db")
+            app = BLELogApp(port="test", log_dir=chosen, log_database=selected_db)
             async with app.run_test(size=(120, 55)) as pilot:
                 await pilot.pause()
                 if failure == "preferences":
                     assert not app._capture_session.finished
+                elif failure == "pipeline":
+                    assert load_log_dir() == chosen
+                    assert load_log_database() == selected_db
                 else:
                     assert load_log_dir() == previous
                     assert load_log_database() == previous_db

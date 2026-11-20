@@ -8,7 +8,7 @@ from unittest.mock import patch
 from pytest_bdd import given, scenarios, then, when
 from src.app import BLELogApp
 from src.backend.support.transport.base import PortScan
-from textual.widgets import Input
+from textual.widgets import Input, Select
 
 from tests.test_host_logs import make_database
 
@@ -71,3 +71,39 @@ def restored(world):
 @then("字典输入框为空")
 def empty(world):
     assert world.restored == ""
+
+
+@when("用户点击连接但所选端口已消失")
+def connect_missing_port(world, monkeypatch):
+    missing = str(world.log_dir.parent / "missing-tty")
+    monkeypatch.setattr(
+        "src.frontend.launch_screen.list_transport_port_scan", lambda mode: PortScan(options=[(missing, missing)])
+    )
+    # Use paths distinct from both automatic defaults.
+    world.database = world.database.rename(world.database.with_name("chosen-db"))
+    world.log_dir = world.log_dir.with_name("chosen-logs")
+
+    async def run():
+        app = BLELogApp()
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.screen.query_one("#mode-select", Select).value = "usb"
+            await pilot.pause()
+            app.screen.query_one("#dir-input", Input).value = str(world.log_dir)
+            app.screen.query_one("#database-input", Input).value = str(world.database)
+            await pilot.click("#connect-btn")
+            async with asyncio.timeout(10):
+                while app._capture_report is None:
+                    await asyncio.sleep(0.05)
+            assert any(missing in error for error in app._capture_report.errors)
+
+    asyncio.run(run())
+
+
+@then("重启后恢复确认的保存目录和字典")
+def failed_connection_paths(world):
+    async def run():
+        async with BLELogApp().run_test(size=(100, 50)) as pilot:
+            assert pilot.app.screen.query_one("#dir-input", Input).value == str(world.log_dir)
+            assert pilot.app.screen.query_one("#database-input", Input).value == str(world.database)
+
+    asyncio.run(run())

@@ -292,6 +292,8 @@ class BLELogApp(App):
                 callback=self._on_launch_result,
             )
             return
+        save_log_dir(self._log_dir)
+        save_log_database(self._log_database)
         self._start_capture()
 
     def _resolve_output_path(self) -> None:
@@ -329,14 +331,11 @@ class BLELogApp(App):
             self._output_path,
             debug=self._debug,
             log_database=self._log_database,
+            show_logs=self._show_logs,
         )
         with _spawn_stderr_with_real_fileno():
             start_messages = self._capture_session.start()
         self._publish_view_messages(start_messages)
-        if self._capture_session.finished:
-            return
-        save_log_dir(self._log_dir)
-        save_log_database(self._log_database)
 
     def _poll_pipeline(self) -> None:
         capture_session = self._capture_session
@@ -391,8 +390,6 @@ class BLELogApp(App):
         self.query_one(StatusPanel).stream_kind = msg.kind
 
     def on_log_line(self, msg: LogLine) -> None:
-        if msg.category is not None and msg.category not in self._show_logs:
-            return
         self.query_one(LogView).write_ascii(msg.text)
 
     def on_user_notice(self, msg: UserNotice) -> None:

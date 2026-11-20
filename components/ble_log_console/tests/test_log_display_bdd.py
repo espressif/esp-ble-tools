@@ -55,12 +55,16 @@ def select_and_record(world, categories):
     events = []
     while not outgoing.empty():
         events.append(outgoing.get_nowait())
-    presenter = CaptureEventPresenter(world.output)
-    messages = presenter.handle_events(events) + presenter.finish()
 
     async def preview():
         app = BLELogApp(log_dir=world.tmp_path, log_database=world.database)
-        with patch.object(app, "_start_capture"):
+        with (
+            patch("src.app.unique_capture_path", return_value=world.output),
+            patch("src.frontend.capture_session.CapturePipeline") as pipeline,
+        ):
+            pipeline.return_value.drain_events.return_value = []
+            pipeline.return_value.check_io_shutdown.return_value = []
+            pipeline.return_value.io_is_alive.return_value = True
             async with app.run_test(size=(100, 55)) as pilot:
                 for category in TEXT:
                     checkbox = app.screen.query_one(f"#show-{category}", Checkbox)
@@ -74,6 +78,13 @@ def select_and_record(world, categories):
                 await pilot.pause()
                 view = app.query_one(LogView)
                 with patch.object(view, "write_ascii") as write, patch.object(view, "write_warning") as warn:
+                    pipeline.return_value.drain_events.return_value = events
+                    messages = app._capture_session.poll()
+                    pipeline.return_value.drain_events.return_value = []
+                    messages += app._capture_session._event_presenter.finish()
+                    assert all(
+                        m.category is None or m.category in world.selected for m in messages if isinstance(m, LogLine)
+                    )
                     for message in messages:
                         if isinstance(message, LogLine):
                             app.on_log_line(message)
@@ -99,6 +110,7 @@ def saved(world):
     console = world.output.with_name("recording_console.log").read_text()
     assert TEXT["host"] in console and TEXT["console"] in console
     assert TEXT["hci"] in world.output.with_name("recording_hci.log").read_text()
+    assert world.output.with_name("recording_hci_btsnoop.log").read_bytes().endswith(b"\x01\x03\x0c\x00")
 
 
 @then("录制警告仍然显示")

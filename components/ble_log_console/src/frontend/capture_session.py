@@ -34,6 +34,7 @@ class CaptureSession:
         *,
         debug: bool = False,
         log_database: Path | None = None,
+        show_logs: frozenset[str] = frozenset(),
         join_timeout_sec: float = PIPELINE_JOIN_TIMEOUT_SEC,
         analysis_drain_timeout_sec: float = ANALYSIS_DRAIN_TIMEOUT_SEC,
         io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
@@ -44,7 +45,9 @@ class CaptureSession:
         self._join_timeout_sec = join_timeout_sec
         self._analysis_drain_timeout_sec = analysis_drain_timeout_sec
         self._clock = clock
-        self._event_presenter = CaptureEventPresenter(output_path, debug=debug, mode=transport_config.mode)
+        self._event_presenter = CaptureEventPresenter(
+            output_path, debug=debug, mode=transport_config.mode, show_logs=show_logs
+        )
         self._pipeline = CapturePipeline(
             transport_config,
             WriterConfig(output_path),

@@ -219,7 +219,7 @@ USJ mode receives BLE Log through the chip's built-in USB Serial/JTAG port (USB 
 
 On this port, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, BLE Log Console releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released and never changes them afterwards, so the `r` shortcut does not reset the target. The operating system or its USB driver can still change these lines while opening the device. Check on your own host whether opening the port resets the board.
 
-The **Host dictionary** directory is remembered after recording starts successfully, including an explicitly cleared field. `--log-database` overrides the remembered choice. A missing dictionary falls back to automatic discovery. Source and standalone launches use the same per-user application settings.
+The **Host dictionary** directory is remembered when the recording file is reserved, even if the port later fails to open, including an explicitly cleared field. `--log-database` overrides the remembered choice. A missing dictionary falls back to automatic discovery. Source and standalone launches use the same per-user application settings.
 
 ### Opening Backlog and Analysis Files
 

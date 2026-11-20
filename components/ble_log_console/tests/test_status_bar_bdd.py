@@ -117,7 +117,13 @@ class _StubCaptureSession:
     """A capture session that starts nothing: this scenario observes the UI path only."""
 
     def __init__(
-        self, config: object, output_path: object, debug: bool = False, log_database: Path | None = None
+        self,
+        config: object,
+        output_path: object,
+        *,
+        debug: bool = False,
+        log_database: Path | None = None,
+        show_logs: frozenset[str] = frozenset(),
     ) -> None:
         self.finished = False
         self.report = None

@@ -24,6 +24,7 @@ from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES, WriterEvent
 from src.backend.models import (
+    LOG_DISPLAY_CATEGORIES,
     InternalFrameDecoded,
     LogLine,
     StatsUpdated,
@@ -113,6 +114,7 @@ class CaptureEventPresenter:
         *,
         debug: bool = False,
         mode: TransportMode = TransportMode.UART,
+        show_logs: frozenset[str] = frozenset(LOG_DISPLAY_CATEGORIES),
         console_part_max_bytes: int = CAPTURE_PART_MAX_BYTES,
         text_file_factory: TextFileFactory = _default_text_file_factory,
         clock: Clock = time.monotonic,
@@ -126,6 +128,7 @@ class CaptureEventPresenter:
         self._last_hci_flush_at = clock()
         self._debug = debug
         self._mode = mode
+        self._show_logs = show_logs
         self._console_part_max_bytes = console_part_max_bytes
         self._text_file_factory = text_file_factory
         self._clock = clock
@@ -346,9 +349,10 @@ class CaptureEventPresenter:
             if isinstance(console_event, HciLogEvent):
                 messages.extend(self._end_undecoded(console_event.received_at_ms))
                 messages.extend(self._separate_console_line(console_event.received_at_ms))
-                self._append_redir_log_lines(
-                    messages, [console_event.text], console_event.received_at_ms, category="hci"
-                )
+                if "hci" in self._show_logs:
+                    self._append_redir_log_lines(
+                        messages, [console_event.text], console_event.received_at_ms, category="hci"
+                    )
                 self._write_hci(console_event)
                 if console_event.reason and console_event.reason not in self._hci_reasons:
                     self._hci_reasons.add(console_event.reason)
@@ -562,6 +566,10 @@ class CaptureEventPresenter:
             self._console_line_buf = self._console_line_buf[REDIR_LINE_BUFFER_LIMIT:]
             self._write_console_line(console_text, received_at_ms, complete=False)
 
+        messages.extend(self._console_log_failure_notice())
+        if category not in self._show_logs:
+            return messages
+
         self._redir_line_buf += text
         if "\n" in self._redir_line_buf:
             lines = self._redir_line_buf.split("\n")
@@ -570,7 +578,6 @@ class CaptureEventPresenter:
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
             messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT], category=category))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
-        messages.extend(self._console_log_failure_notice())
         return messages
 
     def _write_console_line(self, text: str, received_at_ms: int, *, complete: bool) -> None:
