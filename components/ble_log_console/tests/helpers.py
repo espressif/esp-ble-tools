@@ -6,9 +6,7 @@ import struct
 import threading
 from collections.abc import Callable
 from enum import Enum
-from unittest.mock import MagicMock
 
-import usb.core
 from src.backend.models import BleLogSource, InternalSource, TransportBitrate, TransportMode
 from src.backend.support.transport.base import TransportStatus
 
@@ -229,59 +227,3 @@ class SerialHandleStub:
 
     def close(self) -> None:
         self.is_open = False
-
-
-def usb_bridge_configuration(
-    interface: int = 0,
-    endpoints: tuple[tuple[int, int], ...] = ((0x81, 0x02),),
-) -> MagicMock:
-    """A configuration holding one interface with the given (address, attributes) endpoints."""
-    interface_mock = MagicMock(spec=usb.core.Interface)
-    interface_mock.bInterfaceNumber = interface
-    endpoint_mocks = []
-    for address, attributes in endpoints:
-        endpoint_mock = MagicMock(spec=usb.core.Endpoint)
-        endpoint_mock.bEndpointAddress = address
-        endpoint_mock.bmAttributes = attributes
-        endpoint_mocks.append(endpoint_mock)
-    interface_mock.__iter__.return_value = iter(endpoint_mocks)
-
-    configuration_mock = MagicMock(spec=usb.core.Configuration)
-    configuration_mock.__iter__.return_value = iter([interface_mock])
-    return configuration_mock
-
-
-def usb_bridge_unreadable_configuration(error: Exception | None = None) -> MagicMock:
-    """A configuration whose interfaces cannot be read, as a flaky bridge reports."""
-    configuration_mock = MagicMock(spec=usb.core.Configuration)
-    configuration_mock.__iter__.side_effect = (
-        usb.core.USBError("Input/output error", errno=errno.EIO) if error is None else error
-    )
-    return configuration_mock
-
-
-def usb_bridge_device(
-    bus: int = 1,
-    address: int = 8,
-    *,
-    open_error: Exception | None = None,
-    configuration: MagicMock | None = None,
-) -> MagicMock:
-    """A stand-in for one enumerated 303a:4001 device.
-
-    `open_error` reproduces what libusb raises when the device cannot be opened;
-    a MagicMock device passes the production `isinstance(..., usb.core.Device)`
-    checks because the mock carries the class as its spec.
-    """
-    device_mock = MagicMock(spec=usb.core.Device)
-    device_mock.bus = bus
-    device_mock.address = address
-    # `usb.util.dispose_resources` reaches through the pyusb context handle.
-    device_mock._ctx = MagicMock()
-    if open_error is not None:
-        device_mock.get_active_configuration.side_effect = open_error
-    else:
-        device_mock.get_active_configuration.return_value = (
-            usb_bridge_configuration() if configuration is None else configuration
-        )
-    return device_mock

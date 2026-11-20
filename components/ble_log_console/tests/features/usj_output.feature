@@ -76,10 +76,10 @@
     并且 命令行帮助列出模式 "[uart|spi|usb|usj]"
     并且 用 "usb" 选择传输模式仍得到 USB Output 模式
 
-  场景: 启动界面选择 USJ 后隐藏波特率并原样传出端口
+  场景: 启动界面选择 USB 后识别 USJ 并隐藏波特率
     假如 系统上有这些串口设备
       | device       | vid_pid   | product               |
       | /dev/ttyACM1 | 303A:1001 | USB JTAG/serial debug |
-    当 在启动界面选择 USJ 模式并连接
+    当 在启动界面选择 USB 模式并连接
     那么 波特率选项被隐藏
     并且 连接配置为 USJ 模式、端口 "/dev/ttyACM1"

@@ -55,7 +55,7 @@ from src.i18n import tr
 from textual.pilot import Pilot
 from textual.widgets import Button
 
-from tests.helpers import BytesReader, build_frame, snapshot_payload, xor_checksum
+from tests.helpers import BytesReader, build_frame, snapshot_payload, version_info_payload, xor_checksum
 
 scenarios("features/console_text.feature")
 
@@ -79,11 +79,17 @@ def _frame(payload: bytes, source: int, sn: int) -> bytes:
 
 
 def _redir_frames(count: int) -> bytes:
-    return b"".join(_frame(REDIR_LINE, BleLogSource.REDIR, sn) for sn in range(count))
+    # Include protocol evidence; text-display scenarios must not rely on an assumed SN model.
+    return _frame(version_info_payload(0, version=6), 0, 0) + b"".join(
+        _frame(REDIR_LINE, BleLogSource.REDIR, sn) for sn in range(count)
+    )
 
 
 def _host_frames(count: int, first_sn: int = 0) -> bytes:
-    return b"".join(_frame(b"\x00\x00\x00\x00hci", BleLogSource.HOST, sn) for sn in range(first_sn, first_sn + count))
+    prefix = _frame(version_info_payload(0, version=6), 0, 0) if first_sn == 0 else b""
+    return prefix + b"".join(
+        _frame(b"\x00\x00\x00\x00hci", BleLogSource.HOST, sn) for sn in range(first_sn, first_sn + count)
+    )
 
 
 class ModeBytesReader(BytesReader):
@@ -121,7 +127,7 @@ def mounted_app(tmp_path: Path) -> Iterator[SimpleNamespace]:
     """A mounted console with the transport stubbed out, so no device is opened."""
     runner = asyncio.Runner()
     with patch.object(BLELogApp, "_start_capture", lambda self: None):
-        app = BLELogApp(port="bdd-stub", log_dir=tmp_path)
+        app = BLELogApp(port="bdd-stub", log_dir=tmp_path, show_logs=frozenset({"console"}))
         run = app.run_test()
         pilot = runner.run(run.__aenter__())
     try:
@@ -244,7 +250,7 @@ def _record(
 
 
 def _finish_recording(world: SimpleNamespace, output: Path, events: list[Any], result: Any) -> None:
-    presenter = CaptureEventPresenter(output)
+    presenter = CaptureEventPresenter(output, mode=world.mode)
     messages = [*presenter.handle_events(events), *presenter.finish()]
     report = build_capture_report(
         result,
@@ -309,7 +315,7 @@ def _live(world: SimpleNamespace, mounted_app: SimpleNamespace, seconds: int) ->
     now = [0.0]
     parser = BleLogParser(identification=controller._parser_identification(world.mode, DEFAULT_IDENTIFICATION_RULES))
     aggregator = CaptureAggregator()
-    presenter = CaptureEventPresenter(world.tmp_path / "live.bin", clock=lambda: now[0])
+    presenter = CaptureEventPresenter(world.tmp_path / "live.bin", mode=world.mode, clock=lambda: now[0])
     panel = mounted_app.app.query_one(StatusPanel)
     for second in range(seconds):
         now[0] = float(second)
@@ -835,7 +841,9 @@ def record_in_app(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> No
     port = os.ttyname(slave_fd)
     if world.mode is TransportMode.SPI_USB_BRIDGE:
         port = f"{CDC_ENDPOINT_PREFIX}{port}"
-    app = BLELogApp(mode=world.mode, port=port, baudrate=115_200, log_dir=world.tmp_path / "app")
+    app = BLELogApp(
+        mode=world.mode, port=port, baudrate=115_200, log_dir=world.tmp_path / "app", show_logs=frozenset({"console"})
+    )
 
     async def drive() -> None:
         async with app.run_test(size=(140, 40)) as pilot:
@@ -1081,3 +1089,33 @@ def test_record_in_app_observes_mounted_report_after_saved_path(
     assert len(snapshots) == 1
     assert world.app.raw == _redir_frames(3)
     assert world.session.finished and not world.session._pipeline.is_alive()
+
+
+@given("一个 USJ 端口输出三个有效 BLE Log 帧", target_fixture="world")
+def usj_regular_frames(world: SimpleNamespace) -> SimpleNamespace:
+    data = _redir_frames(3)
+    world.phases = [(data, lambda app: sum("forwarded through BLE Log" in row for row in _rendered_rows(app)) == 3)]
+    return _set_stream(world, "USJ", [data])
+
+
+@given("一个 SPI_USB_BRIDGE 端口输出三个 REDIR 帧", target_fixture="world")
+def spi_redir_frames(world: SimpleNamespace) -> SimpleNamespace:
+    data = _redir_frames(3)
+    world.phases = [(data, lambda app: app.query_one(StatusPanel).stats.transport.rx_frames == 4)]
+    return _set_stream(world, "SPI_USB_BRIDGE", [data])
+
+
+@then("界面没有 REDIR 文本且未生成 console.log")
+def app_ignores_spi_redir(world: SimpleNamespace) -> None:
+    assert not any("forwarded through BLE Log" in row for row in world.rendered)
+    assert not world.app.console_log_paths
+    assert list((world.tmp_path / "app").glob("*_console*.log")) == []
+
+
+@then("console.log 只包含帧内 Host 文本")
+def only_framed_host_text(world: SimpleNamespace) -> None:
+    paths = world.recording.report.console_log_paths
+    assert paths
+    lines = "".join(path.read_text() for path in paths).splitlines()
+    assert len(lines) == 6
+    assert all(line.endswith("] hci") for line in lines)

@@ -5,7 +5,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NamedTuple, TypeAlias
+
+from ble_log_frame_decoder import FirmwareSnapshot
+from ble_log_frame_decoder.checking import CheckResult
 
 from src.backend.analysis.stream_identification import StreamIdentity
 from src.backend.models import (
@@ -70,6 +74,17 @@ class ReceivedChunk(NamedTuple):
 
     data: bytes
     received_at_ms: int
+    received_monotonic: float | None = None
+    raw_offset: int | None = None
+    saved_paths: tuple[Path, ...] = ()
+
+
+class ReceivedEnd(NamedTuple):
+    """Final raw extent and files, sent only after the raw writer finishes."""
+
+    raw_bytes: int
+    raw_paths: tuple[Path, ...] = ()
+    raw_complete: bool = False
 
 
 class UndecodedEvent(NamedTuple):
@@ -84,8 +99,34 @@ class UndecodedEvent(NamedTuple):
     end: bool = False
 
 
-BleLogEvent: TypeAlias = FrameEvent | InternalEvent | EnhStatEvent | FinalStatEvent | RedirEvent | UndecodedEvent
-ConsoleEvent: TypeAlias = RedirEvent | UndecodedEvent
+class HostLogEvent(NamedTuple):
+    """Decoded Host content, separate from frame accounting."""
+
+    text: str
+    received_at_ms: int
+    reason: str = ""
+
+
+class HciLogEvent(NamedTuple):
+    """One normalized HCI packet; not an additional received frame."""
+
+    text: str
+    received_at_ms: int
+    btsnoop: bytes = b""
+    reason: str = ""
+
+
+BleLogEvent: TypeAlias = (
+    FrameEvent
+    | InternalEvent
+    | EnhStatEvent
+    | FinalStatEvent
+    | RedirEvent
+    | UndecodedEvent
+    | HostLogEvent
+    | HciLogEvent
+)
+ConsoleEvent: TypeAlias = RedirEvent | UndecodedEvent | HostLogEvent | HciLogEvent
 
 
 class ParseChunkResult(NamedTuple):
@@ -105,6 +146,7 @@ class ParseBatch(NamedTuple):
     carried_bytes: int  # Bytes retained for the next batch.
     events: tuple[BleLogEvent, ...]
     identity: StreamIdentity | None = None  # Cumulative; None when the transport carries no console text.
+    firmware: FirmwareSnapshot | None = None
 
 
 class ParseSummary(NamedTuple):
@@ -113,5 +155,7 @@ class ParseSummary(NamedTuple):
     raw_bytes: int
     parsed_frames: int
     carried_bytes: int
-    events: tuple[UndecodedEvent, ...] = ()  # Undecoded tail resolved at end of input.
+    events: tuple[UndecodedEvent | HostLogEvent, ...] = ()  # Text resolved at end of input.
     identity: StreamIdentity | None = None
+    firmware: FirmwareSnapshot | None = None
+    integrity: CheckResult | None = None

@@ -27,7 +27,11 @@ from ble_log_frame_decoder import FinalStatEntry as FinalStatEntry  # noqa: PLC0
 from textual.message import Message
 
 if TYPE_CHECKING:
+    from ble_log_frame_decoder import FirmwareSnapshot
+    from ble_log_frame_decoder.checking import CheckResult
+
     # The identification records live with their analysis owner, which imports this module.
+    from src.backend.analysis.startup import StartupDecision
     from src.backend.analysis.stream_identification import StreamIdentity, StreamKind
 
 # --- Common formatting helpers ---
@@ -222,15 +226,15 @@ class LossSnapshot:
     """Snapshot of firmware-reported cumulative loss."""
 
     total_frames: int = 0
-    total_bytes: int = 0
+    total_bytes: int | None = 0
 
 
 @dataclass(frozen=True)
 class FrameByteCount:
-    """A (frames, bytes) pair."""
+    """A (frames, bytes) pair; None means firmware does not report bytes."""
 
     frames: int
-    bytes: int
+    bytes: int | None
 
 
 @dataclass(frozen=True)
@@ -290,21 +294,12 @@ class SequenceSourceSummary:
 
 @dataclass(frozen=True)
 class SequenceSummary:
-    """Sequence continuity for the capture as a whole.
+    """Presentation of Checker-selected sequence ranges, not whole-recording coverage.
 
-    Continuity is a property of the stream the firmware's counter ownership
-    defines. Protocol 8 takes one sequence number per frame from ``g_frame_sn``
-    (regular frames and internal snapshots share it; REDIR and TASK_BINDING keep
-    private counters), so the whole capture is one stream. Protocol <= 7 numbers
-    every source from its own counter, so each source is a stream and the totals
-    here are the sum of them. ``per_source`` records which contract produced
-    these numbers, and ``sources`` carries the per-source detail of the same
-    contract.
-
-    ``missing_frames`` counts sequence numbers the firmware consumed but never
-    delivered. ``uncertain`` means the accounting could not be trusted: the
-    start of the stream is unknown, the tracker hit its bound, or the firmware
-    contract was identified only after frames had already been accounted.
+    Global and per-source numbering are decided by Core. Counts aggregate its
+    selected intervals; unverified heads/tails remain in the full integrity
+    result. ``uncertain`` prevents an exact loss rate when that evidence is
+    insufficient or Console encountered frames outside the supported contract.
     """
 
     observed_frames: int = 0
@@ -380,7 +375,7 @@ class FirmwareLossSummary:
 
     source: SourceCode
     frames: int
-    bytes: int
+    bytes: int | None
     written_frames: int = 0
     written_bytes: int = 0
 
@@ -421,7 +416,7 @@ class CaptureReport:
     segments: tuple[CaptureSegmentSummary, ...]
     firmware_loss: tuple[FirmwareLossSummary, ...]
     firmware_written_bytes: int
-    firmware_lost_bytes: int
+    firmware_lost_bytes: int | None
     firmware_write_loss_rate: float | None
     sequence_loss_rate: float | None
     errors: tuple[str, ...]
@@ -430,7 +425,17 @@ class CaptureReport:
     firmware_version: int | None = None
     firmware_contract_known: bool = True
     stream_identity: "StreamIdentity | None" = None
+    parsed_paths: tuple[Path, ...] = ()
+    product_error: str | None = None
+    hci_paths: tuple[Path, ...] = ()
+    hci_error: str | None = None
     console_log_error: str | None = None
+    startup: "StartupDecision | None" = None
+    quality_regular_frames: int | None = None
+    quality_start_offset: int = 0
+    original_sequence: SequenceSummary | None = None
+    integrity: "CheckResult | None" = None
+    firmware: "FirmwareSnapshot | None" = None
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {
@@ -462,6 +467,8 @@ def resolve_lbm_name(pool: int, index: int) -> str:
 
 # --- UI/control contract ---
 
+LOG_DISPLAY_CATEGORIES = ("host", "hci", "console")
+
 
 @dataclass(slots=True)
 class LaunchConfig:
@@ -469,6 +476,8 @@ class LaunchConfig:
 
     transport_config: TransportConfig
     log_dir: Path
+    log_database: Path | None = None
+    show_logs: frozenset[str] = frozenset()
 
 
 class StatsUpdated(Message):
@@ -492,9 +501,10 @@ class InternalFrameDecoded(Message):
 
 
 class LogLine(Message):
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, category: str | None = "console") -> None:
         super().__init__()
         self.text = text
+        self.category = category
 
 
 class StreamKindChanged(Message):

@@ -30,6 +30,7 @@ from src.backend.models import (
     resolve_source_name,
 )
 from src.frontend.rendering import normalize_display_text, table_ascii_box, table_safe_box, terminal_border_style
+from src.i18n import tr
 
 if TYPE_CHECKING:
     from src.app import BLELogApp
@@ -56,14 +57,16 @@ def _fmt_loss_frames(n: int) -> Text:
     return Text(str(n), style="red")
 
 
-def _fmt_loss_bytes(n: int) -> Text:
+def _fmt_loss_bytes(n: int | None) -> Text:
+    if n is None:
+        return Text(tr("Unknown"))
     if n == 0:
         return Text("-")
     return Text(format_bytes(n), style="red")
 
 
 def _build_firmware_table(snapshots: list[FunnelSnapshot]) -> Table:
-    table = _new_table(title="Firmware Counters (since chip init)")
+    table = _new_table(title="Firmware Counters (latest report)")
     table.add_column("Source", style="cyan", no_wrap=True, min_width=12, max_width=16)
     table.add_column("Written\nFrames", justify="right", min_width=10, max_width=12)
     table.add_column("Written\nBytes", justify="right", min_width=10, max_width=12)

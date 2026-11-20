@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from queue import Empty, Queue
-from threading import Event
+from threading import Event, Thread
 from typing import IO
 
 import pytest
@@ -263,3 +263,59 @@ def test_async_sync_failure_emits_error_instead_of_success(
     assert len(opened) == 1 and opened[0].closed
     assert output_path.read_bytes() == b"abc"
     assert writer.status().last_error == "fsync failed"
+
+
+def test_graceful_finalize_waits_for_all_accepted_blocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    blocked = Event()
+    release = Event()
+    finished = Event()
+    opened: list[IO[bytes]] = []
+    errors: list[Exception] = []
+    ui_queue: Queue[WriterEvent] = Queue()
+    path = tmp_path / "recording.bin"
+
+    def factory(output: Path) -> IO[bytes]:
+        file_obj = output.open("wb")
+        opened.append(file_obj)
+        original_write = file_obj.write
+
+        def write(data: bytes) -> int:
+            if data == b"first":
+                blocked.set()
+                assert release.wait(5), "test did not release the pending write"
+            return original_write(data)
+
+        monkeypatch.setattr(file_obj, "write", write)
+        return file_obj
+
+    writer = AsyncBatchWriter(WriterConfig(path), ui_queue, queue_max_blocks=1, batch_max_bytes=1, file_factory=factory)
+
+    def finalize() -> None:
+        try:
+            writer.finalize()
+        except Exception as error:
+            errors.append(error)
+        finally:
+            finished.set()
+
+    finalizer = Thread(target=finalize)
+    writer.start()
+    try:
+        writer.write(b"first", timeout=1)
+        assert blocked.wait(5)
+        writer.write(b"second", timeout=1)
+        finalizer.start()
+        assert not finished.wait(0.05), "finalize returned while accepted data was still pending"
+    finally:
+        release.set()
+        if finalizer.ident is None:
+            finalizer.start()
+        finalizer.join(5)
+        assert not finalizer.is_alive(), "test left a finalizer thread running"
+
+    assert not errors
+    assert path.read_bytes() == b"firstsecond"
+    assert all(file_obj.closed for file_obj in opened)
+    assert writer.status().finalized
+    assert writer.status().last_error is None
+    assert any(event.kind == "finalized" for event in _events(ui_queue))

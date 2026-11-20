@@ -6,7 +6,7 @@
 > 尚未确定传输方式、sdkconfig 或接线时，可先阅读 [BLE Log 配置指南](Config-Guide-CN.md)。
 
 ## 简介
-BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART、SPI Bridge、USJ（芯片内置的 USB Serial/JTAG 口）和 USB Output 传输模式。本指南详细介绍 UART 和 SPI Bridge；选择 USJ 的方法见 [4.2.1](#421-选择模式和端口)，其固件配置见[配置指南](Config-Guide-CN.md#usj)。
+BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的终端工具。它支持 UART、SPI Bridge、USJ（芯片内置的 USB Serial/JTAG 口）和 USB Output 传输模式。下文分别介绍各模式的连接方式、固件配置和录制操作。
 
 **首次使用前，请先下载最新稳定版 BLE Log Console 工具包：**
 
@@ -20,6 +20,7 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 * [查看 UART 模式](#2-uart-模式)
 * [查看 SPI Bridge 模式](#3-spi-bridge-模式)
+* [查看 USB Output 与 USJ 模式](#usb-direct)
 
 ## 2. UART 模式
 
@@ -28,6 +29,8 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 <p align="center">
   <img src="./figure/uart-connection.png" alt="BLE UART 设备连接" style="width: 70%; max-width: 900px;">
 </p>
+
+图中以带有两个 USB 接口的开发板为例：UART 模式连接标为 **UART** 的板载 USB 转串口接口，**Native USB** 接口留空。接口左右位置仅作示意，实际请以开发板标识和原理图为准。
 
 ### 2.1 固件配置
 
@@ -47,8 +50,8 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 ### 2.2 在 PC 端启动应用
 
-- Windows 使用说明见 [Windows 系统](#411-windows-系统)。
-- Linux 使用说明见 [Linux 系统](#412-linux-系统)。
+- Windows 使用说明见 [Windows 系统](#511-windows-系统)。
+- Linux 使用说明见 [Linux 系统](#512-linux-系统)。
 
 ## 3. SPI Bridge 模式
 
@@ -96,64 +99,147 @@ Bridge 设备用于将**目标设备产生的 BLE SPI Log** 转发到 PC，目�
 
 ### 3.2 在 PC 端启动应用
 
-- Windows 使用说明见 [Windows 系统](#411-windows-系统)。
-- Linux 使用说明见 [Linux 系统](#412-linux-系统)。
+- Windows 使用说明见 [Windows 系统](#511-windows-系统)。
+- Linux 使用说明见 [Linux 系统](#512-linux-系统)。
 
-## 4. 首次运行与录制
+<a id="usb-direct"></a>
 
-### 4.1 获取工具
+## 4. USB Output 与 USJ 模式
 
-工具包提供了适用于不同操作系统的应用程序。请从 [BLE Log Console 稳定版下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable) 页面获取最新工具包。
+设备连接示意图：
 
-#### 4.1.1 Windows 系统
+<p align="center">
+  <img src="./figure/usb-direct-connection.png" alt="USB Output 与 USJ：电脑直连设备原生 USB 口" style="width: 70%; max-width: 900px;">
+</p>
 
-Windows 下使用 `ble_log_console_windows_v1.1.0.exe`。推荐直接双击图标启动。
+USB Output 和 USJ 都通过一根 USB 数据线将目标设备直接连接到电脑，无需额外的 SPI Bridge，也不需要连接 UART TX 和 GND。图中的 **Native USB** 表示芯片自身的 USB 接口，具体使用哪个接口，请以开发板标识和原理图为准。
 
-> 注意：本工具包现支持 `Windows 10` 及以上版本。
+图中与 UART 模式使用同一块双接口示意板：USB Output／USJ 连接 **Native USB** 接口，**UART** 接口留空。接口左右位置仅作示意。
 
-#### 4.1.2 Linux 系统
+> 注意：
+> - 请使用支持数据传输的 USB 线，并连接到目标芯片的原生 USB 口。若开发板有多个 USB 口，连接到板载 USB 转串口芯片的接口仍属于 UART 模式。
+> - USB Output 和 USJ 使用不同的芯片外设。连接示意图可以共用，但并非所有芯片都支持两种模式，也不代表两种模式在每块板上都使用同一个插座。
 
-Linux 下使用 `ble_log_console_ubuntu_v1.1.0`。如果文件没有执行权限，请先进入对应目录，并在命令行执行：
+### 4.1 选择 USB Output 还是 USJ
+
+按下表确认芯片支持的输出方式，并在固件中启用。工具中统一选择 **USB**，再选择标有 **USB OTG** 或 **USJ** 的端口。
+
+| 芯片 | USB Output（最高总线速率） | USJ（最高总线速率） |
+| --- | --- | --- |
+| ESP32-S2 | 12 Mbit/s | 不支持 |
+| ESP32-S3、ESP32-H4 | 12 Mbit/s | 12 Mbit/s |
+| ESP32-P4、ESP32-S31 | 480 Mbit/s | 12 Mbit/s |
+| 其他芯片 | 不支持 | 12 Mbit/s |
+
+两种模式均无需设置波特率。表中为 USB 传输吞吐量上限。
+
+### 4.2 USB Output 固件配置
+
+- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED`，并选择 `CONFIG_BLE_LOG_PRPH_USB=y`。
+- 在工程的 `main/idf_component.yml` 中加入 TinyUSB 依赖；已有该文件时合并配置，保留原有依赖：
+
+  ```yaml
+  dependencies:
+    espressif/esp_tinyusb: "^2.0.0"
+  ```
+
+- 执行 `idf.py reconfigure` 获取组件，然后开启 `CONFIG_TINYUSB_CDC_ENABLED=y`。
+- 核对缓冲配置：
+  - `CONFIG_TINYUSB_CDC_TX_BUFSIZE` 与 `CONFIG_BLE_LOG_USB_CDC_TX_BUFSIZE` 保持一致。
+  - `CONFIG_TINYUSB_CDC_EP_BUFSIZE` 与 `CONFIG_BLE_LOG_USB_CDC_EP_BUFSIZE` 保持一致。
+  - `CONFIG_TINYUSB_CDC_RX_BUFSIZE` 不小于 `CONFIG_TINYUSB_CDC_EP_BUFSIZE`。
+- 编译并烧录固件，将芯片的 USB OTG 接口连接到电脑。
+
+> 配置说明：
+> - USB Output 需要目标芯片支持 USB OTG，并由固件运行 TinyUSB CDC。未提供该输出选项时，请选择当前芯片及固件支持的其他模式。
+> - 请确认工程中的其他 USB 功能没有占用同一外设，普通控制台可保留在 UART 上。固件启动 BLE Log 后，电脑端应出现 USB ID 为 `303A:10B1` 的端口。
+> - 无需通过串口波特率调整 USB 速率。是否能承载当前日志量，应通过实际业务下的试录和质量报告确认。
+
+### 4.3 USJ 固件配置
+
+- 确认目标芯片带有 USB Serial/JTAG，且所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。
+- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED`，并将相关配置项设置如下：
+  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
+  - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y`
+- 主控制台选择其他输出方式，例如 UART0，不选择 `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`。
+- 确认 esp_trace、OpenThread RCP 等功能没有占用 USB Serial/JTAG，并保持 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`。
+- 编译并烧录固件，将芯片的 USB Serial/JTAG 接口连接到电脑。
+
+> 配置说明：
+> - USJ 不需要 TinyUSB 依赖，电脑端 USB ID 为 `303A:1001`。
+> - 若 menuconfig 中未显示 USJ 输出选项，请先检查芯片和固件支持情况，再检查端口占用；详细说明见 [USJ 配置](Config-Guide-CN.md#usj)。
+> - BLE Log 启动前出现的 ROM 启动信息等普通文本，工具也会显示和保存。端口上只有普通文本时，仍需确认固件是否已启用 BLE Log。
+
+### 4.4 在 PC 端启动应用
+
+- Windows 使用说明见 [Windows 系统](#511-windows-系统)；Linux 使用说明见 [Linux 系统](#512-linux-系统)。
+- 关闭占用该端口的串口监视器，启动工具后，选择 **USB**，再根据固件配置选择标有 **USB OTG** 或 **USJ** 的对应端口。端口未出现时，确认固件已运行并点击 **Refresh**。
+- 指定日志保存目录，点击 **Connect** 开始录制，两种模式均无需选择波特率。
+- 运行实际 BLE 业务，确认 RX 和 Frames 持续增加、业务运行正常，再点击 **Stop & Review** 检查录制结果。
+
+> 使用说明：
+> - USB Output 和 USJ 均不支持通过工具的 `r` 快捷键复位设备。USJ 打开端口时的复位注意事项见 [选择模式和端口](#521-选择模式和端口)。
+> - 设备先运行、工具后连接，或停止后重新录制时，开头可能包含此前积压的旧数据。实时显示会保留这些内容；确认存在开录积压时，停止录制后会额外生成 `_analysis.bin`。请按报告中的“用于分析的文件”选择文件，并保留原始 `.bin`。证据不足时不会自动切分，报告中的质量统计仍针对原始录制。
+> - 正式复现问题时，先开始录制、确认正在接收，再触发问题，避免问题发生时电脑端尚未接收。
+
+## 5. 首次运行与录制
+
+### 5.1 获取工具
+
+从 [BLE Log Console 稳定版下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable) 页面下载对应系统的工具包。
+
+#### 5.1.1 Windows 系统
+
+Windows 10 及以上版本，双击 `ble_log_console_windows_v1.1.0.exe` 启动。
+
+CDC 接收使用 Windows 自带的 `usbser.sys` 串口驱动。请在设备管理器的
+**端口（COM 和 LPT）** 中确认 CDC 接口出现，再选择对应 COM 端口（支持 COM10 及以上编号）。
+如果之前为 Bulk 接收把该接口绑定到了 WinUSB/libusb，需要先恢复该接口的 CDC 驱动；
+不要替换设备上独立的 JTAG/HID 接口。参见 [Microsoft USB 串口驱动说明](https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-driver-installation-based-on-compatible-ids)。
+
+连接前先关闭其他串口监视器。枚举只读取端口元数据，没有产品或芯片描述也可以选择。
+本次 CDC 整合的 Windows 构建和真机验证尚待完成。
+
+
+#### 5.1.2 Linux 系统
+
+Ubuntu 22.04 及以上版本，先在工具所在目录赋予执行权限：
 
 ```bash
 chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
-如果计划在 Linux 下使用 SPI Bridge，首次使用时请先运行：
-
-```bash
-sudo ./ble_log_console_ubuntu_v1.1.0
-```
-
-该命令会安装 SPI Bridge 所需的 USB 访问权限规则。命令执行完成后，请重新拔插一次 SPI Bridge 设备。之后正常使用时无需再加 `sudo`。
-
-随后执行以下命令即可启动本程序：
+SPI Bridge、USB OTG、USJ 统一使用 CDC 串口接收。当前用户需要串口读写权限，通常由 `dialout` 组提供。无需 `sudo`，直接启动：
 
 ```bash
 ./ble_log_console_ubuntu_v1.1.0
 ```
 
-> 注意：本工具包现支持 `Ubuntu 22.04` 及以上版本。
+录制前先关闭占用端口的其他程序。如果 Bridge CDC 端口未出现，关闭直接 Bulk 接收程序，重新插拔 Bridge 后刷新端口列表。Console 不会解绑系统驱动或回退到直接 Bulk。
 
-### 4.2 开始录制
+### 5.2 开始录制
 
-#### 4.2.1 选择模式和端口
+#### 5.2.1 选择模式和端口
 
 启动应用后会显示如下界面：
 
 <p align="center">
-  <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 60%; max-width: 900px;">
+  <img src="./figure/interactive-screen.png" alt="BLE Log Console 交互界面" style="width: 45%; height: 420px; max-width: 900px;">
 </p>
 
-&emsp;首先选择警告和质量报告等长文本的显示语言，再选择传输模式：通过串口接收时选择 UART，通过 SPI Bridge 接收时选择 SPI Bridge。固件通过芯片内置的 USB Serial/JTAG 口输出 BLE Log 时选择 USJ；此时只列出 USB ID 为 `303A:1001` 的端口，波特率不适用。选择模式后，应用会自动扫描可用端口。
+选择显示语言，再按接线和固件配置选择模式：
 
-> USJ 模式下，DTR 和 RTS 线控制芯片的复位和启动模式。工具打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，也无法用 `r` 复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认连接时是否会复位开发板。
+- **UART：** 选择目标设备的串口，波特率必须与固件配置一致。
+- **SPI Bridge：** 选择 Bridge 对应的端口。
+- **USB：** 选择目标设备的 **USB OTG** 或 **USJ** 端口，工具自动使用对应接收方式。列出和刷新端口只使用系统枚举信息，不打开串口、不发送探测命令。仅在 USB 描述符提供型号时显示芯片型号，不根据 USJ 类型推测具体芯片。
 
-&emsp;随后选择端口。UART 模式下还需要选择波特率，且必须与固件配置保持一致。然后指定日志保存路径，默认保存到当前目录下的 `logs` 目录；若该目录不存在，程序会自动创建。最后点击「连接」即可开始接收日志。
+端口未出现时，检查接线和供电，再点击 **Refresh**。连接前请关闭占用同一端口的串口监视器。
 
-如果无法创建日志目录或预留录制文件，工具会返回设置页，不会开始本次录制。页面保留本次尝试的模式、端口、UART 波特率和目录，并显示存储错误。请选择其他日志目录或排除存储错误，再点击 **Connect** 重试，也可按 `q` 退出。通过命令行指定端口启动时，同样可以这样恢复。
+指定日志保存目录，点击 **Connect** 开始录制。若提示目录不可写，请更换目录后重试。
 
-#### 4.2.2 确认日志正在正常接收
+> USJ 连接时可能因系统或驱动行为使设备复位，请先确认不会影响本次问题复现。
+
+#### 5.2.2 确认日志正在正常接收
 
 录制界面如下图所示：
 
@@ -161,59 +247,56 @@ sudo ./ble_log_console_ubuntu_v1.1.0
   <img src="./figure/log-screen.png" alt="BLE Log Console 日志界面" style="width: 70%; max-width: 900px;">
 </p>
 
-录制过程中先看界面底部的 `RX` 和 `Frames`：`RX` 表示电脑已收到的数据量，`Frames` 表示工具已识别出的有效帧数，既包括普通日志帧，也包括固件周期发送的状态记录（INTERNAL 帧）。
+先看界面底部的 `RX`（收到的数据量）和 `Frames`（识别出的帧数）：
 
-- **正常：** `RX` 和 `Frames` 持续增加，说明工具正在正常接收和识别日志。
+- **两者持续增加：** 正在接收数据。确认没有异常提示后，再触发需要复现的问题。
+- **RX 一直为 0：** 检查端口、线缆和固件日志配置。
+- **RX 增加，但 Frames 不增加：** 检查传输模式、UART 波特率和固件配置。
+- **持续提示纯文本或没有普通日志帧：** 检查固件是否启用了 BLE Log，以及是否输出到所选端口。
 
-- **没有收到数据：** `RX` 为 0。工具会每 10 秒警告一次，请检查端口、线缆和固件日志配置。
-
-- **收到的数据无法解析：** `RX` 增加，但连续 10 秒没有解析到普通日志帧，`Frames` 通常持续为 0 或不再增加。工具会每 10 秒警告一次。此时请停止录制，并检查传输模式、UART 波特率、固件配置和接线，不要继续无效录制。
-
-- **收到的是纯文本而不是 BLE Log（UART 和 USJ）：** 状态栏显示 `PLAIN TEXT`，并立即出现警告，文本持续时每 10 秒再提示一次。文本会被显示，录制不会中断。出现纯文本通常说明固件没有把 BLE Log 输出到这个端口。启动时出现启动信息等文本属于正常情况；收到 BLE Log 数据后状态会变为 `BLE LOG`。
-
-- **识别出 BLE Log 但没有普通日志帧（UART 和 USJ）：** 状态栏显示 `BLE LOG`，由于固件周期发送的状态记录也计入 `Frames`，`Frames` 可能仍在增加。没有普通日志帧的警告和最终质量报告会说明这份录制没有可分析的日志数据。此时请检查固件日志配置，而不是传输方式。
-
-> 高流量下界面更新可能暂时变慢，但工具仍会优先保存数据；如果保存失败，界面会直接提示错误。
+> `Frames` 也包含固件状态帧，增加不代表一定录到了业务日志。提交前仍需查看质量报告；出现保存失败提示时，先处理存储问题再重新录制。
 
 <a id="console-log-files"></a>
 
-#### 4.2.3 查看 Console Log
+#### 5.2.3 查看 Console Log
 
-固件启用串口日志转发后，原本输出到 UART0（串口监视器）的普通 console log 会随 BLE Log 一起发送到 BLE Log Console。工具会在日志区域实时显示这些内容，并自动保存到所选日志目录；只有实际收到普通串口日志时才会生成 `_console.log` 文件。
+录制前在“实时显示”中按需勾选 **Host**、**HCI**，UART 模式还可选择“控制台”，默认全部关闭。切换到 SPI/USB 后隐藏并取消控制台文本选择；USJ 可能收到的启动或崩溃文本仍正常录制、保存，也可通过命令行 `--show-log console` 显示。下面描述的实时显示仅在对应类别开启后生效；原始数据、解码日志文件、统计、错误和质量警告不受影响。命令行使用 `--show-log host`、`--show-log hci`、`--show-log console`，可重复指定多个类别。**Record Again** 保留本次选择，新启动默认全部关闭。此选项不增加限速或去重。
 
-每组 console log 的第一行会附带电脑接收时间，例如 `[15:14:54.367]`。保存时会清理颜色等终端控制字符并统一换行，但不会修改原始 `.bin` 文件。如果 `_console.log` 无法写入或同步到存储，工具只提示一次并停止写入该文件。日志区域继续显示文本。此错误本身不会停止原始录制。质量报告会说明串口转发日志未能完整保存，并单独报告原始录制的保存失败。如果写入或同步失败后关闭文件也失败，警告和报告会保留首个错误。
+UART 和 USJ 模式下，固件转发的普通日志、启动信息等可打印文本会显示在日志区域，并保存到 `_console.log`。仅收到此类文本时才生成该文件。
 
-UART 和 USJ 模式下，不属于任何 BLE Log 帧的数据（例如 ROM 启动信息或崩溃转储）也会显示并保存到 `_console.log`，前后带有“未解码成功数据”和“未解码成功数据结束”标记。工具只保留可打印文本。一行文本在换行、后面出现 BLE Log 数据或长度达到 16 KiB 时才显示在界面上，因此不会被界面刷新拆开。可能还会补全的半个帧不会提前显示；录制结束时，剩余的未解码尾部只显示一次。这些文本不计入日志帧。
+SPI Bridge 模式不显示转发文本。`_console.log` 不能替代用于分析的 `.bin` 文件。
 
-### 4.3 结束录制并检查结果
+所有模式均支持 Host 日志的实时显示，并保存到 `_console.log`。压缩 Host 日志需要与固件匹配的字典：默认查找当前工作目录下的 `ble_log_database/BLE_HOST_logs.json`，其次查找当前目录的 `BLE_HOST_logs.json`。可在启动界面的 **Host 字典** 中选择所在目录，或使用 `--log-database <目录>`；留空则跳过压缩日志解析。录制文件创建成功后会记住保存目录和字典选择，包括主动清空字典。即使随后端口连接失败，重新启动时也会恢复选择。显式 `--log-database` 优先，已记忆目录失效或不可读取时回退到自动发现。配置保存于当前用户的应用设置目录，源码与二进制版本共用。
 
-#### 4.3.1 Stop & Review
+报告列出整段录制的有序解析产物，覆盖开头积压的数据。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。 LL_TASK 和 LL_ISR 数据保留在原始录制中。停止时，实时预览会标记尚未拼齐的 Host 消息。
 
-需要结束录制时，点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具会先停止接收并保存剩余数据，再等待质量检查完成，最长等待 20 秒，然后显示本次录制质量报告；此时不会立即退出。报告页可选择按原配置再次录制或退出程序。
 
-如果点击 **Record Again** 后无法预留下一份录制文件，设置页会显示存储错误，并允许修改目录后重试。成功预留新文件之前，上一份录制文件、已保存路径、报告和日志显示均保持不变。被拒绝的启动不会生成新的质量报告。
+### 5.3 结束录制并检查结果
 
-> 注意：界面显示 `FINALIZING`（正在保存）时请耐心等待。若直接关闭终端窗口，最后的数据和质量报告可能无法保存完整。
+开录 v8 快照确认旧缓存后恢复稳定接收时，程序在实时解析时复用已解码帧检查新数据区间，并据此生成结论。停止时不重扫原始文件，也不自动生成裁剪副本。原始字节、Host 任务映射和完整解析覆盖统计均保留，同时显示原始流缺号数及区间偏移。边界之后的真实丢包仍影响结论；证据不明确或区间检查不完整时保留原始流判定。
 
-#### 4.3.2 查看质量报告
+#### 5.3.1 Stop & Review
 
-**提交日志前必须查看录制质量报告。** 工具会给出以下四种结论：
+点击 **Stop & Review**，或按 `q` / `Ctrl+C`。工具保存数据并完成质量检查后，会显示本次报告。
 
-- 可用于分析：数据已正常保存并且能够解析，可以直接提交分析。
+报告页可选择 **Record Again** 按原配置再次录制，或退出程序。
 
-- 已保存，但存在警告：数据已经保存，但录制过程中可能存在中断、丢失或无法确认的情况。文件仍可提交技术支持用于分析。
+> 显示 `FINALIZING` 时请等待，不要直接关闭终端窗口，否则数据和报告可能保存不完整。
 
-- 检查配置：本次没有录到任何有效日志帧。**请勿提交本次文件**；检查传输模式、端口、UART 波特率、接线和固件日志配置，确认无误后重新录制。
+#### 5.3.2 查看质量报告
 
-- 建议重新录制：本次录到了有效日志帧，但数据未能正常保存，或检测到的丢失比例较高。**请勿直接提交本次文件**；排除保存或传输问题后重新录制。如果反复出现，可以联系技术支持进行评估。
+**提交日志前，先查看报告结论：**
 
-只有“可用于分析”或“已保存，但存在警告”的文件可以直接提交。若另外两种结论反复出现，请先联系技术支持，并按要求提供对应的 `report.txt` 和 `.bin` 文件用于排查。
+- **可用于分析：** 可以提交分析。
+- **已保存，但存在警告：** 查看警告原因，将文件和报告一并提交技术支持。
+- **检查配置：** 未录到可分析的日志，检查端口、模式和固件日志配置后重新录制。
+- **建议重新录制：** 存在保存失败或较高丢失，按报告建议处理后重新录制。
 
-UART 和 USJ 模式下，报告还会写明识别出的数据内容（普通控制台文本、BLE Log 或无法识别的数据），以及已解析数据中有多少不属于 BLE Log 帧。识别结果只描述质量检查实际解析过的数据。纯文本，以及识别出 BLE Log 之后仍收到的帧外数据，会在任何结论下附加警告。录制停止时被截断的最后一帧属于正常情况：这些字节记入“结尾未完成数据字节数”，不会附加该警告。不属于 BLE Log 帧的字节写入 `.bin` 文件而不是 `_console.log`，后者最多只包含其中可打印的文本；写入失败时这些字节可能不在文件中，质量报告会说明原始录制是否已确认完整。仅识别出 BLE Log 并不代表录制可用：没有普通日志帧时，结论仍为“检查配置”，建议会提示检查固件日志配置。收到纯文本时，建议会提示确认固件把 BLE Log 输出到这个端口。只有 UART 模式的建议会提到波特率。
+若问题反复出现，请联系技术支持，并提供本次文件和报告用于排查。
 
-#### 4.3.3 找到并提交录制文件
+#### 5.3.3 找到并提交录制文件
 
-录制文件默认保存到启动时指定的日志目录；如果未修改保存路径，则默认保存到当前目录下的 `logs` 目录。文件名按时间生成：
+文件保存在开始录制时选择的目录，程序退出后也会打印实际保存路径：
 
 ```text
 ble_log_YYYYMMDD_HHMMSS.bin
@@ -221,17 +304,17 @@ ble_log_YYYYMMDD_HHMMSS_console.log
 ble_log_YYYYMMDD_HHMMSS_report.txt
 ```
 
-- `.bin` 是收到的原始 BLE Log 数据，也是后续问题分析的主要文件。
-- `_report.txt` 用于说明本次录制是否有效。
-- `_console.log` 是可直接查看的普通串口日志，只有实际收到此类日志时才会生成，不能替代 `.bin` 文件。
+提交同一次录制的 `.bin` 和 `_report.txt`；若生成了 `_console.log`，也请一并提供。较大的录制会拆成多个 `part` 文件，**请提供全部分片**。
 
-提交问题时，请提供同名的 `.bin` 和 `_report.txt`；如果生成了 `_console.log`，也请一并提供。程序退出后会在终端打印实际保存路径。较大的录制会自动拆分为多个 `part` 文件，同一秒内再次录制时会自动增加序号，不会覆盖已有文件。
+若报告列出了“用于分析的文件”，使用对应的 `_analysis.bin` 及其全部分片进行分析，并保留原始 `.bin`。报告中的质量统计仍针对原始录制。
 
-## 5. 源码启动
+> `.partial` 是未完成的文件，请勿作为完整录制提交。
+
+## 6. 源码启动
 
 需要本地调试、临时修改或验证新功能时，可以从源码运行 BLE Log Console。普通使用仍推荐下载打包好的可执行程序。
 
-### 5.1 准备源码
+### 6.1 准备源码
 
 进入 BLE Log Console 源码目录：
 
@@ -241,7 +324,7 @@ cd <ble_log_console 源码目录>
 
 源码运行需要 Python 3.11 或更高版本，并使用 `uv` 管理环境和依赖。安装脚本会自动准备 `uv` 和项目虚拟环境。
 
-### 5.2 Windows
+### 6.2 Windows
 
 首次使用时运行：
 
@@ -262,7 +345,7 @@ cd <ble_log_console 源码目录>
 .\run.bat --mode spi --port <PORT>
 ```
 
-### 5.3 Linux
+### 6.3 Linux
 
 首次使用时运行：
 
@@ -284,7 +367,7 @@ chmod +x ./install.sh ./run.sh
 ./run.sh --mode spi --port <PORT>
 ```
 
-### 5.4 直接运行 console.py
+### 6.4 直接运行 console.py
 
 如果已经手动准备好 Python 3.11 及全部依赖，可以直接运行：
 
@@ -301,7 +384,7 @@ python console.py --mode spi --port <PORT>
 
 如果安装或启动失败，请参见[源码环境安装失败](#faq-source-setup)。
 
-## 6. 更多说明
+## 7. 更多说明
 
 更多快捷键可按 `h` 查看。完整的工具命令行参数见[仓库 README](https://github.com/espressif/esp-ble-tools/blob/main/components/ble_log_console/README.md)。
 
@@ -333,19 +416,14 @@ python console.py --mode spi --port <PORT>
 - 设备是否已经上电。
 - 设备中是否运行了正确的固件。
 - 端口是否已经被其他程序占用。
-- Linux 下是否已经执行过一次 `sudo ./ble_log_console_ubuntu_v1.1.0`，并在执行后拔插过设备。
+- USB Output 或 USJ 模式下，是否使用数据线连接了芯片的原生 USB 口，所选端口是否与固件输出对应。USB Output 端口需要固件启动 BLE Log 后才会出现；重新插拔后请点击 **Refresh**。
+- Linux 下 CDC 接收需检查串口读写权限，通常由 `dialout` 组提供。CDC 端口未出现时，先关闭其他 Bridge 接收程序，再重新插拔设备；Console 不再回退到直接 Bulk。
 
-SPI Bridge 插着却打不开时，端口列表会直接说明原因，不再只是一片空白：
+设置页和 `ports` 命令会显示 SPI Bridge、USB OTG 和 USJ CDC 端口的权限诊断。Linux 和 macOS 下，没有读写权限的端口不会列为可选项，而是按串口路径说明原因，例如 `SPI Bridge /dev/ttyACM0：没有读写权限。` 多数 Linux 发行版可用 `sudo usermod -aG dialout $USER` 把用户加入 `dialout` 组，然后注销并重新登录。不需要安装 libusb 或 Bulk 访问规则。
 
-- `SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。` 表示这台电脑还没有安装 SPI Bridge 的 Linux 访问权限规则。请用 `sudo` 不带参数运行一次工具，它会安装 `/etc/udev/rules.d/99-ble-log-spi-bridge.rules`（见 [Linux 系统](#412-linux-系统)）；然后重新拔插 Bridge 设备，再正常启动工具。
-- `未找到 libusb-1.0，请先安装：sudo apt install libusb-1.0-0` 表示工具访问 Bridge 所需的 USB 库没有安装。
-- `SPI Bridge（bus 1，addr 95）无法打开：……` 会原样列出系统报告的 USB 错误，例如设备已被其他程序占用。
+枚举只读取端口元数据和文件权限，不打开设备，因此无法检查串口是否已被其他程序占用；这类错误在开始录制时报告。Windows 的 COM 端口保持可选，在实际打开时报告访问错误。
 
-USJ 模式下，只有当前用户能读写的端口才会列出来。打不开的 USJ 端口不会出现在列表里，而是直接说明原因：
-
-- `USJ /dev/ttyACM0：没有读写权限。` 表示当前用户没有使用这个串口的权限。多数 Linux 发行版可用 `sudo usermod -aG dialout $USER` 把用户加入 `dialout` 组，注销并重新登录后重新启动工具。
-
-这些提示跟随界面语言，界面语言取自系统的消息区域设置。需要中文时，可在启动工具前设置 `LANG=zh_CN.UTF-8`（或 `LC_MESSAGES=zh_CN.UTF-8`），也可以在启动界面中选择「简体中文」。
+诊断提示跟随所选界面语言，切换语言后立即更新。默认语言为英文，需要中文时在设置页选择「简体中文」。
 
 <a id="faq-no-logs"></a>
 
@@ -357,6 +435,7 @@ USJ 模式下，只有当前用户能读写的端口才会列出来。打不开�
 - 选择的端口是否正确。
 - ESP 设备固件是否已经启用 BLE Log。
 - UART 模式下，工具中选择的波特率是否与固件配置一致。
+- USB Output 或 USJ 模式下，固件是否选择了对应输出方式；USJ 还需检查是否仍有控制台或其他功能占用该端口，详见 [USB Output 与 USJ 模式](#usb-direct)。
 - ESP 设备和串口工具或 SPI Bridge 之间的接线是否正确。
 - SPI Bridge 模式下，ESP 设备固件中的 MOSI、SCLK、CS 对应 GPIO 是否与实际接线一致。
 
@@ -398,9 +477,9 @@ idf.py -p <PORT> monitor
 
 报告会分别说明原始数据是否完整保存，以及自动质量检查覆盖了多少数据。如果检查未能在 20 秒内完成，原始数据仍会保留；帧数和丢失检查只代表已经解析的部分，整份录制的连续性会显示为“无法确认”。
 
-详细报告会逐段列出接收帧数、固件写入失败帧数和序列号检查结果，并标明开头或结尾不完整的段。完整段与不完整段中已确认的丢失都会进入总体质量统计；仅缺少统计段边界不会自动触发警告。无法确定连续性时显示“无法确认”。
+详细报告分别列出本次录制观察到的固件写入／丢弃计数，以及 Checker 检查的序号区间。区间通过不代表区间之外的数据完整；计数覆盖不足会标明，无法确定连续性时显示“无法确认”。v8 不提供丢弃字节数，此项和对应字节丢弃比例显示为“未知”，不按零处理。
 
-在关闭录制文件或切换分片时，如果数据同步到存储失败，报告不确认原始数据完整保存，并建议重新录制。现有原始文件会保留供排查，但不能保证断电后仍可读取。
+在关闭录制文件或切换分片时，如果数据同步到存储失败，报告不确认原始数据完整保存，并建议重新录制。现有原始文件会保留供排查，但不能保证断电后仍可读取。录制 IO 收尾超时也会使保存状态无法确认，即使已经解析到有效帧；数据进入写入队列不代表这些字节已经保存到存储。
 
 序列号检查根据受支持的固件记录确定计数方式。独立的 VERSION_INFO 声明 BLE Log 协议版本 6 时，工具按来源分别编号，中途开始录制时也采用该方式。受支持的协议 8 记录中，普通帧与 SNAPSHOT 共用计数器；独立 VERSION_INFO 保留这一计数方式。
 

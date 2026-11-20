@@ -32,11 +32,14 @@ if "%SYNC%"=="0" (
 )
 
 echo Installing BLE Log Console dependencies ...
+echo The bundled BLFD source package needs MSVC C/C++ Build Tools and a Windows SDK.
+echo Use a Visual Studio Developer Command Prompt with the Desktop development with C++ workload installed.
 uv sync --all-extras %BLE_LOG_CONSOLE_UV_SYNC_ARGS%
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: Failed to install BLE Log Console dependencies.
     echo Check network access to the Python package index, or set BLE_LOG_CONSOLE_UV_SYNC_ARGS.
+    echo If BLFD compilation failed, check the MSVC C/C++ Build Tools and Windows SDK installation.
     exit /b %errorlevel%
 )
 

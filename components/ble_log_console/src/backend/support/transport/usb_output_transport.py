@@ -22,7 +22,7 @@ import serial.tools.list_ports
 
 from src.backend.models import TransportBitrate, TransportConfig
 from src.backend.support.transport.base import PortScan, TransportMode, TransportProvider
-from src.backend.support.transport.serial_reader import SerialReader
+from src.backend.support.transport.serial_reader import SerialReader, serial_open_hint, serial_port_issue
 
 VENDOR_ID = 0x303A
 PRODUCT_ID = 0x10B1
@@ -99,23 +99,6 @@ def list_usb_output_ports() -> list[tuple[str, str]]:
     return options
 
 
-def _open_hint(error: Exception) -> str | None:
-    """An action the user can take for the errnos this port actually fails with."""
-    errno_value = getattr(error, "errno", None)
-    text = str(error).lower()
-
-    if errno_value == errno.EACCES or "permission denied" in text:
-        return (
-            "Permission denied. On Linux, add your user to the dialout group "
-            "(or install a udev rule for this device) and open the port again."
-        )
-    if errno_value in (errno.EBUSY, getattr(errno, "EAGAIN", None)) or "busy" in text or "exclusively lock" in text:
-        return "The port is busy. Stop ModemManager or whatever else holds it, then open the port again."
-    if errno_value in (errno.ENOENT, getattr(errno, "ENXIO", None)) or "no such file" in text:
-        return "The device is no longer present. Re-plug the DUT (or press its reset button) and refresh the ports."
-    return None
-
-
 class UsbOutputTransport(SerialReader):
     mode = TransportMode.USB_OUTPUT
     block_size = USB_OUTPUT_BLOCK_SIZE
@@ -142,8 +125,10 @@ class UsbOutputTransport(SerialReader):
             # pyserial asserts DTR while opening; restate it so the DUT keeps
             # sending even when the port was opened without modem control.
             handle.dtr = True
-        except (OSError, serial.SerialException):
-            pass
+        except OSError as error:
+            if error.errno not in (errno.EINVAL, errno.ENOTTY):
+                handle.close()
+                raise
         return handle
 
     def reset_target(self) -> bool:
@@ -160,7 +145,7 @@ class UsbOutputTransport(SerialReader):
         if not isinstance(error, serial.SerialException):
             return error
         message = f"Failed to open the USB Output port {self._port}: {error}"
-        hint = _open_hint(error)
+        hint = serial_open_hint(error)
         return RuntimeError(f"{message}\n{hint}" if hint else message)
 
 
@@ -176,7 +161,14 @@ class UsbOutputTransportProvider:
         return TransportMode.USB_OUTPUT
 
     def scan_ports(self) -> PortScan:
-        return PortScan(options=list_usb_output_ports())
+        scan = PortScan()
+        for label, device in list_usb_output_ports():
+            issue = serial_port_issue(device, "USB OTG")
+            if issue is None:
+                scan.options.append((label, device))
+            else:
+                scan.issues.append(issue)
+        return scan
 
     def create_reader(self, config: TransportConfig) -> UsbOutputTransport:
         return UsbOutputTransport(config.port, config.baudrate)

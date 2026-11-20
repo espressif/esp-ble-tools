@@ -112,8 +112,8 @@ class TestUartTransportReader:
         assert "exclusive" not in mock_serial.call_args_list[1].kwargs
         assert reader.status().opened is True
 
-    def test_open_retries_without_exclusive_on_a_non_lock_failure(self) -> None:
-        """A plain retry lets any real open error surface unchanged."""
+    def test_open_does_not_retry_a_serial_failure_without_exclusive(self) -> None:
+        """Even a successful second open would hide the original device failure."""
         serial_obj = MagicMock()
         serial_obj.is_open = True
 
@@ -122,11 +122,11 @@ class TestUartTransportReader:
             side_effect=[serial.SerialException("exclusive open rejected"), serial_obj],
         ) as mock_serial:
             reader = UartTransport("/dev/ttyUSB0", 3_000_000)
-            reader.open()
+            with pytest.raises(serial.SerialException, match="exclusive open rejected"):
+                reader.open()
 
-        assert mock_serial.call_count == 2
-        assert "exclusive" not in mock_serial.call_args_list[1].kwargs
-        assert reader.status().opened is True
+        mock_serial.assert_called_once()
+        assert reader.status().opened is False
 
     def test_open_propagates_a_lock_refusal_instead_of_retrying(self) -> None:
         """A port held by another reader must fail, not open a second handle."""

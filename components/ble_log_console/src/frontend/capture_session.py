@@ -15,7 +15,7 @@ from textual.message import Message
 from src.backend.io import WriterConfig
 from src.backend.models import CaptureFinished, CaptureReport, TransportConfig, UserNotice
 from src.backend.pipeline import CapturePipeline
-from src.backend.pipeline.controller import CapturePipelineResult
+from src.backend.pipeline.controller import IO_SHUTDOWN_TIMEOUT_SEC, CapturePipelineResult
 from src.frontend.capture_events import CaptureEventPresenter
 from src.frontend.capture_report import build_capture_report, report_path_for_capture, write_capture_report
 from src.i18n import tr
@@ -33,8 +33,11 @@ class CaptureSession:
         output_path: Path,
         *,
         debug: bool = False,
+        log_database: Path | None = None,
+        show_logs: frozenset[str] = frozenset(),
         join_timeout_sec: float = PIPELINE_JOIN_TIMEOUT_SEC,
         analysis_drain_timeout_sec: float = ANALYSIS_DRAIN_TIMEOUT_SEC,
+        io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
         clock=time.monotonic,
     ) -> None:
         self._output_path = output_path
@@ -42,10 +45,15 @@ class CaptureSession:
         self._join_timeout_sec = join_timeout_sec
         self._analysis_drain_timeout_sec = analysis_drain_timeout_sec
         self._clock = clock
-        self._event_presenter = CaptureEventPresenter(output_path, debug=debug)
+        self._event_presenter = CaptureEventPresenter(
+            output_path, debug=debug, mode=transport_config.mode, show_logs=show_logs
+        )
         self._pipeline = CapturePipeline(
             transport_config,
             WriterConfig(output_path),
+            log_database=log_database,
+            io_shutdown_timeout_sec=io_shutdown_timeout_sec,
+            clock=clock,
         )
         self._finished = False
         self._stop_requested = False
@@ -109,7 +117,9 @@ class CaptureSession:
         if self._finished:
             return ()
 
-        messages = self._event_presenter.handle_events(self._pipeline.drain_events())
+        events = self._pipeline.drain_events()
+        events.extend(self._pipeline.check_io_shutdown())
+        messages = self._event_presenter.handle_events(events)
         if self._pipeline.io_is_alive():
             return messages
 
@@ -120,8 +130,17 @@ class CaptureSession:
             if now - self._analysis_drain_started_at < self._analysis_drain_timeout_sec:
                 return messages
             self._pipeline.abort_analysis(
-                f"Live quality check did not finish within {self._analysis_drain_timeout_sec:g} seconds."
+                tr(
+                    "Live quality check did not finish within {seconds:g} seconds.",
+                    seconds=self._analysis_drain_timeout_sec,
+                )
             )
+            if self._pipeline.analysis_is_alive():
+                return messages + (
+                    UserNotice(
+                        tr("Recording processes could not be stopped; completion is still pending."), level="warning"
+                    ),
+                )
 
         return messages + self._finish()
 
@@ -156,6 +175,8 @@ class CaptureSession:
             console_log_paths=presenter_state.saved_console_log_paths,
             report_path=report_path_for_capture(self._output_path),
             console_log_error=presenter_state.console_log_error,
+            hci_paths=presenter_state.hci_paths,
+            hci_error=presenter_state.hci_error,
         )
         try:
             write_capture_report(report)

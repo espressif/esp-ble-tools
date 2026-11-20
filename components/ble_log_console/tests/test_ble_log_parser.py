@@ -92,7 +92,7 @@ def test_feed_enforces_payload_size_limit_and_resyncs(algorithm: ChecksumAlgorit
     assert first.consumed == 0
     assert first.carried_bytes == split
     assert second.parsed_frames == 2
-    assert second.events == (
+    assert tuple(event for event in second.events if isinstance(event, FrameEvent)) == (
         FrameEvent(frame_size=2058, source_code=BleLogSource.HOST, frame_sn=0),
         FrameEvent(frame_size=14, source_code=BleLogSource.HOST, frame_sn=2),
     )

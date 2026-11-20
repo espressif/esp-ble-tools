@@ -406,7 +406,7 @@ def test_console_fsync_failure_stops_only_the_console_sink(
     ]
     notices = [message for message in messages if isinstance(message, UserNotice)]
     assert len(notices) == 1 and error in notices[0].text
-    assert "this error does not itself stop raw recording" in notices[0].text
+    assert "This error does not itself stop raw recording" in notices[0].text
     assert "recording continues" not in notices[0].text
     assert opened[0].read_text().endswith("first\n" if rotating else "later 2\n")
     assert presenter.state.saved_console_log_paths == (opened[0],)

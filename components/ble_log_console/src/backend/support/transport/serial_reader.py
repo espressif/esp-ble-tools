@@ -12,30 +12,44 @@ parameterize the difference and may override ``reset_target``.
 from __future__ import annotations
 
 import errno
+import os
+import sys
 
 import serial
 
 from src.backend.models import TransportBitrate
-from src.backend.support.transport.base import TransportMode, TransportStatus
-
-# pyserial reports a held port as SerialException carrying the flock()/CreateFile
-# errno, plus the text "Could not exclusively lock port ...". That is a refusal
-# by another owner, not a platform limitation.
-_LOCK_REFUSAL_ERRNOS = frozenset(
-    value
-    for value in (errno.EACCES, getattr(errno, "EAGAIN", None), getattr(errno, "EBUSY", None))
-    if value is not None
-)
-_LOCK_REFUSAL_TEXT = ("exclusively lock", "resource temporarily unavailable", "device or resource busy")
+from src.backend.support.transport.base import PortIssue, PortIssueKind, TransportMode, TransportStatus
+from src.i18n import tr
 
 
-def _is_lock_refusal(error: Exception) -> bool:
-    """Whether an exclusive open failed because the port is already held."""
+def serial_port_issue(device: str, label: str) -> PortIssue | None:
+    """Check tty permissions without opening a port or changing its modem lines."""
+    # COM names are not filesystem paths; Windows access is checked when opening.
+    if sys.platform != "win32" and not os.access(device, os.R_OK | os.W_OK):
+        return PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port=device, label=label)
+    return None
 
-    if getattr(error, "errno", None) in _LOCK_REFUSAL_ERRNOS:
-        return True
+
+def serial_open_hint(error: Exception) -> str | None:
+    """An action the user can take for the errnos this port actually fails with."""
+    if sys.platform == "win32":
+        return tr(
+            "On Windows, close other applications using this COM port and check "
+            "Ports (COM & LPT) in Device Manager. Reconnect the device and refresh the port list."
+        )
+    errno_value = getattr(error, "errno", None)
     text = str(error).lower()
-    return any(marker in text for marker in _LOCK_REFUSAL_TEXT)
+
+    if errno_value == errno.EACCES or "permission denied" in text:
+        return tr(
+            "Permission denied. On Linux, add your user to the dialout group "
+            "(or install a udev rule for this device) and open the port again."
+        )
+    if errno_value in (errno.EBUSY, getattr(errno, "EAGAIN", None)) or "busy" in text or "exclusively lock" in text:
+        return tr("The port is busy. Stop ModemManager or whatever else holds it, then open the port again.")
+    if errno_value in (errno.ENOENT, getattr(errno, "ENXIO", None)) or "no such file" in text:
+        return tr("The device is no longer present. Re-plug the DUT (or press its reset button) and refresh the ports.")
+    return None
 
 
 class SerialReader:
@@ -123,13 +137,12 @@ class SerialReader:
         if self.open_exclusive:
             try:
                 return self._open_handle(exclusive=True)
-            except (ValueError, serial.SerialException) as error:
-                if _is_lock_refusal(error):
-                    # A plain open would succeed and split the byte stream
-                    # between two readers, so propagate the refusal instead.
+            except ValueError as error:
+                # Windows always opens exclusively; real port/control-line failures must not retry.
+                message = str(error).lower()
+                unsupported = "exclusive" in message and ("not supported" in message or "unsupported" in message)
+                if sys.platform == "win32" or not unsupported:
                     raise
-                # The platform cannot express exclusive access; retry without
-                # the flag. A real open error surfaces unchanged from there.
         return self._open_handle(exclusive=False)
 
     def _open_handle(self, *, exclusive: bool) -> serial.Serial:
@@ -139,5 +152,8 @@ class SerialReader:
         return serial.Serial(self._port, baudrate=self._baudrate, timeout=self.timeout)
 
     def _open_error(self, error: Exception) -> Exception:
-        """Exception to raise from ``open``. Default: the original one."""
+        """Preserve serial exception types while adding Windows recovery guidance."""
+        if sys.platform == "win32" and isinstance(error, serial.SerialException):
+            message = tr("Failed to open {port}: {error}", port=self._port, error=error)
+            return serial.SerialException(f"{message}\n{serial_open_hint(error)}")
         return error

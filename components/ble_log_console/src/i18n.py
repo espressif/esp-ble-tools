@@ -6,13 +6,80 @@
 from __future__ import annotations
 
 import gettext
-import locale
-import os
 
 ENGLISH = "en"
 CHINESE = "zh_CN"
 
 _ZH_CN = {
+    "confirmed fresh interval": "已确认的新数据区间",
+    "Quality metrics cover the confirmed fresh interval; parser coverage includes all saved data.": "质量指标仅评估已确认的新数据区间；解析覆盖包含全部已保存数据。",
+    "The fresh interval could not be verified; quality metrics describe the original recording.": "新数据区间未能完成检查；质量指标仍描述原始录制。",
+    "Original stream missing sequence numbers (including opening backlog): {count}.": "原始流缺失序号数（包含开录积压断档）：{count}。",
+    "Use the original raw file to retain Host task bindings.": "请使用原始文件，以保留 Host 任务映射。",
+    "Connect": "连接",
+    "Select": "请选择",
+    "Transport": "接收方式",
+    "Save to": "保存目录",
+    "Host dictionary": "Host 字典",
+    "Live display": "实时显示",
+    "Display only": "仅影响显示",
+    "Console": "控制台",
+    "Browse": "选择",
+    "Refresh": "刷新",
+    "No ports detected": "未发现设备",
+    "Live log display (optional)": "实时日志显示（可选）",
+    "Display only; recording and saved logs are unaffected.": "仅控制显示，不影响录制和日志文件保存。",
+    "Device console text": "设备控制台文本",
+    "Show a live log category; repeat to select more. Default: none. Saved logs are unaffected.": "显示指定类别的实时日志，可重复指定多个；默认全部关闭，不影响日志文件保存。",
+    "On Windows, close other applications using this COM port and check Ports (COM & LPT) in Device Manager. Reconnect the device and refresh the port list.": "Windows 下请关闭占用该 COM 端口的其他程序，在设备管理器的“端口（COM 和 LPT）”中检查设备，重新连接后刷新端口列表。",
+    "Failed to open {port}: {error}": "无法打开 {port}：{error}",
+    "Permission denied. On Linux, add your user to the dialout group (or install a udev rule for this device) and open the port again.": "权限不足。Linux 下请将当前用户加入 dialout 组（或为设备安装 udev 规则），然后重新打开端口。",
+    "The port is busy. Stop ModemManager or whatever else holds it, then open the port again.": "端口被占用。请停止 ModemManager 或其他占用端口的程序，然后重新打开。",
+    "The device is no longer present. Re-plug the DUT (or press its reset button) and refresh the ports.": "设备已断开。请重新插拔设备（或按复位按钮），然后刷新端口列表。",
+    "HCI decoding incomplete ({reason}); raw data is retained.": "HCI 未完整解码（{reason}），原始数据已保留。",
+    "HCI files could not be saved completely: {message}. Raw recording continues.": "HCI 文件未能完整保存：{message}。原始数据录制继续。",
+    "HCI files could not be saved completely; retain the original raw recording.": "HCI 文件未能完整保存，请保留原始录制文件。",
+    "Ordered parser products could not be saved completely.": "未能完整保存排序后的解析产物。",
+    "Parser output": "解析产物",
+    "Parser output error": "解析产物错误",
+    "HCI log": "HCI 日志",
+    "HCI file error": "HCI 文件错误",
+    "Log Database (optional)": "Log Database（可选）",
+    "Empty: skip compressed Host logs": "留空则不解析压缩 Host 日志",
+    "Select a directory containing BLE_HOST_logs.json, or leave it empty.": "请选择包含 BLE_HOST_logs.json 的目录，或留空。",
+    "Host log database directory. Default: ./ble_log_database, or the current directory.": "Host 日志字典目录。默认查找 ./ble_log_database 和当前目录。",
+    "No log database selected; compressed Host logs are not decoded. Raw data is retained.": "未选择日志字典，跳过压缩 Host 日志解析。原始数据已保留。",
+    "Host log decoding incomplete ({reason}); raw data is retained.": "Host 日志未完整解码（{reason}），原始数据已保留。",
+    "Live preview is waiting for protocol version information. The recording includes these frames for ordered export.": "实时预览在等待协议版本信息。录制已保留这些帧，供排序导出。",
+    "[Incomplete Host log: {reason}] ": "[Host 日志不完整：{reason}] ",
+    "Firmware counters observed during recording": "本次录制观察到的固件计数",
+    "partial counter coverage": "计数覆盖不完整",
+    "written {frames} frame(s), {bytes}; lost {lost_frames} frame(s), {lost_bytes}": "写入 {frames} 帧，{bytes}；丢弃 {lost_frames} 帧，{lost_bytes}",
+    "Unknown": "未知",
+    "Checker integrity (selected ranges)": "Checker 完整性检查（所选区间）",
+    "Checker detected missing or duplicate sequence numbers in the checked ranges.": "Checker 在检查区间内发现缺失或重复序号。",
+    "Firmware snapshot anchors conflict; retain the original recording for review.": "固件快照锚点存在冲突，请保留原始录制供检查。",
+    "Firmware counters cover only observed increments; some intervals are partial.": "固件计数仅覆盖观察到的增量，部分区间的统计不完整。",
+    "Firmware does not report lost bytes; its byte loss rate is unknown.": "固件未上报丢弃字节数，字节丢弃比例未知。",
+    "Log save directory. Default: last used directory, or ./logs.": "日志保存目录。默认使用上次的目录，无记录时使用 ./logs。",
+    "Opening backlog detected. Suggested raw file offset: {bytes} bytes. Original data is retained.": "检测到开录积压，建议的原始文件切分偏移为 {bytes} 字节。原始数据完整保留。",
+    "Opening data selection": "开录数据范围选择",
+    "Selection result": "选择结果",
+    "Raw suffix offset (bytes)": "原始数据切分偏移（字节）",
+    "Start snapshot SN": "起点快照序号",
+    "Device time span (s)": "设备时间跨度（秒）",
+    "Host receive span (s)": "主机接收时间跨度（秒）",
+    "No confirmed opening backlog": "未确认开录积压，保留全部数据",
+    "Receive provenance unavailable or discontinuous": "接收时间或偏移信息缺失或不连续，保留全部数据",
+    "Opening observation limit reached": "已达到开录观察上限，保留全部数据",
+    "Opening metadata requires the original prefix": "开录元数据需要保留原始前缀",
+    "Invalid opening snapshot": "开录快照无效，保留全部数据",
+    "Device initialization observed": "观察到设备初始化，保留全部数据",
+    "Unsupported or invalid snapshot clock": "快照时钟不受支持或无效，保留全部数据",
+    "Opening clock or sequence is ambiguous": "开录时钟或序号存在歧义，保留全部数据",
+    "Opening time jump lacks sequence evidence": "开录时间跳变缺少序号佐证，保留全部数据",
+    "Opening backlog detected": "检测到开录积压",
+    "Recording ended before opening was confirmed": "录制结束时尚未确认开录状态，保留全部数据",
     "--- Undecoded data ---": "--- 未解码成功数据 ---",
     "--- End of undecoded data ---": "--- 未解码成功数据结束 ---",
     "PLAIN TEXT": "纯文本",
@@ -32,7 +99,7 @@ _ZH_CN = {
     "Data outside BLE Log frames arrived after BLE Log was identified; the raw recording could not be confirmed complete, so those bytes may not all be in the raw file, and the console log holds at most their displayable text.": "识别出 BLE Log 之后仍收到不属于 BLE Log 帧的数据；原始录制未能确认完整，这些字节可能未全部写入原始数据文件，串口转发日志最多只包含其中可显示的文本。",
     "The console log could not be saved completely; this error does not itself stop raw recording.": "串口转发日志未能完整保存；此错误本身不会停止原始录制。",
     "Console log error": "串口转发日志错误",
-    "Console log could not be saved: {message}. The text is still shown here; this error does not itself stop raw recording.": "无法保存串口转发日志：{message}。文本仍在此处显示；此错误本身不会停止原始录制。",
+    "Console log could not be saved: {message}. This error does not itself stop raw recording.": "无法保存串口转发日志：{message}。此错误本身不会停止原始录制。",
     "BLE LOG": "BLE Log",
     "Received data looks like plain console text, not BLE Log frames. Recording continues; check that the firmware sends BLE Log to this port.": "收到的数据像是普通控制台文本，而不是 BLE Log 帧。录制仍在继续；请确认固件把 BLE Log 输出到这个端口。",
     "BLE Log frames identified; earlier text is shown as undecoded data.": "已识别到 BLE Log 帧；之前的文本作为未解码数据显示。",
@@ -185,20 +252,11 @@ _ZH_CN = {
     "USB Output cannot reset the target; use the reset button on the board": "USB Output 无法复位目标设备，请按开发板上的复位键",
     "Finalizing recording: saving data, then allowing up to 20 seconds for the quality check.": "正在结束录制：保存数据后，质量检查最多等待 20 秒。",
     "Live quality check did not finish within 20 seconds.": "实时质量检查未能在 20 秒内完成。",
-    "SPI Bridge (bus {bus}, addr {address}): no USB access permission. Run this tool once with sudo (no arguments), then replug the bridge.": (
-        "SPI Bridge（bus {bus}，addr {address}）：没有 USB 访问权限。"
-        "请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
-    ),
-    "libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0": (
-        "未找到 libusb-1.0，请先安装：sudo apt install libusb-1.0-0"
-    ),
-    "SPI Bridge (bus {bus}, addr {address}) cannot be opened: {detail}": (
-        "SPI Bridge（bus {bus}，addr {address}）无法打开：{detail}"
-    ),
-    "USJ {port}: no read/write permission. Add your user to the dialout group (sudo usermod -aG dialout $USER), then log in again.": (
-        "USJ {port}：没有读写权限。请把当前用户加入 dialout 组（sudo usermod -aG dialout $USER），然后重新登录。"
-    ),
-    "USJ {port} cannot be opened: {detail}": "USJ {port} 无法打开：{detail}",
+    "{label} {port}: no read/write permission.": "{label} {port}：没有读写权限。",
+    "{label} {port} cannot be opened: {detail}": "{label} {port} 无法打开：{detail}",
+    "Live quality check did not finish within {seconds:g} seconds.": "实时质量检查未能在 {seconds:g} 秒内完成。",
+    "Recording I/O did not finish within {seconds:g} seconds; raw saving cannot be confirmed.": "录制 IO 未能在 {seconds:g} 秒内完成收尾；无法确认原始数据已完整保存。",
+    "Recording processes could not be stopped; completion is still pending.": "录制进程未能停止；收尾仍未完成。",
 }
 
 
@@ -211,42 +269,7 @@ class _CatalogTranslations(gettext.NullTranslations):
         return self._catalog.get(message, message)
 
 
-def _language_of(locale_value: str) -> str | None:
-    """The language this tool ships for one locale string, or None for another language."""
-    normalized = locale_value.strip().lower()
-    if normalized.startswith(("zh", "chinese")):
-        return CHINESE
-    if normalized.startswith(("en", "english")):
-        return ENGLISH
-    return None
-
-
-def _system_language() -> str:
-    """The UI language from the message locale, then from the locale table.
-
-    Only message categories count: `LC_TIME` or `LC_NUMERIC` say how to format
-    dates and numbers, not which language the user reads. `locale.getlocale()`
-    reads the same variables through the C library, but it reports
-    `(None, None)` when the named locale is not generated on the machine, so the
-    environment is consulted first.
-    """
-    # LANGUAGE is a colon-separated priority list; skip languages not shipped here.
-    for candidate in os.environ.get("LANGUAGE", "").split(":"):
-        language = _language_of(candidate)
-        if language is not None:
-            return language
-
-    # Each of these names exactly one locale, and LC_ALL wins over LANG, so an
-    # unsupported language here falls back to English instead of LANG.
-    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
-        value = os.environ.get(name, "").strip()
-        if value:
-            return _language_of(value) or ENGLISH
-
-    return _language_of(locale.getlocale()[0] or "") or ENGLISH
-
-
-_language = _system_language()
+_language = ENGLISH
 _translations = {
     ENGLISH: gettext.NullTranslations(),
     CHINESE: _CatalogTranslations(_ZH_CN),

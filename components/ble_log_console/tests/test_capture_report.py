@@ -119,7 +119,7 @@ def _result(
     )
 
 
-def _report(result: CapturePipelineResult, *, console_log_error: str | None = None):
+def _report(result: CapturePipelineResult, *, console_log_error: str | None = None, hci_error: str | None = None):
     return build_capture_report(
         result,
         TransportConfig(TransportMode.UART, "COM3", "COM3", 921600),
@@ -129,6 +129,8 @@ def _report(result: CapturePipelineResult, *, console_log_error: str | None = No
         console_log_paths=(Path("capture_console.log"),),
         report_path=Path("capture_report.txt"),
         console_log_error=console_log_error,
+        hci_paths=(Path("capture_hci.log"), Path("capture_hci_btsnoop.log")) if hci_error else (),
+        hci_error=hci_error,
     )
 
 
@@ -764,3 +766,14 @@ def test_save_error_copy_preserves_each_recording_outcome(
     assert summary_label in summary
     if writer_error:
         assert ("Writer: raw sync EIO" if language == "en" else "写入器: raw sync EIO") in text
+
+
+def test_hci_save_error_is_in_report_without_invalidating_raw_recording():
+    report = _report(_result(), hci_error="disk full")
+    assert report.raw_complete
+    assert report.verdict is CaptureVerdict.WARNING
+    assert report.hci_error == "disk full"
+    text = format_capture_report(report)
+    assert "capture_hci.log" in text and "capture_hci_btsnoop.log" in text
+    assert "disk full" in text
+    assert any("HCI" in warning for warning in report.warnings + report.reasons)

@@ -123,7 +123,7 @@ USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is oft
 
 > **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
 
-USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CONFIG_BLE_LOG_PRPH_USB`, USB ID `303A:10B1`); it is a separate mode that this guide does not cover. USJ uses the built-in USB Serial/JTAG controller, which keeps USB ID `303A:1001`.
+USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CONFIG_BLE_LOG_PRPH_USB`, USB ID `303A:10B1`); see [USB Output and USJ instructions](Console-User-Guide-EN.md#usb-direct) for its connection and firmware configuration. USJ uses the built-in USB Serial/JTAG controller, which keeps USB ID `303A:1001`.
 
 ### 3.1 Connection Requirements
 
@@ -131,7 +131,7 @@ USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CO
 | --- | --- | --- |
 | Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
 | Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
-| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj`, or the port list in USJ mode, which lists only `303A:1001` ports. |
+| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj` to list only `303A:1001` ports, or select a port labeled **USJ** in the interactive **USB** list. |
 | Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool shows and saves this text, warns if text continues, and keeps recording. |
 
 ### 3.2 Configuration and Connection
@@ -149,7 +149,7 @@ The USJ link rate is not configurable. Use the trial recording and quality repor
 
 ### 3.3 Connect the Tool
 
-After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USJ** and the port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
+After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USB**, then the **USJ** port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
 
 > The tool does not send a reset sequence. While opening the port it releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, and then leaves both lines released. The operating system or its USB driver can still change these lines while opening the device, which can reset the board. Connect when the application can be interrupted, and check whether connecting resets the board on this PC.
 

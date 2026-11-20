@@ -123,7 +123,7 @@ USJ 通过芯片内置的 USB Serial/JTAG 端口发送 BLE Log，该端口通常
 
 > **USJ 需要固件支持。** 只有构建固件所用的 ESP-IDF 在 BLE Log 外设选项中提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 时，才能使用 USJ。没有该选项时，这个固件不能使用 USJ，请改用 [SPI](#spi) 或 [UART](#uart)。
 
-USJ 不同于 USB Output 模式。USB Output 在 USB OTG 外设上使用 TinyUSB（`CONFIG_BLE_LOG_PRPH_USB`，USB ID `303A:10B1`），是本指南不涉及的另一种模式；USJ 使用芯片内置的 USB Serial/JTAG 控制器，USB ID 保持 `303A:1001`。
+USJ 不同于 USB Output 模式。USB Output 在 USB OTG 外设上使用 TinyUSB（`CONFIG_BLE_LOG_PRPH_USB`，USB ID `303A:10B1`），其接线和固件配置见 [USB Output 与 USJ 使用说明](Console-User-Guide-CN.md#usb-direct)；USJ 使用芯片内置的 USB Serial/JTAG 控制器，USB ID 保持 `303A:1001`。
 
 ### 3.1 接入条件
 
@@ -131,7 +131,7 @@ USJ 不同于 USB Output 模式。USB Output 在 USB OTG 外设上使用 TinyUSB
 | --- | --- | --- |
 | 固件选项 | **当前芯片和 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。**<br>芯片需带有 USB Serial/JTAG 控制器。 | 没有该选项时选择 SPI 或 UART。 |
 | 端口占用 | **USB Serial/JTAG 端口只能由 BLE Log 使用。**<br>主控制台或第二控制台、esp_trace、OpenThread RCP 使用 USB Serial/JTAG，或关闭了 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` 时，该选项会被隐藏，menuconfig 中显示 “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”。带 USB Serial/JTAG 的芯片上，第二控制台默认使用该端口。 | 仅当原问题仍可复现时，才把这些功能移出该端口；否则选择 SPI 或 UART。 |
-| USB 连接 | **电脑直接连接芯片内置的 USB Serial/JTAG 端口。**<br>电脑上显示的 USB ID 为 `303A:1001`。经过板载 USB 转串口芯片的 USB 口属于 UART 连接。 | 使用 `ports --mode usj` 或 USJ 模式下的端口列表核对，二者只列出 `303A:1001` 端口。 |
+| USB 连接 | **电脑直接连接芯片内置的 USB Serial/JTAG 端口。**<br>电脑上显示的 USB ID 为 `303A:1001`。经过板载 USB 转串口芯片的 USB 口属于 UART 连接。 | 使用 `ports --mode usj` 仅列出 `303A:1001` 端口，或在交互界面的 **USB** 列表中选择标有 **USJ** 的端口。 |
 | 端口上的文本 | BLE Log 启动前打印的启动信息，以及崩溃转储等部分 ROM 输出，仍可能出现在该端口。 | 属于正常现象。工具会显示并保存这些文本；文本持续出现时给出警告，录制继续。 |
 
 ### 3.2 配置和连接
@@ -149,7 +149,7 @@ USJ 链路速率不可配置，是否足以承载所需日志量，以试录和�
 
 ### 3.3 连接工具
 
-编译、烧录后，关闭占用该端口的串口监视器，在 BLE Log Console 中选择 **USJ** 和 USB ID 为 `303A:1001` 的端口；命令行对应 `--mode usj`。USJ 没有波特率，不需要运行 UART 波特率探测脚本。
+编译、烧录后，关闭占用该端口的串口监视器，在 BLE Log Console 中选择 **USB**，再选择标有 **USJ**、USB ID 为 `303A:1001` 的端口；命令行对应 `--mode usj`。USJ 没有波特率，不需要运行 UART 波特率探测脚本。
 
 > 工具不会发送复位时序。打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，可能使板卡复位。请在业务可以中断时连接，并在这台电脑上确认连接是否会导致复位。
 

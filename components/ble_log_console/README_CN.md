@@ -11,6 +11,8 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 - **USJ**：通过芯片内置的 USB Serial/JTAG 口接收 BLE 日志。
 - **USB Output**：通过固件提供的 TinyUSB CDC-ACM 口接收 BLE 日志。
 
+交互界面中，USB OTG 和 USJ 统一选择 **USB**，再选择设备。端口标签标明类型，仅在 USB 描述符提供型号时显示芯片型号。列出端口不会打开串口或发送探测命令。命令行继续支持 `--mode usb`（OTG）和 `--mode usj`。
+
 ## 工具下载
 
 请从 GitHub Release 下载最新稳定版工具包：
@@ -46,14 +48,14 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 ./ble_log_console_ubuntu_v1.1.0
 ```
 
-3. 在界面中选择语言、传输模式、端口、UART 波特率和日志保存目录，然后点击 **Connect** 开始接收日志。
+3. 默认使用英文。在右上角切换语言会立即更新设置页，并保留已填设置。选择传输模式、端口、UART 波特率和日志保存目录。可在“实时显示”中勾选 **Host**、**HCI** 或“控制台”（仅 UART），然后点击 **连接（Connect）**。显示类别默认全部关闭，不影响录制、日志文件保存、状态和警告提示。
 4. 录制完成后点击 **Stop & Review**，工具会保存数据并显示质量结论。
 
-Linux 下首次使用 SPI Bridge 时，请先用 `sudo` 运行一次工具，然后重新拔插 Bridge 设备：
+SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
 
-```bash
-sudo ./ble_log_console_ubuntu_v1.1.0
-```
+发布二进制不包含 Bulk 对照实现和 PyUSB。开发对照代码位于 `tools/spi_bulk_transport.py`，所需依赖仅包含在 `test` 扩展中。
+
+Linux 下 CDC 使用串口访问权限（通常由 `dialout` 组提供）。当前用户有端口读写权限时，直接正常启动即可。先关闭其他占用 Bridge 的程序；如果之前的 Bulk 接收器解绑了串口驱动，关闭该程序后重新插拔 Bridge。
 
 日志会保存到选择的目录。接线方式、固件配置和基本操作请查看 [中文用户指南](./docs/Console-User-Guide-CN.md)。
 
@@ -93,7 +95,10 @@ cd <ble_log_console 源码目录>
 
 #### Windows 系统
 
-在 Windows 下进入源码目录，首次使用时先准备环境：
+Windows 源码安装需要 Visual Studio Build Tools 的 **使用 C++ 的桌面开发** 工作负载
+（MSVC 和 Windows SDK）。安装后，从 Developer Command Prompt 进入源码目录。
+随附的 BLFD 源码包会在本机编译，参考构建环境为 Python 3.11 x64；运行已打包的 exe 不需要编译工具。
+首次使用时先准备环境：
 
 ```bat
 .\install.bat
@@ -191,27 +196,40 @@ python console.py --mode spi --port <PORT>
 | `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi`、`usb`（USB Output）或 `usj`（USB Serial/JTAG） |
 | `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
-| `--log-dir` | `-d` | `./logs` | 录制文件保存目录 |
+| `--log-dir` | `-d` | 上次使用的目录，无记录时为 `./logs` | 录制文件保存目录；显式指定时优先于记住的目录 |
 | `--debug` | 无 | 关闭 | 显示额外的调试信息 |
+| `--show-log` | 无 | 全部关闭 | 显示 `host`、`hci` 或 `console`；可重复指定，如 `--show-log host --show-log hci`，不影响日志文件保存 |
 
 子命令：
 
 | 命令 | 说明 |
 | --- | --- |
-| `ports` | 列出 UART、SPI Bridge、USB Output 和 USJ 端口，并说明插着却用不了的 SPI Bridge 或 USJ 端口的原因；可用 `--mode` 过滤 |
+| `ports` | 列出 UART、SPI Bridge、USB Output 和 USJ 端口，并显示 CDC 端口的权限问题；可用 `--mode` 过滤 |
 | `ls` | 列出指定目录中的 `ble_log_*.bin` 录制文件 |
 
 `--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。
 
 ### USJ 模式
 
-USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接收 BLE Log。`ports` 子命令和交互界面只列出这个 USB ID 的端口；当前用户没有读写权限时会说明该端口打不开。波特率设置不适用。固件需要把 BLE Log 输出到 USB Serial/JTAG，这要求所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，见 [USJ 配置](./docs/Config-Guide-CN.md#usj)。
+USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接收 BLE Log。`ports --mode usj` 只列出这个 USB ID 的端口；交互界面的 **USB** 列表同时显示 USJ 和 USB OTG 端口。波特率设置不适用。固件需要把 BLE Log 输出到 USB Serial/JTAG，这要求所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，见 [USJ 配置](./docs/Config-Guide-CN.md#usj)。
 
 在这个端口上，DTR 和 RTS 线控制芯片的复位和启动模式。BLE Log Console 打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，因此 `r` 快捷键不会复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认打开端口是否会复位开发板。
 
+**Host 字典**在录制文件创建成功后会记住所选目录，包括主动清空。即使随后端口连接失败，选择仍会保留；显式 `--log-database` 优先。目录失效时回退到自动发现，源码与二进制版本共用当前用户的应用设置。
+
+### 开录积压与分析文件
+
+所有传输模式都会在正常解析过程中观察开录快照；实时显示和解码日志仍保留原始流。仅在接收开始后的前 5 秒内，v8 快照同时出现设备时间被压缩的大幅前跳、序号及快照计数前进，并恢复两个稳定间隔，才会确认旧积压边界。证据不明确、元数据不支持、复位或时钟回绕时不切分；后续缺口不会重新归为开录积压。
+
+收到的全部字节始终保留在原始 `.bin` 中。Console 在实时解析时将同一份已解码帧交给整份录制和候选新区间的检查器；确认边界并安全保存后，结论和丢失指标使用新区间结果；总字节数、总帧数和解析覆盖仍描述完整录制。报告显示区间偏移、时间证据及原始流缺失序号数。边界之后的真实丢包仍影响结论。新数据区间未能完整检查时，保守回退到原始流结论并提示原因。
+
+Host 任务映射不再阻止积压识别，完整原始文件始终保留为后续分析输入。报告记录新区间起点，不再自动生成额外的 `_analysis.bin`。停止时仅收尾检查状态，不重读或复制整份录制；任务映射和日志上下文始终保留。新区间只有快照时，报告如实显示该区间普通日志为零，不因这一点强制重录。
+
+识别依赖时间和序号证据，并非设备提供的精确队列边界。异常设备时钟前跳可能产生相似证据；积压不足阈值、缺少快照或观察时间不足时可能无法识别。完整原始数据和原始断档统计始终保留供核对。
+
 ### UART 与 USJ 上的文本数据
 
-UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动信息或崩溃转储。在这两种模式下，无法解析为 BLE Log 帧的字节会显示在日志区域，并保存到 `_console.log`，前后带有“未解码成功数据”标记。工具只保留可打印 ASCII，保存到文件时去掉颜色，并统一换行符。一行文本在换行、后面出现 BLE Log 数据或长度达到 16 KiB 时才显示在日志区域，因此不会被界面刷新拆开。可能还会补全的半个帧不会提前显示；录制结束时，剩余的未解码尾部只显示一次。这些文本不计入 BLE Log 帧。原始 `.bin` 文件保存工具收到的全部字节；报告了传输或保存失败时，该文件可能不完整。在任何模式下，如果 `_console.log` 无法写入或同步到存储，工具只提示一次并停止写入该文件。日志区域继续显示文本。此错误本身不会停止原始录制。质量报告会说明串口转发日志未能完整保存，并单独报告原始录制的保存失败。
+UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动信息或崩溃转储。在这两种模式下，无法解析为 BLE Log 帧的字节会显示在日志区域，并保存到 `_console.log`，前后带有“未解码成功数据”标记。工具只保留可打印 ASCII，保存到文件时去掉颜色，并统一换行符。一行文本在换行、后面出现 BLE Log 数据或长度达到 16 KiB 时才显示在日志区域，因此不会被界面刷新拆开。可能还会补全的半个帧不会提前显示；录制结束时，剩余的未解码尾部只显示一次。这些文本不计入 BLE Log 帧。原始 `.bin` 文件保存工具收到的全部字节；报告了传输或保存失败时，该文件可能不完整。在任何模式下，如果 `_console.log` 无法写入或同步到存储，工具只提示一次并停止写入该文件。已开启的日志类别继续显示文本。此错误本身不会停止原始录制。质量报告会说明串口转发日志未能完整保存，并单独报告原始录制的保存失败。
 
 工具还会识别端口上的数据内容：
 
@@ -238,3 +256,10 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 ## 故障排查
 
 连接异常、日志显示、质量检查限制、源码环境安装和 Bridge 版本确认见[用户指南末尾的故障排查](./docs/Console-User-Guide-CN.md#faq-no-port)。
+
+### Parser Core 接入版本
+
+此分支使用统一的 BLFD 1.0.0.dev1 包进行流式完整性检查和固件统计。
+
+报告列出整段录制的有序解析产物，覆盖开头积压的数据。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
+Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。

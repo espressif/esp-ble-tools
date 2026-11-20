@@ -223,9 +223,9 @@ def test_pipeline_shows_text_only_for_console_text_modes_and_saves_exact_raw(
     assert output.read_bytes() == data
     assert result.raw_bytes == len(data)
     assert result.parser_frames == 1
-    ui, saved = _present(CaptureEventPresenter(output), events)
+    ui, saved = _present(CaptureEventPresenter(output, mode=mode), events)
     for text in (ui, saved):
-        assert "redirected" in text
+        assert ("redirected" in text) is (mode is not TransportMode.SPI_USB_BRIDGE)
         assert ("panic" in text) is shows_text
         assert ("END" in text) is shows_text
     identity = result.final_snapshot.stream_identity if result.final_snapshot else None
