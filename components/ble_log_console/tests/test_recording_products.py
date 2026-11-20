@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+
+from queue import Queue
+
+from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
+from src.backend.analysis.recording_products import RecordingProducts
+from src.backend.analysis.worker import run_parser_loop
+from src.backend.io.writer import WriterConfig
+
+from tests.test_host_logs import frame
+
+
+def test_missing_middle_and_tail_across_raw_parts(tmp_path):
+    path = tmp_path / "rec.bin"
+    raw = frame(5, 1, bytes(4) + b"first\n") + frame(5, 2, bytes(4) + b"second\n")
+    second = path.with_name("rec_part002.bin")
+    path.write_bytes(raw[:11])
+    second.write_bytes(raw[11:])
+    incoming, events = Queue(), Queue()
+    incoming.put(ReceivedChunk(raw[:8], 1, raw_offset=0))
+    incoming.put(ReceivedChunk(raw[16:21], 2, raw_offset=16))
+    incoming.put(ReceivedEnd(len(raw), (path, second), True))
+    run_parser_loop(incoming, events, analysis_output=WriterConfig(path))
+    result = next(item for item in events.queue if isinstance(item, RecordingProducts))
+    assert result.error is None
+    assert [p.read_bytes() for p in result.paths] == [b"first\nsecond\n"]
+
+
+def test_unconfirmed_raw_never_publishes_ordered_products(tmp_path):
+    path = tmp_path / "rec.bin"
+    incoming, events = Queue(), Queue()
+    incoming.put(ReceivedChunk(frame(5, 1, bytes(4) + b"first"), 1, raw_offset=0))
+    incoming.put(ReceivedEnd(50, (), False))
+    run_parser_loop(incoming, events, analysis_output=WriterConfig(path))
+    result = next(item for item in events.queue if isinstance(item, RecordingProducts))
+    assert result.error and not result.paths
+    assert not list(tmp_path.iterdir())
+
+
+def test_resume_during_recording_only_reads_to_next_chunk(tmp_path):
+    from src.backend.analysis.recording_products import RecordingProductWriter
+
+    path = tmp_path / "rec.bin"
+    data = frame(5, 1, bytes(4) + b"start") + frame(5, 2, bytes(4) + b"end")
+    path.write_bytes(data)
+    writer = RecordingProductWriter(path, None, None)
+    writer.receive(ReceivedChunk(data[:7], 0, raw_offset=0))
+    writer.receive(ReceivedChunk(data[14:20], 1, raw_offset=14, saved_paths=(path,)))
+    assert writer.offset == 20
+    writer.receive(ReceivedChunk(data[20:], 2, raw_offset=20))
+    result = writer.finish(ReceivedEnd(len(data), (path,), True))
+    assert result.error is None
+    assert result.paths[0].read_bytes() == b"startend"

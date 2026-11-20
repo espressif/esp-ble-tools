@@ -17,6 +17,7 @@ from typing import Any
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.opening_quality import OpeningQuality
 from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
+from src.backend.analysis.recording_products import RecordingProducts
 from src.backend.analysis.startup import StartupDecision
 from src.backend.analysis.stream_identification import DEFAULT_IDENTIFICATION_RULES, IdentificationRules
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus, run_analysis_loop, run_analysis_process
@@ -60,6 +61,7 @@ class CapturePipelineResult:
     aggregator_finalized: bool = False
     final_snapshot: AggregatorSnapshot | None = None
     startup: StartupDecision | None = None
+    products: RecordingProducts | None = None
     opening_quality: OpeningQuality | None = None
 
 
@@ -90,6 +92,7 @@ def _events_for_result(events: list[Any]) -> list[Any]:
                 AggregatorProcessEvent,
                 StartupDecision,
                 OpeningQuality,
+                RecordingProducts,
             ),
         )
     ]
@@ -112,11 +115,14 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
     aggregator_finalized = False
     final_snapshot: AggregatorSnapshot | None = None
     startup: StartupDecision | None = None
+    products: RecordingProducts | None = None
     opening_quality: OpeningQuality | None = None
 
     for event in events:
         if isinstance(event, StartupDecision):
             startup = event
+        elif isinstance(event, RecordingProducts):
+            products = event
         elif isinstance(event, OpeningQuality):
             opening_quality = event
         elif isinstance(event, ReaderProcessEvent):
@@ -176,6 +182,7 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         aggregator_finalized=aggregator_finalized,
         final_snapshot=final_snapshot,
         startup=startup,
+        products=products,
         opening_quality=opening_quality,
     )
 

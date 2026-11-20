@@ -425,6 +425,8 @@ class CaptureReport:
     firmware_version: int | None = None
     firmware_contract_known: bool = True
     stream_identity: "StreamIdentity | None" = None
+    parsed_paths: tuple[Path, ...] = ()
+    product_error: str | None = None
     hci_paths: tuple[Path, ...] = ()
     hci_error: str | None = None
     console_log_error: str | None = None

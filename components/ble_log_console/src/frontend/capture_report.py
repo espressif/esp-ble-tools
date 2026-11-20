@@ -201,6 +201,8 @@ def build_capture_report(
         findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
     if hci_error is not None:
         findings.append("HCI files could not be saved completely; retain the original raw recording.")
+    if result.products and result.products.error:
+        findings.append("Ordered parser products could not be saved completely.")
     if quality_error:
         findings.append("The fresh interval could not be verified; quality metrics describe the original recording.")
 
@@ -266,6 +268,11 @@ def build_capture_report(
             reasons.append(warning)
 
     peak_bits_per_sec = snapshot.stats.transport.max_rx_bits_per_sec if snapshot is not None else 0.0
+    binary_hci = tuple(
+        path
+        for path in (result.products.paths if result.products else ())
+        if "_btsnoop" in path.name.removeprefix(result.raw_paths[0].stem if result.raw_paths else "")
+    )
     return CaptureReport(
         verdict=verdict,
         reasons=tuple(reasons),
@@ -275,7 +282,11 @@ def build_capture_report(
         duration_sec=max(0.0, duration_sec),
         raw_paths=result.raw_paths,
         console_log_paths=console_log_paths,
-        hci_paths=hci_paths,
+        parsed_paths=tuple(
+            path for path in (result.products.paths if result.products else ()) if path not in binary_hci
+        ),
+        product_error=result.products.error if result.products else None,
+        hci_paths=(*hci_paths, *binary_hci),
         hci_error=hci_error,
         report_path=report_path,
         raw_bytes=result.raw_bytes,
@@ -610,6 +621,9 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
     lines.extend(f"  {field('HCI log', path)}" for path in report.hci_paths)
+    lines.extend(f"  {field('Parser output', path)}" for path in report.parsed_paths)
+    if report.product_error:
+        lines.append(f"  {field('Parser output error', report.product_error)}")
     if report.hci_error:
         lines.append(f"  {field('HCI file error', report.hci_error)}")
     if report.console_log_error:

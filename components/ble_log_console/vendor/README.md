@@ -1,6 +1,6 @@
 # BLFD integration packages
 
-The public `esp-blfd==1.0.0.dev0` wheel unifies framing, integrity checking,
+The public `esp-blfd==1.0.0.dev1` wheel unifies framing, integrity checking,
 streaming parsing and firmware statistics. Console uses the canonical
 `ble_log_frame_decoder` API and does not install separate Core/Checker packages.
 It enables integrity checking, firmware counters, and Host/HCI content decoding.
@@ -20,14 +20,14 @@ The build checks that all three native engines load before packaging.
 The Windows dependency selection is checked on Linux; MSVC compilation,
 Windows executable startup and hardware reception still require Windows testing.
 
-Source revision: `424f9e54112da5104d40ec21fa8cdd6c385ddf12`.
+Source revision: `dca35bf06fb2dbc877fd46774585f98864ac88c6`.
 Built with manylinux2014 and repaired with auditwheel.
 
-SHA256 of `esp_blfd-1.0.0.dev0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`:
-`b3fc3670b649063d6455e6629899263ef96567ac292f1bb73c03b8ee0d81fe41`
+SHA256 of `esp_blfd-1.0.0.dev1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`:
+`89f13dbe9642fbaa101c5504432248129202b9f3a3e59370b265e5ee77fa3b6c`
 
-SHA256 of `esp_blfd-1.0.0.dev0.tar.gz`:
-`63406657c7070fdc1c190efd6f6363a0d8bf077c5efc8a41dee8613d536e1afc`
+SHA256 of `esp_blfd-1.0.0.dev1.tar.gz`:
+`f517e8ff668922d6a053384030fd9f8cd25c8c42cb731a503bb7d939a7ac759e`
 
-The source distribution was built with `uv build --sdist` from the revision above.
+The source distribution was built with `python -m build --sdist` from the revision above.
 It contains the three native engine sources and excludes the internal package.

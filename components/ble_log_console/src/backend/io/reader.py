@@ -226,6 +226,7 @@ def run_reader_loop(
     writer_failed = False
     raw_offset = 0
     parse_dropped_chunks = 0
+    next_recovery_hint = 0.0
     parse_dropped_bytes = 0
     raw_stats = RawStatsBatcher(raw_stats_queue, interval_sec=raw_stats_interval_sec, clock=clock)
 
@@ -252,7 +253,7 @@ def run_reader_loop(
         report_parse_backlog(message)
 
     def handle_block(block: bytes, received_at_ms: int) -> bool:
-        nonlocal writer_failed, raw_offset
+        nonlocal writer_failed, raw_offset, next_recovery_hint
         received_monotonic = time.monotonic()
         try:
             _write_block(writer, block, ui_queue, timeout=queue_put_timeout)
@@ -262,13 +263,16 @@ def run_reader_loop(
             return False
 
         raw_stats.record(len(block))
-        chunk = ReceivedChunk(block, received_at_ms, received_monotonic, raw_offset)
+        paths = writer.status().paths if parse_dropped_chunks and received_monotonic >= next_recovery_hint else ()
+        chunk = ReceivedChunk(block, received_at_ms, received_monotonic, raw_offset, paths)
         raw_offset += len(block)
         if not _put_parse(parse_queue, chunk):
             record_parse_drop(
                 block,
                 ("Realtime parser fell behind; raw recording continues, live stats may be incomplete."),
             )
+        elif paths:
+            next_recovery_hint = received_monotonic + 1.0
         return True
 
     try:

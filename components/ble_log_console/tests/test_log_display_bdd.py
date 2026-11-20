@@ -51,7 +51,9 @@ def select_and_record(world, categories):
     world.output = world.tmp_path / "recording.bin"
     stop = Event()
     run_io_loop(BytesReader(world.raw, stop), WriterConfig(world.output), incoming, counters, outgoing, stop)
-    run_analysis_process(incoming, counters, outgoing, log_database=world.database)
+    run_analysis_process(
+        incoming, counters, outgoing, analysis_output=WriterConfig(world.output), log_database=world.database
+    )
     events = []
     while not outgoing.empty():
         events.append(outgoing.get_nowait())

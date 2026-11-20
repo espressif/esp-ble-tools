@@ -268,7 +268,7 @@ SPI Bridge 模式不显示转发文本。`_console.log` 不能替代用于分析
 
 所有模式均支持 Host 日志的实时显示，并保存到 `_console.log`。压缩 Host 日志需要与固件匹配的字典：默认查找当前工作目录下的 `ble_log_database/BLE_HOST_logs.json`，其次查找当前目录的 `BLE_HOST_logs.json`。可在启动界面的 **Host 字典** 中选择所在目录，或使用 `--log-database <目录>`；留空则跳过压缩日志解析。录制文件创建成功后会记住保存目录和字典选择，包括主动清空字典。即使随后端口连接失败，重新启动时也会恢复选择。显式 `--log-database` 优先，已记忆目录失效或不可读取时回退到自动发现。配置保存于当前用户的应用设置目录，源码与二进制版本共用。
 
-HCI 和 LL_HCI 统一显示为 HCI，展示时间、收发方向、包类型和十六进制内容，并保存到 `_hci.log` 与 `_hci_btsnoop.log`，无需日志字典。时间单位未知的包仅显示和保存文本，不写入 BTSnoop。LL_TASK 和 LL_ISR 不解码，全部原始数据仍完整保存在 `.bin` 中。压缩日志等待分片拼齐后显示；停止时仍未拼齐的内容会标记为不完整。
+报告列出整段录制的有序解析产物，覆盖开头积压的数据。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。 LL_TASK 和 LL_ISR 数据保留在原始录制中。停止时，实时预览会标记尚未拼齐的 Host 消息。
 
 
 ### 5.3 结束录制并检查结果

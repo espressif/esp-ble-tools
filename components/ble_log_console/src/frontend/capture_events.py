@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import struct
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -373,8 +372,8 @@ class CaptureEventPresenter:
                         )
                     elif console_event.reason == "unknown_protocol":
                         warning = tr(
-                            "Some compressed Host frames arrived before protocol version information; "
-                            "those frames were not decoded. Raw data is retained."
+                            "Live preview is waiting for protocol version information. "
+                            "The recording includes these frames for ordered export."
                         )
                     else:
                         warning = tr(
@@ -399,27 +398,13 @@ class CaptureEventPresenter:
         if self._hci_error is not None:
             return
         try:
-            outputs = {
-                "hci": f"[{_format_receive_timestamp(event.received_at_ms)}] {event.text}"
-                + (f" [incomplete: {event.reason}]" if event.reason else "")
-                + "\n"
-            }
-            if event.btsnoop:
-                outputs["hci_btsnoop"] = event.btsnoop
-            for name, content in outputs.items():
-                if name not in self._hci_files:
-                    path = self._output_path.with_name(f"{self._output_path.stem}_{name}.log")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    file = (
-                        path.open("xb")
-                        if isinstance(content, bytes)
-                        else path.open("x", encoding="utf-8", newline="\n")
-                    )
-                    self._hci_files[name] = file
-                    self._hci_paths.append(path)
-                    if isinstance(content, bytes):
-                        file.write(b"btsnoop\x00" + struct.pack("!II", 1, 1002))
-                self._hci_files[name].write(content)
+            if "hci" not in self._hci_files:
+                path = self._output_path.with_name(f"{self._output_path.stem}_hci.log")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self._hci_files["hci"] = path.open("x", encoding="utf-8", newline="\n")
+                self._hci_paths.append(path)
+            suffix = f" [incomplete: {event.reason}]" if event.reason else ""
+            self._hci_files["hci"].write(f"[{_format_receive_timestamp(event.received_at_ms)}] {event.text}{suffix}\n")
             if self._clock() - self._last_hci_flush_at >= CONSOLE_LOG_FLUSH_INTERVAL_SEC:
                 for file in self._hci_files.values():
                     file.flush()

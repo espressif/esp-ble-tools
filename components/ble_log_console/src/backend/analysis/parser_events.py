@@ -76,6 +76,7 @@ class ReceivedChunk(NamedTuple):
     received_at_ms: int
     received_monotonic: float | None = None
     raw_offset: int | None = None
+    saved_paths: tuple[Path, ...] = ()
 
 
 class ReceivedEnd(NamedTuple):

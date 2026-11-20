@@ -152,7 +152,7 @@ def host_before_protocol(world):
 def prefix_warning_only(world):
     notices = [message.text for message in world.messages if isinstance(message, UserNotice)]
     assert len(notices) == 1
-    assert "before protocol version information" in notices[0]
+    assert "waiting for protocol version information" in notices[0]
     assert "Host log decoding incomplete" not in notices[0]
     lines = [message.text for message in world.messages if isinstance(message, LogLine)]
     assert len(lines) == 1 and "hello compressed" in lines[0]

@@ -40,7 +40,16 @@ def test_hci_sources_share_display_and_btsnoop(tmp_path, source, chunk_size):
     assert any(isinstance(m, LogLine) and "1000000 us TX HCI type=1 03 0c 00" in m.text for m in messages)
     text = (tmp_path / "recording_hci.log").read_text()
     assert "TX HCI type=1 03 0c 00" in text and "LL_HCI" not in text
-    binary = (tmp_path / "recording_hci_btsnoop.log").read_bytes()
+    from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
+    from src.backend.analysis.recording_products import RecordingProductWriter
+
+    writer = RecordingProductWriter(tmp_path / "recording.bin", None, None)
+    for offset in range(0, len(data), chunk_size):
+        writer.receive(ReceivedChunk(data[offset : offset + chunk_size], 0, raw_offset=offset))
+    result = writer.finish(ReceivedEnd(len(data), raw_complete=True))
+    assert result.error is None
+    (path,) = result.paths
+    binary = path.read_bytes()
     assert binary[:16] == b"btsnoop\x00" + struct.pack("!II", 1, 1002)
     assert struct.unpack("!IIIIQ", binary[16:40]) == (4, 4, 2, 0, 0x00DCDDB30F2F8000 + 1000000)
     assert binary[40:] == b"\x01\x03\x0c\x00"

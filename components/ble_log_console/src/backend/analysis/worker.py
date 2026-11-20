@@ -17,6 +17,7 @@ from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
 from src.backend.analysis.opening_quality import OpeningQuality
 from src.backend.analysis.parser import BleLogParser
 from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk, ReceivedEnd
+from src.backend.analysis.recording_products import RecordingProducts, RecordingProductWriter
 from src.backend.analysis.startup import StartupDecision
 from src.backend.analysis.stream_identification import IdentificationRules
 from src.backend.io.writer import WriterConfig
@@ -50,7 +51,7 @@ class AggregatorProcessEvent:
     message: str = ""
 
 
-ParserEvent = ParseBatch | ParseSummary | ParserStatus | StartupDecision | OpeningQuality
+ParserEvent = ParseBatch | ParseSummary | ParserStatus | StartupDecision | OpeningQuality | RecordingProducts
 
 
 def _put_parser_event(output_queue: Any, event: ParserEvent) -> None:
@@ -65,7 +66,8 @@ def _put_analysis_event(
     | AggregatorProcessEvent
     | ParserStatus
     | StartupDecision
-    | OpeningQuality,
+    | OpeningQuality
+    | RecordingProducts,
 ) -> None:
     if ui_queue is not None:
         ui_queue.put(event)
@@ -83,6 +85,9 @@ def run_parser_loop(
     """Parse raw chunks from parse_queue until a None sentinel is received."""
 
     parser = None
+    products = (
+        RecordingProductWriter(analysis_output.base_path, log_database, checksum_mode) if analysis_output else None
+    )
     try:
         parser = BleLogParser(checksum_mode=checksum_mode, identification=identification, log_database=log_database)
         end: ReceivedEnd | None = None
@@ -118,6 +123,8 @@ def run_parser_loop(
             if chunks:
                 batches = []
                 for chunk in chunks:
+                    if products is not None:
+                        products.receive(chunk)
                     contiguous = contiguous and chunk.raw_offset == received_bytes
                     received_bytes += len(chunk.data)
                     batches.append(
@@ -154,10 +161,14 @@ def run_parser_loop(
                     else OpeningQuality(decision.offset_bytes, error="Raw saving or analysis coverage is incomplete")
                 )
                 _put_parser_event(output_queue, quality)
+        if products is not None:
+            _put_parser_event(output_queue, products.finish(end))
         _put_parser_event(output_queue, summary)
     except Exception as e:
         _put_parser_event(output_queue, ParserStatus(kind="error", message=str(e)))
     finally:
+        if products is not None:
+            products.close()
         if parser is not None:
             parser.close()
 
@@ -207,7 +218,7 @@ def _handle_parser_item(
     aggregator: CaptureAggregator,
     updates: list[AggregatorUpdate] | None = None,
 ) -> tuple[bool, bool]:
-    if isinstance(item, (StartupDecision, OpeningQuality)):
+    if isinstance(item, (StartupDecision, OpeningQuality, RecordingProducts)):
         if updates is not None:
             _put_merged_updates(ui_queue, updates)
         _put_analysis_event(ui_queue, item)

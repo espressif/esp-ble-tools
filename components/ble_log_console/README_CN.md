@@ -259,5 +259,7 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 
 ### Parser Core 接入版本
 
-此分支使用统一的 BLFD 1.0.0.dev0 包进行流式完整性检查和固件统计。
+此分支使用统一的 BLFD 1.0.0.dev1 包进行流式完整性检查和固件统计。
+
+报告列出整段录制的有序解析产物，覆盖开头积压的数据。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
 Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。
