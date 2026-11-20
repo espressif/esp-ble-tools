@@ -42,12 +42,13 @@ from src.backend.models import (
 )
 from src.frontend.capture_report import CaptureReportScreen
 from src.frontend.capture_session import CaptureSession
-from src.frontend.launch_screen import LaunchScreen
+from src.frontend.launch_screen import LaunchScreen, find_log_database
 from src.frontend.log_view import LogView
 from src.frontend.shortcut_screen import ShortcutScreen
 from src.frontend.stats_screen import BufUtilScreen, StatsScreen
 from src.frontend.status_panel import StatusPanel
 from src.i18n import tr
+from src.preferences import load_log_dir, save_log_dir
 
 PIPELINE_POLL_INTERVAL_SEC = 0.05
 
@@ -187,13 +188,15 @@ class BLELogApp(App):
         baudrate: int = 3_000_000,
         log_dir: Path | None = None,
         debug: bool = False,
+        log_database: Path | None = None,
     ) -> None:
         super().__init__()
         self._debug = debug
+        self._log_database = log_database if log_database is not None else find_log_database()
         self._transport_config: TransportConfig | None = (
             TransportConfig(mode=mode, label=port, port=port, baudrate=baudrate) if port is not None else None
         )
-        self._log_dir = log_dir or Path.cwd() / "logs"
+        self._log_dir = log_dir if log_dir is not None else load_log_dir() or Path.cwd() / "logs"
         self._output_path: Path | None = None
         self._capture_start_time = 0.0
         self._finalizing = False
@@ -218,7 +221,10 @@ class BLELogApp(App):
         if self._transport_config is not None:
             self._begin_capture()
         else:
-            self.push_screen(LaunchScreen(default_log_dir=self._log_dir), callback=self._on_launch_result)
+            self.push_screen(
+                LaunchScreen(default_log_dir=self._log_dir, log_database=self._log_database),
+                callback=self._on_launch_result,
+            )
 
     @property
     def funnel_snapshots(self) -> list[FunnelSnapshot]:
@@ -245,6 +251,10 @@ class BLELogApp(App):
         return list(self._saved_console_log_paths)
 
     @property
+    def saved_hci_paths(self) -> list[Path]:
+        return list(self._capture_report.hci_paths) if self._capture_report is not None else []
+
+    @property
     def saved_report_path(self) -> Path | None:
         return self._saved_report_path
 
@@ -254,6 +264,7 @@ class BLELogApp(App):
             return
         self._transport_config = config.transport_config
         self._log_dir = config.log_dir
+        self._log_database = config.log_database
         self._begin_capture()
 
     def _begin_capture(self) -> None:
@@ -263,6 +274,7 @@ class BLELogApp(App):
             self.push_screen(
                 LaunchScreen(
                     default_log_dir=self._log_dir,
+                    log_database=self._log_database,
                     default_transport_config=self._transport_config,
                     start_error=tr(
                         "Recording could not start in {path}: {message}. "
@@ -310,12 +322,14 @@ class BLELogApp(App):
             self._transport_config,
             self._output_path,
             debug=self._debug,
+            log_database=self._log_database,
         )
         with _spawn_stderr_with_real_fileno():
             start_messages = self._capture_session.start()
         self._publish_view_messages(start_messages)
         if self._capture_session.finished:
             return
+        save_log_dir(self._log_dir)
 
     def _poll_pipeline(self) -> None:
         capture_session = self._capture_session

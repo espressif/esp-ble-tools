@@ -11,6 +11,8 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 - **USJ**：通过芯片内置的 USB Serial/JTAG 口接收 BLE 日志。
 - **USB Output**：通过固件提供的 TinyUSB CDC-ACM 口接收 BLE 日志。
 
+交互界面中，USB OTG 和 USJ 统一选择 **USB**，再选择设备。端口标签标明类型，仅在 USB 描述符提供型号时显示芯片型号。列出端口不会打开串口或发送探测命令。命令行继续支持 `--mode usb`（OTG）和 `--mode usj`。
+
 ## 工具下载
 
 请从 GitHub Release 下载最新稳定版工具包：
@@ -49,7 +51,11 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 3. 在界面中选择语言、传输模式、端口、UART 波特率和日志保存目录，然后点击 **Connect** 开始接收日志。
 4. 录制完成后点击 **Stop & Review**，工具会保存数据并显示质量结论。
 
-Linux 下首次使用 SPI Bridge 时，请先用 `sudo` 运行一次工具，然后重新拔插 Bridge 设备：
+SPI Bridge 在各平台优先使用 CDC 串口，与 USB OTG、USJ 共用串口接收实现；没有 Bridge CDC 端口时才回退到直接 USB Bulk。
+
+Linux 下 CDC 使用串口访问权限（通常由 `dialout` 组提供）。当前用户有端口读写权限时，直接正常启动即可。先关闭其他占用 Bridge 的程序；如果之前的 Bulk 接收器解绑了串口驱动，关闭该程序后重新插拔 Bridge。
+
+仅在使用直接 Bulk 回退路径且需要安装 USB 访问规则时，运行一次以下命令，再重新插拔 Bridge：
 
 ```bash
 sudo ./ble_log_console_ubuntu_v1.1.0
@@ -191,7 +197,7 @@ python console.py --mode spi --port <PORT>
 | `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi`、`usb`（USB Output）或 `usj`（USB Serial/JTAG） |
 | `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
-| `--log-dir` | `-d` | `./logs` | 录制文件保存目录 |
+| `--log-dir` | `-d` | 上次使用的目录，无记录时为 `./logs` | 录制文件保存目录；显式指定时优先于记住的目录 |
 | `--debug` | 无 | 关闭 | 显示额外的调试信息 |
 
 子命令：
@@ -205,9 +211,15 @@ python console.py --mode spi --port <PORT>
 
 ### USJ 模式
 
-USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接收 BLE Log。`ports` 子命令和交互界面只列出这个 USB ID 的端口；当前用户没有读写权限时会说明该端口打不开。波特率设置不适用。固件需要把 BLE Log 输出到 USB Serial/JTAG，这要求所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，见 [USJ 配置](./docs/Config-Guide-CN.md#usj)。
+USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接收 BLE Log。`ports --mode usj` 只列出这个 USB ID 的端口；交互界面的 **USB** 列表同时显示 USJ 和 USB OTG 端口。波特率设置不适用。固件需要把 BLE Log 输出到 USB Serial/JTAG，这要求所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，见 [USJ 配置](./docs/Config-Guide-CN.md#usj)。
 
 在这个端口上，DTR 和 RTS 线控制芯片的复位和启动模式。BLE Log Console 打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，因此 `r` 快捷键不会复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认打开端口是否会复位开发板。
+
+### 开录积压与分析文件
+
+所有传输模式都会在正常解析过程中观察开录快照，实时日志和统计不等待、不滤除前缀。有效 v8 时钟和序号证据表明先收到积压旧数据、随后恢复稳定接收时，Console 会记录建议的起点偏移。证据不明确、协议不支持或前缀包含必要解析上下文时，不自动切分。后续录制缺口不会被重新归为开录积压。
+
+原始文件保存完成后，Console 从完整 SNAPSHOT 边界复制精确后缀，额外生成 `ble_log_*_analysis.bin`。原始 `.bin`、实时显示、`_console.log` 和质量指标仍覆盖原始数据流。报告记录偏移和时间证据，区分原始录制结论与分析文件，不声称切分文件已单独通过质量检查。将“用于分析的文件”及其全部分片交给 parser，并保留原始文件用于排查。正常录制不重复保存。复制会增加磁盘占用和停录后的处理时间，仍受现有分析收尾期限约束；复制或验证未能完成时，使用原始文件，`.partial` 文件不属于已完成的分析文件。
 
 ### UART 与 USJ 上的文本数据
 
@@ -238,3 +250,9 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 ## 故障排查
 
 连接异常、日志显示、质量检查限制、源码环境安装和 Bridge 版本确认见[用户指南末尾的故障排查](./docs/Console-User-Guide-CN.md#faq-no-port)。
+
+### Parser Core 接入版本
+
+此分支使用统一的 BLFD 1.0.0.dev0 包进行流式完整性检查和固件统计。
+当前随附依赖仅支持 **Linux x86_64 / CPython 3.11**，详见 [vendor/README.md](vendor/README.md)。
+发布 Windows 等平台版本前，需要补齐对应依赖包。

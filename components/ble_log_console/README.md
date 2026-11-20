@@ -11,6 +11,8 @@ It supports:
 - **USJ**: receive BLE logs through the chip's built-in USB Serial/JTAG port.
 - **USB Output**: receive BLE logs through a firmware-provided TinyUSB CDC-ACM port.
 
+In interactive setup, select **USB** for either USB OTG or USJ, then choose the device. Port labels identify the type; chip names appear only when supplied by the USB descriptor. Listing ports does not open them or send probe commands. CLI `--mode usb` (OTG) and `--mode usj` remain available.
+
 ## Supported Platforms
 
 - Windows (`x86_64`)
@@ -55,7 +57,11 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 3. Select the language, transport mode, port, UART baud rate, and log save directory, then click **Connect**.
 4. Click **Stop & Review** when recording is complete. The tool saves the data and displays a quality result.
 
-If you use SPI Bridge on Linux for the first time, run the tool once with `sudo`, then replug the Bridge device:
+SPI Bridge prefers CDC serial ports on all platforms, sharing the serial receiver used by USB OTG and USJ. Direct USB Bulk is a fallback only when no Bridge CDC port is found.
+
+On Linux, CDC access uses the serial port permissions (typically the `dialout` group). Run normally when your user can read and write the port. Close other programs using the Bridge first; if a previous Bulk receiver detached the serial driver, reconnect the Bridge after closing it.
+
+Only when using the direct Bulk fallback, install the USB access rule once if needed, then replug the Bridge:
 
 ```bash
 sudo ./ble_log_console_ubuntu_v1.1.0
@@ -194,7 +200,7 @@ This section provides additional command-line usage for the tool package. Common
 | `--mode` | `-m` | `uart` | Transport mode: `uart`, `spi`, `usb` (USB Output), or `usj` (USB Serial/JTAG) |
 | `--port` | `-p` | optional | Serial, SPI Bridge, USB Output, or USJ port. Omit to open the interactive interface |
 | `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
-| `--log-dir` | `-d` | `./logs` | Recording file save directory |
+| `--log-dir` | `-d` | Last used directory, or `./logs` | Recording file save directory; an explicit value overrides the remembered directory |
 | `--debug` | none | off | Show extra debugging information |
 
 Subcommands:
@@ -208,9 +214,15 @@ Subcommands:
 
 ### USJ Mode
 
-USJ mode receives BLE Log through the chip's built-in USB Serial/JTAG port (USB ID `303A:1001`). The `ports` subcommand and the interactive interface list only ports with that USB ID, and state why a USJ port cannot be opened when the current user cannot read and write it. The baud rate setting does not apply. The firmware must route BLE Log output to USB Serial/JTAG, which requires an ESP-IDF that offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`; see [USJ configuration](./docs/Config-Guide-EN.md#usj).
+USJ mode receives BLE Log through the chip's built-in USB Serial/JTAG port (USB ID `303A:1001`). `ports --mode usj` lists only ports with that USB ID. Interactive setup lists them alongside USB OTG ports under **USB**. The baud rate setting does not apply. The firmware must route BLE Log output to USB Serial/JTAG, which requires an ESP-IDF that offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`; see [USJ configuration](./docs/Config-Guide-EN.md#usj).
 
 On this port, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, BLE Log Console releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released and never changes them afterwards, so the `r` shortcut does not reset the target. The operating system or its USB driver can still change these lines while opening the device. Check on your own host whether opening the port resets the board.
+
+### Opening Backlog and Analysis Files
+
+Console observes opening snapshots during normal parsing in all transport modes; live logs and statistics are not delayed or filtered. When valid v8 clocks and sequence evidence indicate buffered old data followed by stable reception, Console records a suggested starting offset. Ambiguous evidence, unsupported protocols or metadata needed from the prefix prevent automatic cutting. Later recording gaps are not reclassified as opening backlog.
+
+After the raw files are finalized, Console copies their exact suffix into an additional `ble_log_*_analysis.bin`, starting with a complete SNAPSHOT. The original `.bin`, displayed logs, `_console.log`, and quality metrics still cover the original stream. The report records the offset and timing evidence, distinguishes the original-recording verdict from the analysis file, and does not claim that the suffix has passed a separate quality check. Use **File for analysis** and all its parts with the parser; keep the originals for troubleshooting. Normal recordings are not duplicated. Copying adds disk usage and stop-time work and remains subject to the existing analysis shutdown deadline. If copying or verification cannot finish, use the original files; `.partial` files are not completed analysis files.
 
 ### UART and USJ Console Text
 
@@ -241,3 +253,9 @@ The following shortcuts are commonly used while the application is running. They
 ## Troubleshooting
 
 For connection issues, log display, quality check limitations, source environment setup, and Bridge version checks, see [Troubleshooting at the end of the user guide](./docs/Console-User-Guide-EN.md#faq-no-port).
+
+### Parser Core integration build
+
+This branch uses the unified BLFD 1.0.0.dev0 package for streaming integrity checks and firmware statistics.
+The supplied wheels currently require **Linux x86_64 / CPython 3.11**; see [vendor/README.md](vendor/README.md).
+Windows and other platform packages must be supplied before building a release for those targets.

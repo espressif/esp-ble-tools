@@ -33,6 +33,7 @@ class CaptureSession:
         output_path: Path,
         *,
         debug: bool = False,
+        log_database: Path | None = None,
         join_timeout_sec: float = PIPELINE_JOIN_TIMEOUT_SEC,
         analysis_drain_timeout_sec: float = ANALYSIS_DRAIN_TIMEOUT_SEC,
         io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
@@ -47,6 +48,7 @@ class CaptureSession:
         self._pipeline = CapturePipeline(
             transport_config,
             WriterConfig(output_path),
+            log_database=log_database,
             io_shutdown_timeout_sec=io_shutdown_timeout_sec,
             clock=clock,
         )
@@ -67,10 +69,14 @@ class CaptureSession:
 
     @property
     def saved_capture_path(self) -> Path | None:
+        if self._report is not None and self._report.analysis_paths:
+            return self._report.analysis_paths[0]
         return self._event_presenter.state.saved_capture_path
 
     @property
     def saved_capture_paths(self) -> list[Path]:
+        if self._report is not None and self._report.analysis_paths:
+            return list(self._report.analysis_paths)
         return list(self._event_presenter.state.saved_capture_paths)
 
     @property
@@ -170,6 +176,8 @@ class CaptureSession:
             console_log_paths=presenter_state.saved_console_log_paths,
             report_path=report_path_for_capture(self._output_path),
             console_log_error=presenter_state.console_log_error,
+            hci_paths=presenter_state.hci_paths,
+            hci_error=presenter_state.hci_error,
         )
         try:
             write_capture_report(report)

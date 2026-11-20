@@ -319,7 +319,7 @@ def usb_still_usb_output() -> None:
     assert _parse_transport_mode("usb") is TransportMode.USB_OUTPUT
 
 
-@when("在启动界面选择 USJ 模式并连接")
+@when("在启动界面选择 USB 模式并连接")
 def launch_and_connect(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(_COMPORTS, lambda: list(world.ports))
     results: list[LaunchConfig | None] = []
@@ -332,7 +332,7 @@ def launch_and_connect(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
         app = LaunchApp()
         async with app.run_test(size=(100, 50)) as pilot:
             await pilot.pause()
-            app.screen.query_one("#mode-select", Select).value = "usj"
+            app.screen.query_one("#mode-select", Select).value = "usb"
             await pilot.pause()
             world.baud_visible = app.screen.query_one("#baud-select", Select).display
             await pilot.click("#connect-btn")

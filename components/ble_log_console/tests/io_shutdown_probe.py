@@ -13,11 +13,14 @@ from typing import IO, Any
 from src.backend.io.worker import run_io_loop
 from src.backend.models import BleLogSource
 
-from tests.helpers import BytesReader, build_frame, xor_checksum
+from tests.helpers import BytesReader, build_frame, version_info_payload, xor_checksum
 
 
 def shutdown_frames() -> tuple[bytes, ...]:
-    return tuple(build_frame(b"\0\0\0\0log", int(BleLogSource.LL_TASK), sn, xor_checksum) for sn in range(2))
+    return (
+        build_frame(version_info_payload(0, version=6), 0, 0, xor_checksum),
+        build_frame(b"\0\0\0\0log", int(BleLogSource.LL_TASK), 0, xor_checksum),
+    )
 
 
 def run_stalled_io(

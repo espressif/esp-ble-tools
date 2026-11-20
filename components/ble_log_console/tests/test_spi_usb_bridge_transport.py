@@ -45,8 +45,7 @@ class TestSpiUsbBridgeEndpoint:
 
 class TestSpiUsbBridgeOptions:
     @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options")
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=True)
-    def test_windows_prefers_cdc_options(self, _mock_windows: MagicMock, mock_cdc: MagicMock) -> None:
+    def test_prefers_cdc_options(self, mock_cdc: MagicMock) -> None:
         mock_cdc.return_value = [("USB-SPI-BRIDGE CDC COM7", f"{CDC_ENDPOINT_PREFIX}COM7")]
 
         scan = scan_spi_usb_bridge_ports()
@@ -55,7 +54,7 @@ class TestSpiUsbBridgeOptions:
         assert scan.issues == []
 
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     def test_non_windows_lists_bulk_endpoints(self, _mock_windows: MagicMock, mock_find: MagicMock) -> None:
         mock_find.return_value = [usb_bridge_device()]
 
@@ -66,7 +65,7 @@ class TestSpiUsbBridgeOptions:
 
 
 class TestSpiUsbBridgeScanIssues:
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_a_bridge_without_permission_is_reported_with_its_bus_and_address(
         self, mock_find: MagicMock, _mock_windows: MagicMock
@@ -84,7 +83,7 @@ class TestSpiUsbBridgeScanIssues:
         assert (issue.bus, issue.address) == (3, 11)
         assert "Access denied" in issue.detail
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_a_missing_libusb_backend_is_its_own_issue(self, mock_find: MagicMock, _mock_windows: MagicMock) -> None:
         mock_find.side_effect = usb.core.NoBackendError("No backend available")
@@ -95,7 +94,7 @@ class TestSpiUsbBridgeScanIssues:
         assert [issue.kind for issue in scan.issues] == [PortIssueKind.LIBUSB_MISSING]
         assert scan.issues[0].bus is None
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_a_busy_bridge_keeps_the_libusb_error_text(self, mock_find: MagicMock, _mock_windows: MagicMock) -> None:
         mock_find.return_value = [usb_bridge_device(open_error=usb.core.USBError("Resource busy", errno=errno.EBUSY))]
@@ -105,7 +104,7 @@ class TestSpiUsbBridgeScanIssues:
         assert [issue.kind for issue in scan.issues] == [PortIssueKind.DEVICE_ERROR]
         assert "Resource busy" in scan.issues[0].detail
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_an_error_while_reading_endpoints_keeps_the_libusb_text(
         self, mock_find: MagicMock, _mock_windows: MagicMock
@@ -120,7 +119,7 @@ class TestSpiUsbBridgeScanIssues:
         assert (scan.issues[0].bus, scan.issues[0].address) == (1, 8)
         assert "Input/output error" in scan.issues[0].detail
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_a_healthy_bridge_next_to_an_unusable_one_still_lists_its_endpoint(
         self, mock_find: MagicMock, _mock_windows: MagicMock
@@ -139,7 +138,7 @@ class TestSpiUsbBridgeScanIssues:
         assert scan.options == [("SPI-BRIDGE bus=1 addr=9 intf=1 ep=0x82", "1:9:1:130")]
         assert [issue.kind for issue in scan.issues] == [PortIssueKind.PERMISSION_DENIED]
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_no_bridge_at_all_is_still_a_silent_empty_list(
         self, mock_find: MagicMock, _mock_windows: MagicMock
@@ -151,7 +150,7 @@ class TestSpiUsbBridgeScanIssues:
         assert scan.options == []
         assert scan.issues == []
 
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
+    @patch("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", return_value=[])
     @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
     def test_a_bridge_without_an_active_configuration_is_reported(
         self, mock_find: MagicMock, _mock_windows: MagicMock

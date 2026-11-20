@@ -118,8 +118,16 @@ def _start_stalled(recording: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, 
         )
         assert recording.session._pipeline.analysis_is_alive()
     else:
-        # Analysis consumes accepted input, even though the second raw write may be pending.
-        _poll_until(recording, lambda: not recording.session._pipeline.analysis_is_alive())
+        # Live parsing still consumes accepted input. Analysis now waits for
+        # raw finalization before it may copy an opening-trimmed suffix.
+        _poll_until(
+            recording,
+            lambda: any(
+                isinstance(message, StatsUpdated) and message.stats.transport.rx_frames == len(frames)
+                for message in recording.messages
+            ),
+        )
+        assert recording.session._pipeline.analysis_is_alive()
     assert (recording.tmp_path / "recording.bin").read_bytes().startswith(shutdown_frames()[0])
 
 

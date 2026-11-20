@@ -116,7 +116,9 @@ def status_bar_shows_no_chip(console: SimpleNamespace) -> None:
 class _StubCaptureSession:
     """A capture session that starts nothing: this scenario observes the UI path only."""
 
-    def __init__(self, config: object, output_path: object, debug: bool = False) -> None:
+    def __init__(
+        self, config: object, output_path: object, debug: bool = False, log_database: Path | None = None
+    ) -> None:
         self.finished = False
         self.report = None
         self.saved_capture_path: Path | None = None

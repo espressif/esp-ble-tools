@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+from src.backend.analysis.aggregator import CaptureAggregator
+from src.backend.analysis.parser_events import FrameEvent
 from src.backend.models import FrameByteCount, FunnelSnapshot, ThroughputInfo, format_throughput
-from src.backend.support.stats import StatsAccumulator
 from src.frontend.stats_screen import _build_console_table, _build_firmware_table
 
 _SRC_HOST = 5
@@ -114,34 +115,34 @@ class TestBuildConsoleTable:
 
 class TestPerSourceRxBytes:
     def test_single_frame(self) -> None:
-        stats = StatsAccumulator()
-        stats.record_frame(frame_size=100, src_code=_SRC_HOST, frame_sn=0)
+        stats = CaptureAggregator()
+        stats.consume_events((FrameEvent(100, _SRC_HOST, 0),))
         snapshot = stats.snapshot(1.0)
-        assert snapshot.per_source_rx_bytes == {_SRC_HOST: 100}
+        assert snapshot.stats.per_source_rx_bytes == {_SRC_HOST: 100}
 
     def test_multiple_frames_same_source(self) -> None:
-        stats = StatsAccumulator()
-        stats.record_frame(frame_size=100, src_code=_SRC_HOST, frame_sn=0)
-        stats.record_frame(frame_size=200, src_code=_SRC_HOST, frame_sn=1)
+        stats = CaptureAggregator()
+        stats.consume_events((FrameEvent(100, _SRC_HOST, 0),))
+        stats.consume_events((FrameEvent(200, _SRC_HOST, 1),))
         snapshot = stats.snapshot(1.0)
-        assert snapshot.per_source_rx_bytes == {_SRC_HOST: 300}
+        assert snapshot.stats.per_source_rx_bytes == {_SRC_HOST: 300}
 
     def test_multiple_sources(self) -> None:
-        stats = StatsAccumulator()
-        stats.record_frame(frame_size=100, src_code=_SRC_HOST, frame_sn=0)
-        stats.record_frame(frame_size=200, src_code=_SRC_LL_TASK, frame_sn=0)
+        stats = CaptureAggregator()
+        stats.consume_events((FrameEvent(100, _SRC_HOST, 0),))
+        stats.consume_events((FrameEvent(200, _SRC_LL_TASK, 0),))
         snapshot = stats.snapshot(1.0)
-        assert snapshot.per_source_rx_bytes == {_SRC_HOST: 100, _SRC_LL_TASK: 200}
+        assert snapshot.stats.per_source_rx_bytes == {_SRC_HOST: 100, _SRC_LL_TASK: 200}
 
     def test_cumulative_across_snapshots(self) -> None:
-        stats = StatsAccumulator()
-        stats.record_frame(frame_size=100, src_code=_SRC_HOST, frame_sn=0)
+        stats = CaptureAggregator()
+        stats.consume_events((FrameEvent(100, _SRC_HOST, 0),))
         stats.snapshot(1.0)
-        stats.record_frame(frame_size=200, src_code=_SRC_HOST, frame_sn=1)
+        stats.consume_events((FrameEvent(200, _SRC_HOST, 1),))
         snapshot = stats.snapshot(1.0)
-        assert snapshot.per_source_rx_bytes == {_SRC_HOST: 300}
+        assert snapshot.stats.per_source_rx_bytes == {_SRC_HOST: 300}
 
     def test_none_when_no_data(self) -> None:
-        stats = StatsAccumulator()
+        stats = CaptureAggregator()
         snapshot = stats.snapshot(1.0)
-        assert snapshot.per_source_rx_bytes is None
+        assert snapshot.stats.per_source_rx_bytes is None

@@ -59,6 +59,6 @@ raise SystemExit(pytest.main([
         "枚举时只认_usj_身份",
         "usj_模式不按串口波特率推算线速",
         "命令行用_usj_选择该模式其他模式不变",
-        "启动界面选择_usj_后隐藏波特率并原样传出端口",
+        "启动界面选择_usb_后识别_usj_并隐藏波特率",
     ):
         assert any(scenario in line and "PASSED" in line for line in output.splitlines()), output

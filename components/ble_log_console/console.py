@@ -31,6 +31,7 @@ from src.backend.support.transport.registry import (
 from src.backend.support.transport.spi_usb_bridge_transport import PRODUCT_ID, VENDOR_ID
 from src.backend.support.transport.uart_transport import validate_uart_port
 from src.frontend.port_diagnostics import describe_port_issues
+from src.i18n import tr
 
 MODE_CHOICES = ("uart", "spi", "usb", "usj")
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-ble-log-spi-bridge.rules")
@@ -143,7 +144,11 @@ def _install_udev_rules() -> None:
 @click.option("--baudrate", "-b", type=int, default=3_000_000, show_default=True, help="UART baud rate.")
 @click.option("--debug", is_flag=True, help="Show internal traffic and firmware state events in the log view.")
 @click.option(
-    "--log-dir", "-d", type=click.Path(), default=None, help="Log save directory. Default: current working directory."
+    "--log-dir",
+    "-d",
+    type=click.Path(),
+    default=None,
+    help=tr("Log save directory. Default: last used directory, or ./logs."),
 )
 @click.option(
     "--output",
@@ -152,6 +157,12 @@ def _install_udev_rules() -> None:
     default=None,
     hidden=True,
     help="[Deprecated] Output binary file path. Use --log-dir instead.",
+)
+@click.option(
+    "--log-database",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help=tr("Host log database directory. Default: ./ble_log_database, or the current directory."),
 )
 @click.pass_context
 def cli(
@@ -162,6 +173,7 @@ def cli(
     debug: bool,
     log_dir: str | None,
     output: str | None,
+    log_database: Path | None,
 ) -> None:
     """BLE Log Console — real-time BLE log monitor."""
     if _should_auto_install_udev(ctx):
@@ -184,6 +196,10 @@ def cli(
     elif log_dir is not None:
         resolved_log_dir = Path(log_dir)
 
+    if log_database is not None and not (log_database / "BLE_HOST_logs.json").is_file():
+        raise click.BadParameter(
+            tr("Select a directory containing BLE_HOST_logs.json, or leave it empty."), param_hint="--log-database"
+        )
     transport_mode = _parse_transport_mode(mode)
 
     if port is not None and transport_mode is TransportMode.UART:
@@ -198,11 +214,13 @@ def cli(
         port=port,
         baudrate=baudrate,
         log_dir=resolved_log_dir,
+        log_database=log_database.resolve() if log_database else None,
         debug=debug,
     )
     app.run()
     _echo_paths("Recording file", app.saved_capture_paths)
     _echo_paths("Console log", app.saved_console_log_paths)
+    _echo_paths("HCI log", app.saved_hci_paths)
     if app.saved_report_path is not None:
         _echo_paths("Recording report", [app.saved_report_path])
 

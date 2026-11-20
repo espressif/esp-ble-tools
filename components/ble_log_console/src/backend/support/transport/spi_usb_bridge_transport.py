@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import errno
-import sys
 from dataclasses import dataclass
 
 import serial
@@ -236,10 +235,6 @@ def _scan_bulk_endpoint_ports() -> PortScan:
     return scan
 
 
-def _is_windows() -> bool:
-    return sys.platform == "win32"
-
-
 def _is_spi_usb_bridge_port(port: object) -> bool:
     vid = getattr(port, "vid", None)
     pid = getattr(port, "pid", None)
@@ -270,10 +265,9 @@ def list_spi_usb_bridge_cdc_options() -> list[tuple[str, str]]:
 
 def scan_spi_usb_bridge_ports() -> PortScan:
     """List selectable bridge ports, with the reason any bridge is unusable."""
-    if _is_windows():
-        cdc_options = list_spi_usb_bridge_cdc_options()
-        if cdc_options:
-            return PortScan(options=cdc_options)
+    cdc_options = list_spi_usb_bridge_cdc_options()
+    if cdc_options:
+        return PortScan(options=cdc_options)
 
     return _scan_bulk_endpoint_ports()
 

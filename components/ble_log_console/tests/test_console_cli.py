@@ -113,3 +113,23 @@ def test_multi_part_output_lists_the_files_without_claiming_a_saved_recording(ca
     assert output.splitlines()[0] == "Recording file: 2 files"
     assert "saved" not in output
     assert all(str(path) in output for path in paths)
+
+
+def test_cli_passes_explicit_host_database(tmp_path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    (tmp_path / "BLE_HOST_logs.json").write_text("{}")
+    app = MagicMock()
+    monkeypatch.setattr("src.app.BLELogApp", app)
+    monkeypatch.setattr("console._should_auto_install_udev", lambda ctx: False)
+    result = CliRunner().invoke(cli, ["--log-database", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert app.call_args.kwargs["log_database"] == tmp_path
+    app.return_value.run.assert_called_once()
+
+
+def test_cli_rejects_directory_without_host_dictionary(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("console._should_auto_install_udev", lambda ctx: False)
+    result = CliRunner().invoke(cli, ["--log-database", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "BLE_HOST_logs.json" in result.output

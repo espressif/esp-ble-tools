@@ -9,13 +9,17 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
 
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate, CaptureAggregator
 from src.backend.analysis.parser import BleLogParser
-from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk
+from src.backend.analysis.parser_events import ParseBatch, ParseSummary, ReceivedChunk, ReceivedEnd
+from src.backend.analysis.startup import StartupDecision
 from src.backend.analysis.stream_identification import IdentificationRules
+from src.backend.io.analysis_copy import AnalysisCopyResult, copy_recording_suffix
+from src.backend.io.writer import WriterConfig
 from src.backend.models import ChecksumMode, TransportBitrate
 
 PARSER_BATCH_MAX_CHUNKS = 16
@@ -46,14 +50,22 @@ class AggregatorProcessEvent:
     message: str = ""
 
 
-def _put_parser_event(output_queue: Any, event: ParseBatch | ParseSummary | ParserStatus) -> None:
+ParserEvent = ParseBatch | ParseSummary | ParserStatus | StartupDecision | AnalysisCopyResult
+
+
+def _put_parser_event(output_queue: Any, event: ParserEvent) -> None:
     if output_queue is not None:
         output_queue.put(event)
 
 
 def _put_analysis_event(
     ui_queue: Any,
-    event: AggregatorUpdate | AggregatorSnapshot | AggregatorProcessEvent | ParserStatus,
+    event: AggregatorUpdate
+    | AggregatorSnapshot
+    | AggregatorProcessEvent
+    | ParserStatus
+    | StartupDecision
+    | AnalysisCopyResult,
 ) -> None:
     if ui_queue is not None:
         ui_queue.put(event)
@@ -65,14 +77,21 @@ def run_parser_loop(
     *,
     checksum_mode: ChecksumMode | None = None,
     identification: IdentificationRules | None = None,
+    analysis_output: WriterConfig | None = None,
+    log_database: Path | None = None,
 ) -> None:
     """Parse raw chunks from parse_queue until a None sentinel is received."""
 
+    parser = None
     try:
-        parser = BleLogParser(checksum_mode=checksum_mode, identification=identification)
+        parser = BleLogParser(checksum_mode=checksum_mode, identification=identification, log_database=log_database)
+        end: ReceivedEnd | None = None
+        received_bytes = 0
+        contiguous = True
         while True:
             item = parse_queue.get()
-            if item is None:
+            if item is None or isinstance(item, ReceivedEnd):
+                end = item
                 break
             chunks: list[ReceivedChunk] = []
             total_bytes = 0
@@ -87,7 +106,8 @@ def run_parser_loop(
                     next_item = parse_queue.get_nowait()
                 except Empty:
                     break
-                if next_item is None:
+                if next_item is None or isinstance(next_item, ReceivedEnd):
+                    end = next_item
                     stop_after_batch = True
                     break
                 if not next_item.data:
@@ -96,7 +116,18 @@ def run_parser_loop(
                 total_bytes += len(next_item.data)
 
             if chunks:
-                batches = [parser.feed(chunk.data, received_at_ms=chunk.received_at_ms) for chunk in chunks]
+                batches = []
+                for chunk in chunks:
+                    contiguous = contiguous and chunk.raw_offset == received_bytes
+                    received_bytes += len(chunk.data)
+                    batches.append(
+                        parser.feed(
+                            chunk.data,
+                            received_at_ms=chunk.received_at_ms,
+                            received_monotonic=chunk.received_monotonic,
+                            raw_offset=chunk.raw_offset,
+                        )
+                    )
                 _put_parser_event(
                     output_queue,
                     ParseBatch(
@@ -106,19 +137,39 @@ def run_parser_loop(
                         carried_bytes=batches[-1].carried_bytes,
                         events=tuple(event for batch in batches for event in batch.events),
                         identity=batches[-1].identity,
+                        firmware=batches[-1].firmware,
                     ),
                 )
             if stop_after_batch:
                 break
-        _put_parser_event(output_queue, parser.finalize())
+        summary = parser.finalize()
+        if analysis_output is not None:
+            decision = parser.startup.finish()
+            _put_parser_event(output_queue, decision)
+            if decision.offset_bytes:
+                copy = (
+                    copy_recording_suffix(
+                        analysis_output,
+                        end.raw_paths,
+                        offset=decision.offset_bytes,
+                        raw_bytes=end.raw_bytes,
+                    )
+                    if end is not None and end.raw_complete and contiguous and end.raw_bytes == summary.raw_bytes
+                    else AnalysisCopyResult(error="Raw saving or analysis coverage is incomplete; no suffix was copied")
+                )
+                _put_parser_event(output_queue, copy)
+        _put_parser_event(output_queue, summary)
     except Exception as e:
         _put_parser_event(output_queue, ParserStatus(kind="error", message=str(e)))
+    finally:
+        if parser is not None:
+            parser.close()
 
 
-def drain_parser_events(output_queue: Any) -> list[ParseBatch | ParseSummary | ParserStatus]:
+def drain_parser_events(output_queue: Any) -> list[ParserEvent]:
     """Drain currently available parser events."""
 
-    events: list[ParseBatch | ParseSummary | ParserStatus] = []
+    events: list[ParserEvent] = []
     while True:
         try:
             events.append(output_queue.get_nowait())
@@ -160,6 +211,11 @@ def _handle_parser_item(
     aggregator: CaptureAggregator,
     updates: list[AggregatorUpdate] | None = None,
 ) -> tuple[bool, bool]:
+    if isinstance(item, (StartupDecision, AnalysisCopyResult)):
+        if updates is not None:
+            _put_merged_updates(ui_queue, updates)
+        _put_analysis_event(ui_queue, item)
+        return False, False
     if isinstance(item, ParseBatch):
         update = aggregator.consume_parser_batch(item)
         if updates is None:
@@ -326,6 +382,8 @@ def run_analysis_loop(
     checksum_mode: ChecksumMode | None = None,
     identification: IdentificationRules | None = None,
     analysis_queue_size: int = ANALYSIS_QUEUE_SIZE,
+    analysis_output: WriterConfig | None = None,
+    log_database: Path | None = None,
 ) -> None:
     """Run parser and aggregator in one process, connected by a thread queue."""
 
@@ -337,6 +395,8 @@ def run_analysis_loop(
         kwargs={
             "checksum_mode": checksum_mode,
             "identification": identification,
+            "analysis_output": analysis_output,
+            "log_database": log_database,
         },
         daemon=True,
     )
@@ -360,6 +420,8 @@ def run_analysis_process(
     bitrate: TransportBitrate | None = None,
     checksum_mode: ChecksumMode | None = None,
     identification: IdentificationRules | None = None,
+    analysis_output: WriterConfig | None = None,
+    log_database: Path | None = None,
 ) -> None:
     """Process entrypoint for combined BLE log analysis."""
 
@@ -370,4 +432,6 @@ def run_analysis_process(
         bitrate=bitrate,
         checksum_mode=checksum_mode,
         identification=identification,
+        analysis_output=analysis_output,
+        log_database=log_database,
     )

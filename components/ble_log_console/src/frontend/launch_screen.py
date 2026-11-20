@@ -30,17 +30,25 @@ from src.frontend.rendering import (
 )
 from src.i18n import get_language, set_language, tr
 
-BAUD_RATES: list[int] = [115200, 230400, 460800, 921600, 1500000, 2000000, 3000000]
+BAUD_RATES: list[int] = [115200, 230400, 460800, 921600, 1500000, 2000000, 3000000, 4000000, 5000000]
 DEFAULT_BAUD_RATE: int = 3000000
 DEFAULT_TRANSPORT_MODE = TransportMode.UART
 SPI_PORT_LABEL_PREFIX = "SPI-BRIDGE"
 MAX_PORT_LABEL_LEN = 36
 
 
+def find_log_database() -> Path | None:
+    """Find the Host dictionary in the working directory, without recursive guessing."""
+    for directory in (Path.cwd() / "ble_log_database", Path.cwd()):
+        if (directory / "BLE_HOST_logs.json").is_file():
+            return directory
+    return None
+
+
 def _mode_select_value(mode: TransportMode) -> str:
     if mode is TransportMode.SPI_USB_BRIDGE:
         return "spi"
-    if mode is TransportMode.USB_OUTPUT:
+    if mode in (TransportMode.USB_OUTPUT, TransportMode.USJ):
         return "usb"
     return mode.value
 
@@ -92,7 +100,8 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         min-width: 0;
     }
 
-    #dir-input {
+    #dir-input,
+    #database-input {
         width: 1fr;
         min-width: 0;
     }
@@ -104,7 +113,8 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         text-align: center;
     }
 
-    #browse-btn {
+    #browse-btn,
+    #database-browse-btn {
         width: 18;
         min-width: 18;
         max-width: 18;
@@ -158,24 +168,19 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         default_log_dir: Path | None = None,
         *,
         default_transport_config: TransportConfig | None = None,
+        log_database: Path | None = None,
         start_error: str | None = None,
     ) -> None:
         super().__init__()
         self._default_transport_config = default_transport_config
         self._start_error = start_error
+        self._log_database = log_database
         self._mode = default_transport_config.mode if default_transport_config is not None else DEFAULT_TRANSPORT_MODE
+        if self._mode is TransportMode.USJ:
+            self._mode = TransportMode.USB_OUTPUT
+        self._port_modes: dict[str, TransportMode] = {}
         self._default_log_dir = default_log_dir or Path.cwd() / "logs"
         self._port_issues: list[PortIssue] = []
-
-    def _scan_ports(self) -> PortScan:
-        """Enumerate ports for the launch screen; a failed scan leaves it usable."""
-        try:
-            port_scan = list_transport_port_scan(self._mode)
-        except Exception as error:
-            self.notify(tr("Failed to list ports: {message}", message=error))
-            port_scan = PortScan()
-        self._port_issues = port_scan.issues
-        return port_scan
 
     def _port_diagnostic_label(self, issues: list[PortIssue]) -> Label:
         """The reason a device that is plugged in is absent from the list."""
@@ -197,9 +202,10 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         self._show_port_issues(label, self._port_issues)
 
     def compose(self) -> ComposeResult:
-        mode_options = [(label, _mode_select_value(mode)) for label, mode in list_transport_modes()]
-        port_scan = self._scan_ports()
-        port_options = self._display_port_options(port_scan.options)
+        mode_options = [
+            (label, _mode_select_value(mode)) for label, mode in list_transport_modes() if mode is not TransportMode.USJ
+        ]
+        port_options = self._list_port_options()
         config = self._default_transport_config
         baudrate = config.baudrate if config is not None else DEFAULT_BAUD_RATE
         baud_options = [(str(b), b) for b in sorted(set(BAUD_RATES) | {baudrate})]
@@ -230,7 +236,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
                 else:
                     yield Select([], id="port-select", prompt="No ports detected")
                 yield Button("Refresh", id="refresh-btn")
-            yield self._port_diagnostic_label(port_scan.issues)
+            yield self._port_diagnostic_label(self._port_issues)
 
             yield Label("Baud Rate", classes="field-label", id="baud-label")
             yield Select(baud_options, value=baudrate, id="baud-select")
@@ -239,6 +245,15 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             with Horizontal(classes="field-row"):
                 yield Input(str(self._default_log_dir), id="dir-input")
                 yield Button("Browse...", id="browse-btn")
+
+            yield Label(tr("Log Database (optional)"), classes="field-label")
+            with Horizontal(classes="field-row"):
+                yield Input(
+                    str(self._log_database) if self._log_database else "",
+                    id="database-input",
+                    placeholder=tr("Empty: skip compressed Host logs"),
+                )
+                yield Button("Browse...", id="database-browse-btn")
 
             with Center():
                 yield Button("Connect", variant="primary", id="connect-btn")
@@ -276,9 +291,30 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         except NoMatches:
             return
 
+    def _list_port_options(self) -> list[tuple[str, str]]:
+        self._port_modes.clear()
+        self._port_issues.clear()
+        raw_port_options = []
+        modes = (
+            (TransportMode.USB_OUTPUT, TransportMode.USJ) if self._mode is TransportMode.USB_OUTPUT else (self._mode,)
+        )
+        for mode in modes:
+            try:
+                scan = list_transport_port_scan(mode)
+                self._port_issues.extend(scan.issues)
+                options = scan.options
+            except Exception as error:
+                self.notify(tr("Failed to list ports: {message}", message=error))
+                continue
+            for label, port in options:
+                if mode is TransportMode.USB_OUTPUT:
+                    label = label.replace("USB", "USB OTG", 1)
+                raw_port_options.append((label, port))
+                self._port_modes[port] = mode
+        return self._display_port_options(raw_port_options)
+
     def _refresh_port_options(self) -> None:
-        port_scan = self._scan_ports()
-        port_options = self._display_port_options(port_scan.options)
+        port_options = self._list_port_options()
         try:
             port_select = self.query_one("#port-select", Select)
             diagnostic_label = self.query_one("#port-diagnostic-label", Label)
@@ -288,7 +324,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         port_select.set_options(port_options)
         if port_options:
             port_select.value = selected if selected in [value for _, value in port_options] else port_options[0][1]
-        self._show_port_issues(diagnostic_label, port_scan.issues)
+        self._show_port_issues(diagnostic_label, self._port_issues)
 
     def _truncate_port_label(self, label: str) -> str:
         if len(label) <= MAX_PORT_LABEL_LEN:
@@ -297,8 +333,13 @@ class LaunchScreen(Screen[LaunchConfig | None]):
 
     def _display_port_options(self, port_options: list[tuple[str, str]]) -> list[tuple[str, str]]:
         config = self._default_transport_config
-        if config is not None and self._mode is config.mode and config.port not in [value for _, value in port_options]:
+        if (
+            config is not None
+            and _mode_select_value(self._mode) == _mode_select_value(config.mode)
+            and config.port not in [value for _, value in port_options]
+        ):
             port_options = [*port_options, (config.label, config.port)]
+            self._port_modes[config.port] = config.mode
         if self._mode is TransportMode.SPI_USB_BRIDGE:
             return [
                 (self._truncate_port_label(f"{SPI_PORT_LABEL_PREFIX}  {value}"), value) for _, value in port_options
@@ -330,6 +371,15 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         if chosen is not None:
             self.query_one("#dir-input", Input).value = str(chosen)
 
+    @on(Button.Pressed, "#database-browse-btn")
+    @work
+    async def browse_database(self) -> None:
+        current = self.query_one("#database-input", Input).value.strip()
+        start = Path(current).expanduser() if current else Path.cwd()
+        chosen = await self.app.push_screen_wait(SelectDirectory(location=start if start.is_dir() else Path.cwd()))
+        if chosen is not None:
+            self.query_one("#database-input", Input).value = str(chosen)
+
     @on(Button.Pressed, "#connect-btn")
     def connect(self) -> None:
         """Validate and return config."""
@@ -343,7 +393,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         default_config = self._default_transport_config
         baudrate = (
             default_config.baudrate
-            if default_config is not None and self._mode is default_config.mode
+            if default_config is not None and _mode_select_value(self._mode) == _mode_select_value(default_config.mode)
             else DEFAULT_BAUD_RATE
         )
         if self._mode is TransportMode.UART:
@@ -356,15 +406,22 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         log_dir = Path(dir_input.value)
         port = str(port_select.value)
         transport_config = TransportConfig(
-            mode=self._mode,
+            mode=self._port_modes.get(port, self._mode),
             label=port,
             port=port,
             baudrate=baudrate,
         )
 
+        database_text = self.query_one("#database-input", Input).value.strip()
+        database = Path(database_text).expanduser().resolve() if database_text else None
+        if database is not None and not (database / "BLE_HOST_logs.json").is_file():
+            self.notify(tr("Select a directory containing BLE_HOST_logs.json, or leave it empty."), severity="error")
+            return
+
         config = LaunchConfig(
             transport_config=transport_config,
             log_dir=log_dir,
+            log_database=database,
         )
         self.dismiss(config)
 

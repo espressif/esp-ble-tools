@@ -9,15 +9,17 @@ import math
 import multiprocessing
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
 
 from src.backend.analysis.aggregator import AggregatorSnapshot
-from src.backend.analysis.parser_events import ReceivedChunk
+from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
+from src.backend.analysis.startup import StartupDecision
 from src.backend.analysis.stream_identification import DEFAULT_IDENTIFICATION_RULES, IdentificationRules
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus, run_analysis_loop, run_analysis_process
+from src.backend.io.analysis_copy import AnalysisCopyResult
 from src.backend.io.reader import QUEUE_PUT_TIMEOUT_SEC, ReaderCommand, ReaderProcessEvent
 from src.backend.io.worker import run_io_loop, run_io_process
 from src.backend.io.writer import Clock, FileFactory, WriterConfig, WriterEvent
@@ -57,6 +59,8 @@ class CapturePipelineResult:
     writer_finalized: bool = False
     aggregator_finalized: bool = False
     final_snapshot: AggregatorSnapshot | None = None
+    startup: StartupDecision | None = None
+    analysis_copy: AnalysisCopyResult | None = None
 
 
 def _parser_identification(mode: TransportMode, rules: IdentificationRules) -> IdentificationRules | None:
@@ -84,6 +88,8 @@ def _events_for_result(events: list[Any]) -> list[Any]:
                 ParserStatus,
                 AggregatorSnapshot,
                 AggregatorProcessEvent,
+                StartupDecision,
+                AnalysisCopyResult,
             ),
         )
     ]
@@ -105,9 +111,15 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
     writer_finalized = False
     aggregator_finalized = False
     final_snapshot: AggregatorSnapshot | None = None
+    startup: StartupDecision | None = None
+    analysis_copy: AnalysisCopyResult | None = None
 
     for event in events:
-        if isinstance(event, ReaderProcessEvent):
+        if isinstance(event, StartupDecision):
+            startup = event
+        elif isinstance(event, AnalysisCopyResult):
+            analysis_copy = event
+        elif isinstance(event, ReaderProcessEvent):
             if event.kind == "error" and reader_error is None:
                 reader_error = event.message
             elif event.kind == "parse_backlog" or event.kind == "parse_backlog_summary":
@@ -163,6 +175,8 @@ def _result_from_events(events: list[Any]) -> CapturePipelineResult:
         writer_finalized=writer_finalized,
         aggregator_finalized=aggregator_finalized,
         final_snapshot=final_snapshot,
+        startup=startup,
+        analysis_copy=analysis_copy,
     )
 
 
@@ -176,13 +190,14 @@ def run_capture_pipeline_inprocess(
     queue_put_timeout: float = QUEUE_PUT_TIMEOUT_SEC,
     drain_rounds: int = 10,
     parser_checksum_mode: ChecksumMode | None = None,
+    log_database: Path | None = None,
     writer_clock: Clock | None = None,
     writer_file_factory: FileFactory | None = None,
     identification_rules: IdentificationRules = DEFAULT_IDENTIFICATION_RULES,
 ) -> CapturePipelineResult:
     """Run the capture pipeline in-process for tests and local validation."""
 
-    parse_queue: Queue[ReceivedChunk | None] = Queue(maxsize=parse_queue_size)
+    parse_queue: Queue[ReceivedChunk | ReceivedEnd | None] = Queue(maxsize=parse_queue_size)
     raw_stats_queue: Queue[int | None] = Queue()
     ui_queue: Queue[Any] = Queue(maxsize=ui_queue_size)
     stop_requested = stop_requested or threading.Event()
@@ -194,6 +209,8 @@ def run_capture_pipeline_inprocess(
             "bitrate": reader.bitrate_config,
             "checksum_mode": parser_checksum_mode,
             "identification": _parser_identification(reader.status().mode, identification_rules),
+            "analysis_output": writer_config,
+            "log_database": log_database,
         },
     )
     io_thread = threading.Thread(
@@ -245,6 +262,7 @@ class CapturePipeline:
         queue_put_timeout: float = QUEUE_PUT_TIMEOUT_SEC,
         drain_rounds: int = 10,
         parser_checksum_mode: ChecksumMode | None = None,
+        log_database: Path | None = None,
         identification_rules: IdentificationRules = DEFAULT_IDENTIFICATION_RULES,
         io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
         clock: Clock = time.monotonic,
@@ -263,6 +281,7 @@ class CapturePipeline:
         self._queue_put_timeout = queue_put_timeout
         self._drain_rounds = drain_rounds
         self._parser_checksum_mode = parser_checksum_mode
+        self._log_database = log_database
         self._identification = _parser_identification(transport_config.mode, identification_rules)
         self._ctx = multiprocessing.get_context()
         self._parse_queue: Any | None = None
@@ -296,6 +315,8 @@ class CapturePipeline:
                 bitrate,
                 self._parser_checksum_mode,
                 self._identification,
+                self._writer_config,
+                self._log_database,
             ),
         )
         self._io_process = self._ctx.Process(
@@ -461,24 +482,10 @@ class CapturePipeline:
         if self._io_process.is_alive() or self._analysis_process.is_alive():
             return (
                 events,
-                CapturePipelineResult(
-                    raw_paths=result.raw_paths,
+                replace(
+                    result,
                     reader_error=result.reader_error or "recording pipeline did not stop before timeout",
-                    writer_error=result.writer_error,
-                    parser_error=result.parser_error,
-                    aggregator_error=result.aggregator_error,
-                    parse_backlog=result.parse_backlog,
-                    raw_bytes=result.raw_bytes,
-                    parser_raw_bytes=result.parser_raw_bytes,
-                    parser_frames=result.parser_frames,
-                    parser_carried_bytes=result.parser_carried_bytes,
                     completed=False,
-                    parse_dropped_chunks=result.parse_dropped_chunks,
-                    parse_dropped_bytes=result.parse_dropped_bytes,
-                    parser_lag_bytes=result.parser_lag_bytes,
-                    writer_finalized=result.writer_finalized,
-                    aggregator_finalized=result.aggregator_finalized,
-                    final_snapshot=result.final_snapshot,
                 ),
             )
         return events, result

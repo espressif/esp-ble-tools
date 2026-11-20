@@ -37,11 +37,12 @@ scenarios("features/recording_start.feature")
 @pytest.fixture
 def start_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     monkeypatch.setattr("src.i18n._language", "en")
-    monkeypatch.setattr(
-        "src.frontend.launch_screen.list_transport_port_scan", lambda mode: PortScan(options=[("other", "other")])
-    )
     runner = asyncio.Runner()
     world = SimpleNamespace(tmp_path=tmp_path, runner=runner, run=None, app=None)
+    monkeypatch.setattr(
+        "src.frontend.launch_screen.list_transport_port_scan",
+        lambda mode: PortScan(options=[("attempted", "attempted")] if mode is world.config.mode else []),
+    )
     with (
         patch("src.app.CaptureSession", wraps=CaptureSession) as session_type,
         patch("src.frontend.capture_session.CapturePipeline") as pipeline_type,
@@ -107,7 +108,6 @@ def failing_usb_enumeration(start_world: SimpleNamespace, monkeypatch: pytest.Mo
         raise usb.core.USBError("Resource busy")
 
     monkeypatch.setattr("usb.core.find", refuse_find)
-    monkeypatch.setattr("src.backend.support.transport.spi_usb_bridge_transport._is_windows", lambda: False)
     monkeypatch.setattr(
         "serial.tools.list_ports.comports", lambda: [SimpleNamespace(device="/dev/ttyACM-stub", vid=0, pid=0)]
     )
@@ -188,6 +188,7 @@ def attempt_start(start_world: SimpleNamespace) -> None:
         screen.query_one("#mode-select", Select).value = {
             TransportMode.SPI_USB_BRIDGE: "spi",
             TransportMode.USB_OUTPUT: "usb",
+            TransportMode.USJ: "usb",
         }.get(config.mode, config.mode.value)
         _pause(world)
         screen.query_one("#port-select", Select).set_options([("attempted", config.port)])
@@ -215,7 +216,7 @@ def setup_retains_attempt(start_world: SimpleNamespace) -> None:
     assert str(world.bad_dir) in text and world.reason in text
     assert "Connect" in text
     assert screen.query_one("#dir-input", Input).value == str(world.bad_dir)
-    select_value = {TransportMode.SPI_USB_BRIDGE: "spi", TransportMode.USB_OUTPUT: "usb"}.get(
+    select_value = {TransportMode.SPI_USB_BRIDGE: "spi", TransportMode.USB_OUTPUT: "usb", TransportMode.USJ: "usb"}.get(
         world.config.mode, world.config.mode.value
     )
     assert screen.query_one("#mode-select", Select).value == select_value
@@ -322,7 +323,7 @@ def cancel_keeps_recording(start_world: SimpleNamespace) -> None:
 
 @pytest.mark.parametrize(
     ("mode", "select_value"),
-    [("UART", "uart"), ("USJ", "usj"), ("SPI_USB_BRIDGE", "spi"), ("USB_OUTPUT", "usb")],
+    [("UART", "uart"), ("USJ", "usb"), ("SPI_USB_BRIDGE", "spi"), ("USB_OUTPUT", "usb")],
 )
 def test_recovery_setup_preserves_seed_and_refresh_selection_across_modes(
     start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, mode: str, select_value: str
@@ -351,10 +352,12 @@ def test_recovery_setup_preserves_seed_and_refresh_selection_across_modes(
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == world.config.mode.value + "-other"
-    next_mode = "usj" if mode == "UART" else "uart"
+    next_mode = "usb" if mode == "UART" else "uart"
     screen.query_one("#mode-select", Select).value = next_mode
     _pause(world)
-    assert screen.query_one("#port-select", Select).value == next_mode + "-other"
+    assert screen.query_one("#port-select", Select).value == (
+        "usb_output-other" if next_mode == "usb" else "uart-other"
+    )
     assert screen.query_one("#baud-select", Select).display is (next_mode == "uart")
     assert screen.query_one("#dir-input", Input).value == str(world.bad_dir)
     assert screen.query_one("#start-error", Label).render().plain == error

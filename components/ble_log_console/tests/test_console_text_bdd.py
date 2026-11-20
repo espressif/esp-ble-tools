@@ -55,7 +55,7 @@ from src.i18n import tr
 from textual.pilot import Pilot
 from textual.widgets import Button
 
-from tests.helpers import BytesReader, build_frame, snapshot_payload, xor_checksum
+from tests.helpers import BytesReader, build_frame, snapshot_payload, version_info_payload, xor_checksum
 
 scenarios("features/console_text.feature")
 
@@ -79,11 +79,17 @@ def _frame(payload: bytes, source: int, sn: int) -> bytes:
 
 
 def _redir_frames(count: int) -> bytes:
-    return b"".join(_frame(REDIR_LINE, BleLogSource.REDIR, sn) for sn in range(count))
+    # Include protocol evidence; text-display scenarios must not rely on an assumed SN model.
+    return _frame(version_info_payload(0, version=6), 0, 0) + b"".join(
+        _frame(REDIR_LINE, BleLogSource.REDIR, sn) for sn in range(count)
+    )
 
 
 def _host_frames(count: int, first_sn: int = 0) -> bytes:
-    return b"".join(_frame(b"\x00\x00\x00\x00hci", BleLogSource.HOST, sn) for sn in range(first_sn, first_sn + count))
+    prefix = _frame(version_info_payload(0, version=6), 0, 0) if first_sn == 0 else b""
+    return prefix + b"".join(
+        _frame(b"\x00\x00\x00\x00hci", BleLogSource.HOST, sn) for sn in range(first_sn, first_sn + count)
+    )
 
 
 class ModeBytesReader(BytesReader):
@@ -1093,7 +1099,7 @@ def usj_regular_frames(world: SimpleNamespace) -> SimpleNamespace:
 @given("一个 SPI_USB_BRIDGE 端口输出三个 REDIR 帧", target_fixture="world")
 def spi_redir_frames(world: SimpleNamespace) -> SimpleNamespace:
     data = _redir_frames(3)
-    world.phases = [(data, lambda app: app.query_one(StatusPanel).stats.transport.rx_frames == 3)]
+    world.phases = [(data, lambda app: app.query_one(StatusPanel).stats.transport.rx_frames == 4)]
     return _set_stream(world, "SPI_USB_BRIDGE", [data])
 
 
@@ -1102,3 +1108,12 @@ def app_ignores_spi_redir(world: SimpleNamespace) -> None:
     assert not any("forwarded through BLE Log" in row for row in world.rendered)
     assert not world.app.console_log_paths
     assert list((world.tmp_path / "app").glob("*_console*.log")) == []
+
+
+@then("console.log 只包含帧内 Host 文本")
+def only_framed_host_text(world: SimpleNamespace) -> None:
+    paths = world.recording.report.console_log_paths
+    assert paths
+    lines = "".join(path.read_text() for path in paths).splitlines()
+    assert len(lines) == 6
+    assert all(line.endswith("] hci") for line in lines)

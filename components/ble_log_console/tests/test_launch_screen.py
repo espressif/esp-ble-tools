@@ -217,6 +217,8 @@ class TestConnect:
                 return mock_port_select
             if selector == "#baud-select":
                 return mock_baud_select
+            if selector == "#database-input":
+                return MagicMock(value="")
             if selector == "#dir-input":
                 return mock_dir_input
             raise ValueError(f"Unexpected selector: {selector}")
