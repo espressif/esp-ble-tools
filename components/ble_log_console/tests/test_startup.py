@@ -224,3 +224,20 @@ def test_wrapped_time_jump_still_needs_forward_sequence_and_anchor_gap(sn, count
     decision, _ = parse_items(items[:2])
     assert decision.offset_bytes == 0
     assert decision.reason == reason
+
+
+@pytest.mark.parametrize("sequence,host_clock", [([11, 90, 12], True), ([11, 50, 90], True), ([11, 90], False)])
+def test_ambiguous_packet_boundary_or_missing_receive_time_preserves_prefix(sequence, host_clock):
+    blocks = [snapshot(1, 10, 1)]
+    blocks.extend(build_frame(struct.pack("<IB", sn, 1) + b"pkt", 6, sn, xor_checksum) for sn in sequence)
+    blocks.extend(snapshot(second, sn, second) for sn, second in [(91, 61), (92, 62), (93, 63)])
+    parser = BleLogParser()
+    try:
+        offset = 0
+        for i, block in enumerate(blocks):
+            received = max(0.0, i - len(sequence) - 1.0) if host_clock else None
+            parser.feed(block, received_monotonic=received, raw_offset=offset)
+            offset += len(block)
+        assert parser.startup.finish().offset_bytes == 0
+    finally:
+        parser.close()

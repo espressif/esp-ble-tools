@@ -228,7 +228,7 @@ The **Host dictionary** directory is remembered when the recording file is reser
 
 ### Opening Backlog and Analysis Files
 
-Console observes opening snapshots during normal parsing in all transport modes; live transcripts and the raw file retain the original stream. Within the first five seconds and 2 MiB of received data, valid v8 snapshots must show a compressed device-time jump, advancing sequence/anchor counters, and then two stable intervals before old backlog is separated. For a wrapped or long ESP microsecond interval, Core checks elapsed time against the OS millisecond clock sampled in the same snapshots. A single sequence gap must separate the old and fresh runs in receive order. Ambiguous evidence, unsupported metadata or a device reset prevents selection. Later gaps are never reclassified as opening backlog.
+Console observes opening snapshots during normal parsing in all transport modes; live transcripts and the raw file retain the original stream. Within the first five seconds and 2 MiB of received data, valid v8 snapshots must show a compressed device-time jump, advancing sequence/anchor counters, and then two stable intervals before old backlog is separated. For a wrapped or long ESP microsecond interval, Console checks elapsed time against the OS millisecond clock sampled in the same snapshots. A single sequence gap must separate the old and fresh runs in receive order. Ambiguous evidence, unsupported metadata or a device reset prevents selection. Later gaps are never reclassified as opening backlog.
 
 All received bytes remain in the original `.bin` files. During live parsing, the same decoded frames feed the full-recording check and a separate candidate-interval check. After the boundary is confirmed and raw saving finishes, Console uses the fresh interval result. The verdict and loss metrics then describe that interval, while byte/frame totals and parser coverage still describe the complete recording. The report gives the byte offset, timing evidence and original-stream missing-sequence count. Real losses after the boundary still affect the verdict. If the selected interval cannot be checked completely, the report falls back to the original-stream assessment with a warning.
 
@@ -268,7 +268,7 @@ For connection issues, log display, quality check limitations, source environmen
 
 ### Parser Core integration build
 
-This branch uses the unified BLFD 1.0.0.dev4 package for streaming integrity checks and firmware statistics.
+This branch uses the unified BLFD 1.0.0.dev5 package for streaming integrity checks and firmware statistics.
 
 Ordered Host/HCI products start at the first confirmed fresh frame. The report gives the byte offset of that frame in the complete raw recording. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
 Linux x86_64 / CPython 3.11 uses the supplied wheel; Windows and other targets build the supplied source package from the same revision. See [vendor/README.md](vendor/README.md) for compiler requirements. Windows build and hardware validation remain pending.

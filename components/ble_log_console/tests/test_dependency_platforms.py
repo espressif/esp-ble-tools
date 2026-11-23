@@ -40,7 +40,7 @@ def test_dependency_source_matches_target(platform, machine, python_version, suf
 
 
 def test_public_source_distribution_contains_all_native_engines():
-    with tarfile.open(PROJECT / "vendor/esp_blfd-1.0.0.dev4.tar.gz") as archive:
+    with tarfile.open(PROJECT / "vendor/esp_blfd-1.0.0.dev5.tar.gz") as archive:
         names = {name.partition("/")[2] for name in archive.getnames()}
     assert {
         "setup.py",
@@ -49,4 +49,5 @@ def test_public_source_distribution_contains_all_native_engines():
         "src/ble_log_frame_decoder/checking/_native.pyx",
         "src/ble_log_frame_decoder/analysis/ordering/_linearize_native.pyx",
     } <= names
+    assert "src/ble_log_frame_decoder/analysis/startup.py" not in names
     assert not any(name.startswith("internal/") or "/_internal/" in name for name in names)
