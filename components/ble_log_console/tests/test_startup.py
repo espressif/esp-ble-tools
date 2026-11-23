@@ -213,12 +213,12 @@ def test_normal_stream_across_both_clock_wraps_keeps_full_recording():
 @pytest.mark.parametrize(
     "sn, count, reason",
     [
-        (99, 4055, "Opening clock or sequence is ambiguous"),
+        (99, 4055, "Opening time jump has no clear frame boundary"),
         (5000, 9, "Opening clock or sequence is ambiguous"),
         (5000, 11, "Opening time jump lacks sequence evidence"),
     ],
 )
-def test_wrapped_time_jump_still_needs_forward_sequence_and_anchor_gap(sn, count, reason):
+def test_wrapped_time_jump_still_needs_distinct_runs_and_anchor_gap(sn, count, reason):
     items = chunks(clock_origin=4250)
     items[1] = items[1]._replace(data=snapshot(4260 + 4045, sn, count))
     decision, _ = parse_items(items[:2])
@@ -238,6 +238,47 @@ def test_ambiguous_packet_boundary_or_missing_receive_time_preserves_prefix(sequ
             received = max(0.0, i - len(sequence) - 1.0) if host_clock else None
             parser.feed(block, received_monotonic=received, raw_offset=offset)
             offset += len(block)
+        assert parser.startup.finish().offset_bytes == 0
+    finally:
+        parser.close()
+
+
+@pytest.mark.parametrize("case", ["only_snapshots", "clock_disagreement", "steady_clock", "late_old_packet"])
+def test_reverse_sequence_jump_alone_cannot_select_a_boundary(case):
+    old, new = 6_428_621, 2_733_463
+    gap = 1 if case == "steady_clock" else 60
+
+    def packet(sn):
+        return build_frame(struct.pack("<IB", 1, 4) + b"pkt", 6, sn, xor_checksum)
+
+    first = snapshot(10, old, 10)
+    second = snapshot(10 + gap, new, 10 + gap, os_ms=11_000 if case == "clock_disagreement" else None)
+    if case != "only_snapshots":
+        first += packet(old + 1)
+        second = packet(new - 1) + second
+    if case == "late_old_packet":
+        second += packet(old)
+    blocks = [first, second, snapshot(11 + gap, new + 1, 11 + gap), snapshot(12 + gap, new + 2, 12 + gap)]
+    parser = BleLogParser()
+    try:
+        offset = 0
+        for data, received in zip(blocks, (0.0, 0.1, 1.1, 2.1)):
+            parser.feed(data, received_monotonic=received, raw_offset=offset)
+            offset += len(data)
+        assert parser.startup.finish().offset_bytes == 0
+        assert parser.finalize().raw_bytes == offset
+    finally:
+        parser.close()
+
+
+def test_consecutive_sequence_wrap_is_not_an_opening_boundary():
+    parser = BleLogParser()
+    try:
+        offset = 0
+        for sn, seconds, received in [(0xFFFFFE, 10, 0), (0xFFFFFF, 70, 0.1), (0, 71, 1.1), (1, 72, 2.1)]:
+            data = snapshot(seconds, sn, seconds)
+            parser.feed(data, received_monotonic=received, raw_offset=offset)
+            offset += len(data)
         assert parser.startup.finish().offset_bytes == 0
     finally:
         parser.close()

@@ -131,15 +131,26 @@ def one_decoder(world):
 
 @given("两段序号之间有唯一缺口且确认快照前有四个新 HCI 包", target_fixture="world")
 def hci_before_anchor():
+    return opening_packets(100, 300, 60)
+
+
+@given("设备运行七十一小时后新旧快照的序号跨度超过半圈且新包先于快照到达", target_fixture="world")
+def long_fifo_gap():
+    return opening_packets(6_428_621, 2_733_463, 256_352)
+
+
+def opening_packets(old_sn, fresh_anchor_sn, gap):
     from tests.test_host_logs import frame
     from tests.test_startup import snapshot
 
     def packet(sn, marker):
-        return frame(6, sn, (69_999_000).to_bytes(4, "little") + bytes([4, marker]))
+        clock = (10 + gap) * 1_000_000 - 1000
+        return frame(6, sn, (clock % (1 << 32)).to_bytes(4, "little") + bytes([4, marker]))
 
-    old = snapshot(10, 100, 10) + packet(101, 0)
-    fresh = b"".join(packet(sn, sn - 295) for sn in range(296, 300))
-    return SimpleNamespace(blocks=[old, fresh + snapshot(70, 300, 70), snapshot(71, 301, 71), snapshot(72, 302, 72)])
+    old = snapshot(10, old_sn, 10) + packet(old_sn + 1, 0)
+    fresh = b"".join(packet(fresh_anchor_sn - 5 + i, i) for i in range(1, 5))
+    anchors = [snapshot(10 + gap + i, fresh_anchor_sn + i, 10 + gap + i) for i in range(3)]
+    return SimpleNamespace(blocks=[old, fresh + anchors[0], *anchors[1:]])
 
 
 @then("报告边界和 HCI 产物均从四个新包的第一帧开始")

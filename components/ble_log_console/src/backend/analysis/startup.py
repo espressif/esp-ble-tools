@@ -11,7 +11,6 @@ here. Other streams pass through unchanged. A decision is made once per opening.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from itertools import pairwise
 
 from ble_log_frame_decoder import (
     INIT,
@@ -28,6 +27,7 @@ STARTUP_MAX_SECONDS = 5.0
 STARTUP_MAX_BYTES = 2 * 1024 * 1024
 MIN_BACKLOG_SECONDS = 3.0
 STABLE_INTERVALS = 2
+SN_MODULUS = 1 << 24
 CLOCK_MODULUS = 1 << 32
 OS_TICK_TOLERANCE_US = 100_000
 
@@ -85,6 +85,7 @@ class StartupDetector:
         self._candidate: StartupDecision | None = None
         self._opening_rows: list[tuple[int, int]] = []
         self._fresh_sn: int | None = None
+        self._fresh_span = 0
         self._stable = 0
         self._preserve_prefix = False
         self.decision: StartupDecision | None = None
@@ -122,7 +123,7 @@ class StartupDetector:
         if frame.source_code not in range(8):
             self.decision = StartupDecision(reason="Opening clock or sequence is ambiguous")
             return
-        if self._fresh_sn is not None and (frame.sequence_number - self._fresh_sn) % (1 << 24) >= (1 << 23):
+        if self._fresh_sn is not None and (frame.sequence_number - self._fresh_sn) % SN_MODULUS >= self._fresh_span:
             self.decision = StartupDecision(reason="Opening clock or sequence is ambiguous")
             return
         self._opening_rows.append((frame.sequence_number, frame.offset))
@@ -155,24 +156,37 @@ class StartupDetector:
         if self.decision is not None:
             self._opening_rows.clear()
 
-    def _fresh_start(self, previous: _Anchor, anchor: _Anchor) -> tuple[int, int] | None:
-        # A single hole must separate two contiguous SN ranges in wire order.
-        # A second hole or old data interleaved with new makes a byte cut unsafe.
-        ring = 1 << 24
-        span = (anchor.sn - previous.sn) % ring
-        rows = [((sn - previous.sn) % ring, offset) for sn, offset in self._opening_rows if offset >= previous.offset]
-        values = sorted({sn for sn, _ in rows})
-        gaps = [right for left, right in pairwise(values) if right - left > 1]
-        if len(gaps) != 1 or values[-1] != span:
+    def _fresh_start(self, previous: _Anchor, anchor: _Anchor) -> tuple[int, int, int] | None:
+        # A run starts wherever its predecessor on the 24-bit ring is absent.
+        # The snapshot and the FIFO offsets identify which run is fresh, even after many wraps.
+        rows = self._opening_rows
+        values = {sn for sn, _ in rows}
+        starts = sorted(sn for sn in values if (sn - 1) % SN_MODULUS not in values)
+        if len(starts) != 2:
             return None
-        boundary = gaps[0]
-        first = next(i for i, (sn, _) in enumerate(rows) if sn >= boundary)
-        if any(sn < boundary for sn, _ in rows[first:]):
+        low, high = starts
+        fresh, old = (low, high) if low <= anchor.sn < high else (high, low)
+        span = (old - fresh) % SN_MODULUS
+        if (previous.sn - fresh) % SN_MODULUS < span:
             return None
-        fresh_sn = (previous.sn + boundary) % ring
-        if any((sn - fresh_sn) % ring < ring // 2 for sn, offset in self._opening_rows if offset < previous.offset):
+
+        # A large modular jump alone could be a late frame. Require a neighbour in both runs.
+        if (anchor.sn - previous.sn) % SN_MODULUS >= SN_MODULUS // 2 and (
+            (old + 1) % SN_MODULUS not in values or (fresh + 1) % SN_MODULUS not in values
+        ):
             return None
-        return rows[first][1], fresh_sn
+
+        first = None
+        for i, (sn, _) in enumerate(rows):
+            if (sn - fresh) % SN_MODULUS < span:
+                if first is None:
+                    first = i
+            elif first is not None:
+                return None
+        assert first is not None  # The confirming snapshot belongs to the fresh run.
+        offset = rows[first][1]
+        del rows[:first]  # A subsequent time jump can replace this candidate.
+        return offset, fresh, min(span, SN_MODULUS // 2)
 
     def _observe(self, anchor: _Anchor) -> StartupDecision | None:
         previous = self._previous
@@ -181,12 +195,11 @@ class StartupDetector:
             return None
         host_delta = anchor.received - previous.received
         device_delta = _device_elapsed_sec(previous, anchor)
-        sn_delta = (anchor.sn - previous.sn) % (1 << 24)
+        sn_delta = (anchor.sn - previous.sn) % SN_MODULUS
         count_delta = (anchor.count - previous.count) % (1 << 24)
         if (
             host_delta < 0
             or device_delta is None
-            or not 0 < sn_delta < (1 << 23)
             or not 0 < count_delta < (1 << 23)
             or anchor.version != previous.version
         ):
@@ -195,12 +208,17 @@ class StartupDetector:
         if device_delta - host_delta >= MIN_BACKLOG_SECONDS and device_delta >= 4 * host_delta:
             if sn_delta <= 1 or count_delta <= 1:
                 return StartupDecision(reason="Opening time jump lacks sequence evidence")
+            os_delta_ms = (anchor.os_ms - previous.os_ms) % CLOCK_MODULUS
+            if abs(device_delta * 1_000_000 - os_delta_ms * 1000) > OS_TICK_TOLERANCE_US:
+                return StartupDecision(reason="Opening clock or sequence is ambiguous")
             start = self._fresh_start(previous, anchor)
             if start is None:
-                return StartupDecision(reason="Opening clock or sequence is ambiguous")
-            offset, self._fresh_sn = start
+                return StartupDecision(reason="Opening time jump has no clear frame boundary")
+            offset, self._fresh_sn, self._fresh_span = start
             self._candidate = StartupDecision(offset, "Opening backlog detected", device_delta, host_delta, anchor.sn)
             self._stable = 0
+        elif not 0 < sn_delta < SN_MODULUS // 2:
+            return StartupDecision(reason="Opening clock or sequence is ambiguous")
         elif host_delta > 0 and abs(device_delta - host_delta) <= max(0.25, device_delta * 0.35):
             self._stable += 1
             if self._stable >= STABLE_INTERVALS:

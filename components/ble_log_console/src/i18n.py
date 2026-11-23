@@ -89,6 +89,7 @@ _ZH_CN = {
     "Device initialization observed": "观察到设备初始化，保留全部数据",
     "Unsupported or invalid snapshot clock": "快照时钟不受支持或无效，保留全部数据",
     "Opening clock or sequence is ambiguous": "开录时钟或序号存在歧义，保留全部数据",
+    "Opening time jump has no clear frame boundary": "开录时设备时间发生跳变，无法确定新数据起点，保留完整录制",
     "Opening time jump lacks sequence evidence": "开录时间跳变缺少序号佐证，保留全部数据",
     "Opening backlog detected": "检测到开录积压",
     "Recording ended before opening was confirmed": "录制结束时尚未确认开录状态，保留全部数据",
