@@ -4,14 +4,13 @@
 
 BLE Log Console is a PC tool for receiving, displaying, and saving ESP BLE logs in real time.
 
-It supports:
+**We recommend direct USB** when the board exposes native USB and the firmware supports USB Output or USJ. A single data cable connects the target to the computer.
 
-- **UART**: receive BLE logs from a serial port.
-- **SPI Bridge**: receive BLE logs through a BLE Log SPI USB Bridge device.
-- **USJ**: receive BLE logs through the chip's built-in USB Serial/JTAG port.
-- **USB Output**: receive BLE logs through a firmware-provided TinyUSB CDC-ACM port.
-
-In interactive setup, select **USB** for either USB OTG or USJ, then choose the device. Port labels identify the type; chip names appear only when supplied by the USB descriptor. Listing ports does not open them or send probe commands. CLI `--mode usb` (OTG) and `--mode usj` remain available.
+| Connection | What to select |
+| --- | --- |
+| Direct USB | Select **USB**, then **USB OTG** (firmware TinyUSB CDC) or **USJ** (built-in USB Serial/JTAG). No baud rate is required. |
+| SPI Bridge | Connect the target’s SPI signals to a separate Bridge. Select **SPI Bridge** and its port. |
+| UART | Select **UART**, the adapter port, and the baud rate configured in firmware. |
 
 ## Supported Platforms
 
@@ -54,8 +53,9 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 ./ble_log_console_ubuntu_v1.1.0
 ```
 
-3. The default language is English. Switch language at the top right; the setup page updates immediately and keeps your current settings. Select the transport mode, port, UART baud rate, and log save directory. Optionally select **Host**, **HCI**, or **Console** (UART only) under **Live display**, then click **Connect**. All display categories default to off; recording, saved logs, status, and warnings are unaffected.
-4. Click **Stop & Review** when recording is complete. The tool saves the data and displays a quality result.
+3. For direct USB, set **Transport** to **USB** and select the **USB OTG** or **USJ** port matching the firmware. The interface starts in English. Use the language selector at the top right to switch.
+4. Choose **Save to**. For compressed Host text, set **Host dictionary** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages, or leave the boxes clear and click **Connect**. These choices affect the screen only.
+5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If raw data is complete but dictionary decoding failed, use the matching dictionary to decode the saved `.bin` again.
 
 SPI Bridge, USB OTG and USJ use CDC serial reception on every platform. If no Bridge CDC port is found, reconnect the device and refresh the port list; the tool does not switch to direct USB Bulk.
 
@@ -121,6 +121,7 @@ Running without parameters opens the interactive interface, where you can select
 You can also start a specified mode directly with command-line parameters:
 
 ```bat
+.\run.bat --mode usb --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -148,6 +149,7 @@ chmod +x ./install.sh ./run.sh
 Command-line startup examples:
 
 ```bash
+./run.sh --mode usb --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -171,6 +173,7 @@ python console.py
 Common commands:
 
 ```bash
+python console.py --mode usb --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
@@ -188,9 +191,10 @@ This section provides additional command-line usage for the tool package. Common
 | View help | `./ble_log_console_ubuntu_v1.1.0 --help` | `ble_log_console_windows_v1.1.0.exe --help` |
 | List ports | `./ble_log_console_ubuntu_v1.1.0 ports` | `ble_log_console_windows_v1.1.0.exe ports` |
 | Start interactive mode | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
+| Start USB OTG mode | `./ble_log_console_ubuntu_v1.1.0 --mode usb --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usb --port COM5` |
+| Start USJ mode | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | Start UART mode | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
 | Start SPI Bridge mode | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
-| Start USJ mode | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | View saved logs | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### Command-Line Options
@@ -201,6 +205,7 @@ This section provides additional command-line usage for the tool package. Common
 | `--port` | `-p` | optional | Serial, SPI Bridge, USB Output, or USJ port. Omit to open the interactive interface |
 | `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
 | `--log-dir` | `-d` | Last used directory, or `./logs` | Recording file save directory; an explicit value overrides the remembered directory |
+| `--log-database` | None | Remembered or auto-discovered | Firmware dictionary directory containing `BLE_HOST_logs.json` |
 | `--debug` | none | off | Show extra debugging information |
 | `--show-log` | none | none | Display `host`, `hci`, or `console`; repeat to select multiple categories, e.g. `--show-log host --show-log hci`. Does not change saved logs |
 
@@ -223,7 +228,7 @@ The **Host dictionary** directory is remembered when the recording file is reser
 
 ### Opening Backlog and Analysis Files
 
-Console observes opening snapshots during normal parsing in all transport modes; live logs and saved decoded logs retain the original stream. Within the first five seconds of received data, valid v8 snapshots must show a compressed device-time jump, advancing sequence/anchor counters, and then two stable intervals before old backlog is separated. Ambiguous evidence, unsupported metadata, a reset or a clock wrap prevents selection. Later gaps are never reclassified as opening backlog.
+Console observes opening snapshots during normal parsing in all transport modes; live transcripts and the raw file retain the original stream. Within the first five seconds and 2 MiB of received data, valid v8 snapshots must show a compressed device-time jump, advancing sequence/anchor counters, and then two stable intervals before old backlog is separated. For a wrapped or long ESP microsecond interval, Core checks elapsed time against the OS millisecond clock sampled in the same snapshots. A single sequence gap must separate the old and fresh runs in receive order. Ambiguous evidence, unsupported metadata or a device reset prevents selection. Later gaps are never reclassified as opening backlog.
 
 All received bytes remain in the original `.bin` files. During live parsing, the same decoded frames feed the full-recording check and a separate candidate-interval check. After the boundary is confirmed and raw saving finishes, Console uses the fresh interval result. The verdict and loss metrics then describe that interval, while byte/frame totals and parser coverage still describe the complete recording. The report gives the byte offset, timing evidence and original-stream missing-sequence count. Real losses after the boundary still affect the verdict. If the selected interval cannot be checked completely, the report falls back to the original-stream assessment with a warning.
 
@@ -263,7 +268,7 @@ For connection issues, log display, quality check limitations, source environmen
 
 ### Parser Core integration build
 
-This branch uses the unified BLFD 1.0.0.dev1 package for streaming integrity checks and firmware statistics.
+This branch uses the unified BLFD 1.0.0.dev2 package for streaming integrity checks and firmware statistics.
 
-The report lists ordered Parser outputs for the complete recording, including the opening backlog. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
+Ordered Host/HCI products start at the first confirmed fresh frame. To reproduce them from the complete raw file, pass the reported byte offset to Log Parser v2 with `--product-start-offset`. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
 Linux x86_64 / CPython 3.11 uses the supplied wheel; Windows and other targets build the supplied source package from the same revision. See [vendor/README.md](vendor/README.md) for compiler requirements. Windows build and hardware validation remain pending.

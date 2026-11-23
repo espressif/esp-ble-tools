@@ -2,35 +2,79 @@
 
 [中文](Config-Guide-CN.md) | [English](Config-Guide-EN.md)
 
-> **Use SPI first. Use UART when wiring or other SPI requirements cannot be met.**
+> **Prefer direct USB** when the target board exposes native USB and the firmware supports USB Output or USJ. Otherwise, use SPI Bridge or UART.
 
 Download: [BLE Log Console stable release][ble-log-console]. For PC-side operation, see the [Console User Guide](Console-User-Guide-EN.md).
 
 This guide helps determine a usable BLE Log sdkconfig and wiring setup based on the available hardware and peripheral usage. Start with the project's existing sdkconfig, determine the transport, port, GPIOs, and baud rate where applicable, then verify the setup with a trial recording. Available configuration options depend on the target chip and SDK version.
 
-**Reading order: Select SPI, UART, or USJ → Configure and wire → Verify a recording → Submit the files.**
+**Reading order: Select direct USB, SPI Bridge, or UART → Configure and wire → Verify a recording → Submit the files.**
 
-[SPI configuration](#spi) · [UART configuration](#uart) · [USJ configuration](#usj) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
+[USB configuration](#usb) · [USJ configuration](#usj) · [SPI configuration](#spi) · [UART configuration](#uart) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
 
 ## Quick Selection
 
-Once a transport is selected, read its SPI, UART, or USJ section, then continue to capture verification. Buffer and log level adjustments are covered in the appendix.
-
 | Priority | Conditions | Selection and next step |
 | --- | --- | --- |
-| 1. Prefer SPI | Three signal wires and GND can be connected, SPI resources are available, and a Bridge device is available. | Connect the Bridge and use [SPI Log](#spi). |
-| 2. Reuse an existing serial connection | SPI requirements cannot be met; the UART connected to the onboard USB-to-UART converter is available for BLE Log and supports the required baud rate. | Use [UART Log](#uart), usually without extra wiring. A UART used only for ordinary log output may also be reused. |
-| 3. Use the built-in USB Serial/JTAG port (USJ) | The onboard UART connection cannot be reused; the PC connects to the chip's built-in USB Serial/JTAG port; the ESP-IDF used for the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`; and no console, esp_trace, or OpenThread RCP needs that port. | Use [USJ Log](#usj), without extra wiring. If the firmware does not offer the option, USJ is not available; continue with the next row. |
-| 4. Use an external USB-to-UART adapter | The onboard connection cannot be reused, but a UART and accessible TX and GND connections are available. | Connect an external adapter and use [UART Log](#uart). |
-| 5. No available transport | None of the above conditions can be met. | Contact technical support to assess a feasible configuration using the sdkconfig and hardware constraints already collected. |
+| 1. Direct USB (recommended) | The board exposes native USB and the firmware supports BLE Log on that peripheral. | Use [USB OTG](#usb) for TinyUSB CDC or [USJ](#usj) for built-in USB Serial/JTAG. Select **USB** in Console for either. |
+| 2. SPI Bridge | A separate Bridge and an available SPI peripheral with accessible MOSI, SCLK, CS, and GND are available. | Connect the two boards as shown in [SPI configuration](#spi). |
+| 3. UART | An onboard USB-to-UART converter is available, or UART TX and GND are accessible for an external adapter. | Check the TX pin and matching baud rates in [UART configuration](#uart). |
+
+<a id="usb"></a>
+
+## 1. Direct USB Configuration (Recommended)
+
+### 1.1 USB Output (USB OTG)
+
+1. Enable `CONFIG_BLE_LOG_ENABLED=y` and `CONFIG_BLE_LOG_PRPH_USB=y` in the target project. Add the `espressif/esp_tinyusb` dependency to `main/idf_component.yml`, run `idf.py reconfigure`, and enable `CONFIG_TINYUSB_CDC_ENABLED=y`.
+2. Check the CDC buffer settings, build, and flash. See the [USB section of the User Guide](Console-User-Guide-EN.md#usb-direct) for the dependency version, buffer settings, and wiring diagram.
+3. Connect the board’s USB OTG port to the computer with a data cable. Select **USB → USB OTG** (`303A:10B1`) in Console. There is no baud rate to set. Choose a save directory and make a [trial recording](#verification).
+
+<a id="usj"></a>
+
+### 1.2 USB Serial/JTAG (USJ)
+
+USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. It needs no extra wiring and no baud rate.
+
+> **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
+
+#### Connection Requirements
+
+| Item | Requirement and explanation | Suggested action |
+| --- | --- | --- |
+| Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
+| Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
+| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj` to list only `303A:1001` ports, or select a port labeled **USJ** in the interactive **USB** list. |
+| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool saves printable text, warns if text continues, and keeps recording. |
+
+#### Configuration and Connection
+
+| Configuration / connection | Value | Connection / explanation |
+| --- | --- | --- |
+| `CONFIG_BLE_LOG_ENABLED` | `y` | Enable BLE Log. |
+| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | Not set | Select another primary console channel, such as the default UART0. |
+| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | Disable the secondary console on USB Serial/JTAG. |
+| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | Select USB Serial/JTAG output. Shown only when the firmware offers it and the port is free. |
+| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | Keep the default `2048` | TX ring in bytes, from 2048 to 10240, and at least `CONFIG_BLE_LOG_POOL_TRANS_SIZE`. A larger ring does not raise the link rate. |
+| USB | No configuration option | Chip's built-in USB Serial/JTAG port → PC. |
+
+The USJ link rate is not configurable. Use the trial recording and quality report to check whether it carries the required log volume.
+
+#### Connect the Tool
+
+After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USB**, then the **USJ** port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
+
+> The tool does not send a reset sequence. While opening the port it releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, and then leaves both lines released. The operating system or its USB driver can still change these lines while opening the device, which can reset the board. Connect when the application can be interrupted, and check whether connecting resets the board on this PC.
+
+**Next: [Capture verification](#verification).**
 
 <a id="spi"></a>
 
-## 1. SPI Log Configuration (Recommended)
+## 2. SPI Log Configuration
 
 SPI offers more bandwidth for larger log volumes, helping capture the information needed to locate problems. Connect the target board to a Bridge using three signal wires and GND, then connect the Bridge to the PC.
 
-### 1.1 Connection Requirements
+### 2.1 Connection Requirements
 
 > **Check wiring access first.** An unused SPI controller does not necessarily mean its signals can be brought out. Check SPI resource availability after confirming that wiring is practical.
 
@@ -45,7 +89,7 @@ SPI offers more bandwidth for larger log volumes, helping capture the informatio
 
 If these requirements are met, select SPI output in the existing sdkconfig and determine the MOSI, SCLK, and CS GPIOs. Otherwise, see [UART configuration](#uart).
 
-### 1.2 Configuration and Wiring
+### 2.2 Configuration and Wiring
 
 | Configuration / connection | Value | Wiring / explanation |
 | --- | --- | --- |
@@ -58,7 +102,7 @@ If these requirements are met, select SPI output in the existing sdkconfig and d
 
 These Bridge pins apply to the matching ESP32P4 Bridge firmware. Confirm compatible signal levels, keep wires short, and connect a common ground.
 
-### 1.3 Connect the Tool
+### 2.3 Connect the Tool
 
 After building and flashing the firmware, select **SPI Bridge** in the PC tool. For Bridge preparation, see the [Console User Guide](Console-User-Guide-EN.md#3-spi-bridge-mode).
 
@@ -66,7 +110,7 @@ After building and flashing the firmware, select **SPI Bridge** in the PC tool. 
 
 <a id="uart"></a>
 
-## 2. UART Log Configuration (Fallback)
+## 3. UART Log Configuration (Fallback)
 
 Use UART when SPI connection requirements cannot be met. **Prefer the onboard USB-to-UART converter and existing logging UART to reduce extra wiring.** UART bandwidth is more limited; start with the bandwidth optimization setting and make a trial recording.
 
@@ -74,7 +118,7 @@ Use UART when SPI connection requirements cannot be met. **Prefer the onboard US
 
 For log file details, see “View Console Logs” and “Find and Submit Recording Files” in the [Console User Guide](Console-User-Guide-EN.md).
 
-### 2.1 Connection Requirements
+### 3.1 Connection Requirements
 
 | Item | Explanation | Suggested action |
 | --- | --- | --- |
@@ -97,7 +141,7 @@ BLE Log recommends starting with `3000000` to accommodate more logs. Check the *
 
 > **A successful probe still requires a trial recording.** Accepting a baud rate setting does not prove stable log reception at that rate or establish the highest usable rate. Use the capture quality report to assess the connection with matching firmware and PC settings. Opening the serial port may reset some boards; confirm that the application can be interrupted before running the script.
 
-### 2.2 Configuration and Wiring
+### 3.2 Configuration and Wiring
 
 | Configuration / connection | Value | Wiring / explanation |
 | --- | --- | --- |
@@ -109,49 +153,9 @@ BLE Log recommends starting with `3000000` to accommodate more logs. Check the *
 | GND | No configuration option | For an external adapter: target GND → adapter GND. Confirm compatible signal levels. |
 | USB | No configuration option | USB port of the onboard converter or external adapter → PC. |
 
-### 2.3 Connect the Tool
-
-After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **UART** and the corresponding port, using the same baud rate as the firmware. Repeat the trial recording after changing the rate.
-
-**Next: [Capture verification](#verification).**
-
-<a id="usj"></a>
-
-## 3. USJ Log Configuration (Depends on Firmware Support)
-
-USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. It needs no extra wiring and no baud rate.
-
-> **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
-
-USJ is not USB Output mode. USB Output uses TinyUSB on a USB OTG peripheral (`CONFIG_BLE_LOG_PRPH_USB`, USB ID `303A:10B1`); see [USB Output and USJ instructions](Console-User-Guide-EN.md#usb-direct) for its connection and firmware configuration. USJ uses the built-in USB Serial/JTAG controller, which keeps USB ID `303A:1001`.
-
-### 3.1 Connection Requirements
-
-| Item | Requirement and explanation | Suggested action |
-| --- | --- | --- |
-| Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
-| Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
-| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj` to list only `303A:1001` ports, or select a port labeled **USJ** in the interactive **USB** list. |
-| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool shows and saves this text, warns if text continues, and keeps recording. |
-
-### 3.2 Configuration and Connection
-
-| Configuration / connection | Value | Connection / explanation |
-| --- | --- | --- |
-| `CONFIG_BLE_LOG_ENABLED` | `y` | Enable BLE Log. |
-| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | Not set | Select another primary console channel, such as the default UART0. |
-| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | Disable the secondary console on USB Serial/JTAG. |
-| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | Select USB Serial/JTAG output. Shown only when the firmware offers it and the port is free. |
-| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | Keep the default `2048` | TX ring in bytes, from 2048 to 10240, and at least `CONFIG_BLE_LOG_POOL_TRANS_SIZE`. A larger ring does not raise the link rate. |
-| USB | No configuration option | Chip's built-in USB Serial/JTAG port → PC. |
-
-The USJ link rate is not configurable. Use the trial recording and quality report to check whether it carries the required log volume.
-
 ### 3.3 Connect the Tool
 
-After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USB**, then the **USJ** port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
-
-> The tool does not send a reset sequence. While opening the port it releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, and then leaves both lines released. The operating system or its USB driver can still change these lines while opening the device, which can reset the board. Connect when the application can be interrupted, and check whether connecting resets the board on this PC.
+After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **UART** and the corresponding port, using the same baud rate as the firmware. Repeat the trial recording after changing the rate.
 
 **Next: [Capture verification](#verification).**
 
@@ -190,21 +194,16 @@ For the full capture, **start recording before triggering the problem**. Note th
 
 A complete delivery includes the recording files, the log database matching the firmware where required, and the [configuration record](#records).
 
-| Deliverable | UART | USJ | SPI | Purpose |
-| --- | --- | --- | --- | --- |
-| `ble_log_*.bin` | **Required** | **Required** | **Required** | Raw BLE Log, including all `part` files. |
-| `ble_log_*_report.txt` | **Required** | **Required** | **Required** | Quality report from the same recording. |
-| `ble_log_*_console.log` | Include if generated | Include if generated | Currently not generated | Readable copy of ordinary serial logs and text; does not replace `.bin`. |
-| Entire `ble_log_database/` directory | Required for compressed logs | Required for compressed logs | Required for compressed logs | Database needed to decode compressed logs. |
-| `sdkconfig` and configuration record | **Required** | **Required** | **Required** | Firmware configuration, versions, and reproduction details; see [Configuration record](#records). |
+| Deliverable (all modes) | When to include it |
+| --- | --- |
+| Raw `.bin` and matching `_report.txt` | Submit for every recording. Include every `part` of a split recording. |
+| Entire `ble_log_database/` directory | Supply the matching firmware dictionary when compressed logs require decoding. |
+| `sdkconfig` and [configuration record](#records) | Include the build configuration, wiring, and reproduction details. |
+| Generated log files | Include Host text, HCI btsnoop files, or live transcripts relevant to the issue. On UART and USJ, `_console.log` can include boot or panic text. |
 
 ### 5.2 Recording File Location
 
-Recordings are saved in the directory selected when starting a recording. The default is `logs/` under the directory from which the tool was started. The tool prints the actual file paths when it exits.
-
-- `.bin`, `_report.txt`, and any generated `_console.log` are saved in the same directory and must come from **the same recording**.
-- For split recordings, include **all `part` files**.
-- UART and USJ generate `_console.log` only when ordinary text is received: redirected ordinary logs, or text outside BLE Log frames such as boot messages. The file may be absent when no such text is received.
+Files are written to **Save to** on the setup screen. It defaults to `logs/` under the working directory on first use, then remembers the selected directory. The report lists the file paths. See the [recording file table](Console-User-Guide-EN.md#recording-files) for suffixes and uses.
 
 ### 5.3 Log Database Location and Version
 
@@ -230,13 +229,13 @@ Save the verified sdkconfig together with the wiring and receiver settings for s
 | --- | --- |
 | Versions | Target chip, SDK, BLE Log Console, and Bridge firmware version (if used). |
 | Firmware configuration | sdkconfig from the build that passed capture verification. |
-| Hardware connection | SPI / UART / USJ, GPIOs, and physical connection points. |
+| Hardware connection | USB OTG / USJ / SPI / UART, GPIOs, and physical connection points. |
 | Receiver settings | PC-side mode, port, and UART baud rate. |
 | Capture result | Log files, quality report, time of the problem, and actions performed. |
 
 <a id="advanced"></a>
 
-## Appendix: Additional Configuration (SPI / UART / USJ)
+## Appendix: Additional Configuration (USB OTG / USJ / SPI / UART)
 
 Buffers hold logs awaiting transmission and absorb short bursts to help reduce log loss. Log levels and source switches control the amount and content of logs.
 
@@ -261,6 +260,6 @@ Buffers cannot solve sustained log generation exceeding transport capacity and d
 | NimBLE log level / Bluedroid module Trace Levels | Control Host log detail. | Examples include `CONFIG_BT_NIMBLE_LOG_LEVEL_INFO` and `CONFIG_BT_LOG_HCI_TRACE_LEVEL_EVENT`. More detailed logs generally require more bandwidth. |
 | `CONFIG_BLE_LOG_HOST_LOG`, `CONFIG_BLE_LOG_LL_ENABLED`, `CONFIG_BLE_LOG_HCI_LOG_ENABLED` | Control Host, link-layer, and HCI log sources. | Disabling a source can reduce log volume but may remove information needed for diagnosis. Availability depends on the protocol stack and Controller configuration. |
 
-Switching between SPI, UART, and USJ does not automatically restore existing log levels. Log coverage must include the problem being investigated. Verify transport quality with a trial recording after adjustments.
+Switching between USB OTG, USJ, SPI, and UART does not automatically restore existing log levels. Log coverage must include the problem being investigated. Verify transport quality with a trial recording after adjustments.
 
 [ble-log-console]: https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable

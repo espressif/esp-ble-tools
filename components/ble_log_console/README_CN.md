@@ -4,14 +4,13 @@
 
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的电脑端工具。
 
-它支持：
+**推荐 USB 直连。** 若目标板引出了原生 USB 口，且固件支持 USB Output 或 USJ，用一根数据线即可录制。
 
-- **UART**：通过串口接收 BLE 日志。
-- **SPI Bridge**：通过 BLE Log SPI USB Bridge 设备接收 BLE 日志。
-- **USJ**：通过芯片内置的 USB Serial/JTAG 口接收 BLE 日志。
-- **USB Output**：通过固件提供的 TinyUSB CDC-ACM 口接收 BLE 日志。
-
-交互界面中，USB OTG 和 USJ 统一选择 **USB**，再选择设备。端口标签标明类型，仅在 USB 描述符提供型号时显示芯片型号。列出端口不会打开串口或发送探测命令。命令行继续支持 `--mode usb`（OTG）和 `--mode usj`。
+| 连接方式 | 工具中如何选择 |
+| --- | --- |
+| USB 直连 | 选 **USB**，再选 **USB OTG**（固件 TinyUSB CDC）或 **USJ**（内置 USB Serial/JTAG）。无需设置波特率。 |
+| SPI Bridge | 目标板 SPI 接独立 Bridge，选 **SPI Bridge** 和 Bridge 端口。 |
+| UART | 选 **UART**、转串口端口和固件使用的波特率。 |
 
 ## 工具下载
 
@@ -48,8 +47,9 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 ./ble_log_console_ubuntu_v1.1.0
 ```
 
-3. 默认使用英文。在右上角切换语言会立即更新设置页，并保留已填设置。选择传输模式、端口、UART 波特率和日志保存目录。可在“实时显示”中勾选 **Host**、**HCI** 或“控制台”（仅 UART），然后点击 **连接（Connect）**。显示类别默认全部关闭，不影响录制、日志文件保存、状态和警告提示。
-4. 录制完成后点击 **Stop & Review**，工具会保存数据并显示质量结论。
+3. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
+4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Host 字典** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。想看实时消息时勾选 **Host** 或 **HCI**，也可以全部留空直接 **连接**。显示选择只影响屏幕。
+5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告；需要 Host 文本时，同时检查「压缩 Host 文本」一项。原始数据完整而字典解码失败时，可换字典重新解析已保存的 `.bin`。
 
 SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
 
@@ -115,6 +115,7 @@ Windows 源码安装需要 Visual Studio Build Tools 的 **使用 C++ 的桌面�
 也可以直接通过命令行参数启动指定模式：
 
 ```bat
+.\run.bat --mode usb --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -143,6 +144,7 @@ chmod +x ./install.sh ./run.sh
 命令行启动示例如下：
 
 ```bash
+./run.sh --mode usb --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -167,6 +169,7 @@ python console.py
 常用命令如下：
 
 ```bash
+python console.py --mode usb --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
@@ -184,9 +187,10 @@ python console.py --mode spi --port <PORT>
 | 查看帮助 | `./ble_log_console_ubuntu_v1.1.0 --help` | `ble_log_console_windows_v1.1.0.exe --help` |
 | 列出端口 | `./ble_log_console_ubuntu_v1.1.0 ports` | `ble_log_console_windows_v1.1.0.exe ports` |
 | 启动交互模式 | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
+| 启动 USB OTG 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usb --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usb --port COM5` |
+| 启动 USJ 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | 启动 UART 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
 | 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
-| 启动 USJ 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
 | 查看已保存日志 | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
 
 ### 命令行参数
@@ -197,6 +201,7 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | 上次使用的目录，无记录时为 `./logs` | 录制文件保存目录；显式指定时优先于记住的目录 |
+| `--log-database` | 无 | 记忆值或自动查找 | 包含 `BLE_HOST_logs.json` 的固件字典目录 |
 | `--debug` | 无 | 关闭 | 显示额外的调试信息 |
 | `--show-log` | 无 | 全部关闭 | 显示 `host`、`hci` 或 `console`；可重复指定，如 `--show-log host --show-log hci`，不影响日志文件保存 |
 
@@ -219,7 +224,7 @@ USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接�
 
 ### 开录积压与分析文件
 
-所有传输模式都会在正常解析过程中观察开录快照；实时显示和解码日志仍保留原始流。仅在接收开始后的前 5 秒内，v8 快照同时出现设备时间被压缩的大幅前跳、序号及快照计数前进，并恢复两个稳定间隔，才会确认旧积压边界。证据不明确、元数据不支持、复位或时钟回绕时不切分；后续缺口不会重新归为开录积压。
+所有传输模式都会在正常解析过程中观察开录快照；实时转录和原始文件保留完整数据。仅在接收开始后的前 5 秒、最多 2 MiB 内，v8 快照同时出现设备时间被压缩的大幅前跳、序号及快照计数前进，并恢复两个稳定间隔，才会确认旧积压边界。当 ESP 微秒时钟回绕或间隔较长时，Core 使用同一对快照中的 OS 毫秒时钟核对经过时间。新旧两段序号必须只有一个缺口，且按接收顺序可分开。证据不明确、元数据不支持或设备复位时，报告评估完整录制；后续缺口不会重新归为开录积压。
 
 收到的全部字节始终保留在原始 `.bin` 中。Console 在实时解析时将同一份已解码帧交给整份录制和候选新区间的检查器；确认边界并安全保存后，结论和丢失指标使用新区间结果；总字节数、总帧数和解析覆盖仍描述完整录制。报告显示区间偏移、时间证据及原始流缺失序号数。边界之后的真实丢包仍影响结论。新数据区间未能完整检查时，保守回退到原始流结论并提示原因。
 
@@ -259,7 +264,7 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 
 ### Parser Core 接入版本
 
-此分支使用统一的 BLFD 1.0.0.dev1 包进行流式完整性检查和固件统计。
+此分支使用统一的 BLFD 1.0.0.dev2 包进行流式完整性检查和固件统计。
 
-报告列出整段录制的有序解析产物，覆盖开头积压的数据。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
+有序 Host/HCI 产物从确认的新序号段第一帧开始。使用完整原始文件和报告中的字节偏移，可通过 Log Parser v2 的 `--product-start-offset` 复现。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
 Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。
