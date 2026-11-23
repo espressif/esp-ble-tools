@@ -109,9 +109,9 @@ def visible(world):
 @then("全部原始数据和解码日志仍被保存")
 def saved(world):
     assert world.output.read_bytes() == world.raw
-    console = world.output.with_name("recording_console.log").read_text()
+    console = world.output.with_name("recording_console.log").read_text(encoding="utf-8")
     assert TEXT["host"] in console and TEXT["console"] in console
-    assert TEXT["hci"] in world.output.with_name("recording_hci.log").read_text()
+    assert TEXT["hci"] in world.output.with_name("recording_hci.log").read_text(encoding="utf-8")
     assert world.output.with_name("recording_hci_btsnoop.log").read_bytes().endswith(b"\x01\x03\x0c\x00")
 
 

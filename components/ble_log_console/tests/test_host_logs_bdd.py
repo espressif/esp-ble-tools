@@ -53,7 +53,7 @@ def remote_database(tmp_path, monkeypatch):
 @given("压缩日志格式末尾包含转义换行")
 def escaped_line_ending(world):
     path = world.database / "BLE_HOST_logs.json"
-    database = json.loads(path.read_text())
+    database = json.loads(path.read_text(encoding="utf-8"))
     database["logs"]["2"]["format"] = '"hello compressed\\r\\n"'
     path.write_text(json.dumps(database))
 
@@ -106,7 +106,7 @@ def start(world, selection):
         events.append(outgoing.get_nowait())
     presenter = CaptureEventPresenter(output)
     world.messages = presenter.handle_events(events) + presenter.finish()
-    world.text = presenter.state.saved_console_log_paths[0].read_text()
+    world.text = presenter.state.saved_console_log_paths[0].read_text(encoding="utf-8")
     world.output = output
     world.pipeline.io_is_alive.return_value = False
     world.pipeline.analysis_is_alive.return_value = False
@@ -213,7 +213,7 @@ def recorded_host_report(world, choice):
         (db / "BLE_HOST_logs.json").write_text("{broken")
     if choice == "条目损坏":
         path = db / "BLE_HOST_logs.json"
-        dictionary = json.loads(path.read_text())
+        dictionary = json.loads(path.read_text(encoding="utf-8"))
         dictionary["logs"]["3"] = {"id": 3, "format": None}
         path.write_text(json.dumps(dictionary))
     incoming, counters, outgoing = Queue(), Queue(), Queue()
@@ -254,7 +254,7 @@ def host_report_status(world, verdict, status):
             assert "已导出 1 条" in text and "2 帧" in text and "BLE_HOST_logs.json" in text
             assert "Frames without a usable dictionary entry: 2." in render(report, "en")
     if status in ("部分解码", "已生成文本文件"):
-        assert len(files) == 1 and "hello compressed" in files[0].read_text()
+        assert len(files) == 1 and "hello compressed" in files[0].read_text(encoding="utf-8")
     else:
         assert not files
     if status in ("未生成可读文本", "未选择字典", "部分解码"):
@@ -309,12 +309,12 @@ def stop_with_slow_copy(world, action):
                 backend.stop.side_effect = lambda: setattr(backend.io_is_alive, "return_value", False)
                 await pilot.click("#stop-review")
                 async with asyncio.timeout(3):
-                    while not isinstance(app.screen, CaptureReportScreen):
+                    while not isinstance(app.screen, CaptureReportScreen) or not app.screen.query("#report-summary"):
                         await pilot.pause()
                 assert session.finished
                 assert "Dictionary copy pending" in str(app.screen.query_one("#report-summary", Static).content)
                 world.report_path = app.saved_report_path
-                world.initial_text = world.report_path.read_text()
+                world.initial_text = world.report_path.read_text(encoding="utf-8")
                 if action == "再次录制":
                     backend.io_is_alive.return_value = True
                     await pilot.click("#record-again")
@@ -342,7 +342,7 @@ def stop_with_slow_copy(world, action):
 @then("报告先保存，副本完成后只更新所属录制")
 def report_before_copy(world):
     assert "Dictionary copy pending" in world.initial_text
-    final_text = world.report_path.read_text()
+    final_text = world.report_path.read_text(encoding="utf-8")
     assert "Dictionary copy pending" not in final_text
     assert str(world.copy) in final_text
     assert (world.copy / "BLE_HOST_logs.json").is_file()

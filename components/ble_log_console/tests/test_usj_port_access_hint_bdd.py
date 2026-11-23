@@ -39,7 +39,7 @@ def english_output() -> Any:
 
 
 @pytest.fixture
-def world(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def world(monkeypatch: pytest.MonkeyPatch, linux_serial_platform) -> SimpleNamespace:
     namespace = SimpleNamespace(devices=[], can_open=True, output="")
     monkeypatch.setattr(_COMPORTS, lambda: list(namespace.devices))
     # The decision under test is what the scan reports; whether a real tty node

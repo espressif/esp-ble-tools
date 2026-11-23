@@ -69,7 +69,7 @@ def test_host_text_reaches_display_and_file_without_double_counting(tmp_path, mo
     messages = presenter.handle_events([aggregator.consume_parser_batch(parser.feed(data))])
     messages += presenter.finish()
     assert any(isinstance(msg, LogLine) and "hello host 中文" in msg.text for msg in messages)
-    text = presenter.state.saved_console_log_paths[0].read_text()
+    text = presenter.state.saved_console_log_paths[0].read_text(encoding="utf-8")
     assert "hello host 中文" in text and "hidden" not in text
     assert aggregator.snapshot(1).stats.transport.rx_frames == 3
     assert parser.finalize().parsed_frames == 3

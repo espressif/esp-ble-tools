@@ -10,7 +10,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
 
@@ -97,11 +97,11 @@ def _normalize_console_log_text(text: str) -> str:
 
 
 def _format_receive_timestamp(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=" ", timespec="milliseconds")
+    return datetime.fromtimestamp(received_at_ms / 1000, UTC).astimezone().isoformat(sep=" ", timespec="milliseconds")
 
 
 def _format_receive_time(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime("%H:%M:%S.%f")[:-3]
+    return datetime.fromtimestamp(received_at_ms / 1000, UTC).astimezone().strftime("%H:%M:%S.%f")[:-3]
 
 
 class CaptureEventPresenter:

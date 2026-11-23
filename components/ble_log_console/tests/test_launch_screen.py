@@ -101,7 +101,7 @@ class TestRefreshPorts:
         assert mock_select.value != "/dev/ttyUSB0"
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_refresh_shows_why_a_present_bridge_is_missing(self, mock_scan: MagicMock) -> None:
+    def test_refresh_shows_why_a_present_bridge_is_missing(self, mock_scan: MagicMock, linux_serial_platform) -> None:
         """An unusable bridge must not leave the user with a bare empty list."""
         mock_scan.return_value = PortScan(
             issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
@@ -125,7 +125,9 @@ class TestRefreshPorts:
         )
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_refresh_shows_the_chinese_hint_when_the_app_language_is_chinese(self, mock_scan: MagicMock) -> None:
+    def test_refresh_shows_the_chinese_hint_when_the_app_language_is_chinese(
+        self, mock_scan: MagicMock, linux_serial_platform
+    ) -> None:
         mock_scan.return_value = PortScan(
             issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
         )
@@ -146,7 +148,9 @@ class TestRefreshPorts:
         )
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_switching_the_app_language_re_renders_the_visible_hint(self, mock_scan: MagicMock) -> None:
+    def test_switching_the_app_language_re_renders_the_visible_hint(
+        self, mock_scan: MagicMock, linux_serial_platform
+    ) -> None:
         """The hint is already on screen when the user picks 简体中文."""
         mock_scan.return_value = PortScan(
             issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
@@ -298,7 +302,7 @@ class TestConnect:
 
         config = screen.dismiss.call_args[0][0]
         assert isinstance(config.log_dir, Path)
-        assert str(config.log_dir) == "/home/user/logs"
+        assert config.log_dir == Path("/home/user/logs")
 
 
 class TestTransportModeHelpers:

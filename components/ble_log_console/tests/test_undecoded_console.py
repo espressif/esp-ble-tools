@@ -47,7 +47,7 @@ def _present(presenter: CaptureEventPresenter, events: list[Any]) -> tuple[str, 
     messages.extend(presenter.finish())
     ui = "\n".join(message.text for message in messages if isinstance(message, LogLine))
     paths = presenter.state.saved_console_log_paths
-    saved = paths[0].read_text() if paths else ""
+    saved = paths[0].read_text(encoding="utf-8") if paths else ""
     return ui, saved
 
 
@@ -170,7 +170,7 @@ def test_long_undecoded_text_is_bounded_and_every_byte_is_kept(tmp_path: Path) -
     assert live_x >= len(text) - REDIR_LINE_BUFFER_LIMIT
     final = presenter.finish()
     assert presenter.finish() == ()
-    saved = presenter.state.saved_console_log_paths[0].read_text()
+    saved = presenter.state.saved_console_log_paths[0].read_text(encoding="utf-8")
     ui = "\n".join(message.text for message in [*live, *final] if isinstance(message, LogLine))
     for output in (ui, saved):
         assert output.count("x") == len(text)
@@ -264,7 +264,7 @@ def _record_text(
         for message in messages
         if isinstance(message, LogLine) and not message.text.startswith("Saving to ")
     ]
-    return text_lines, paths[0].read_text() if paths else ""
+    return text_lines, paths[0].read_text(encoding="utf-8") if paths else ""
 
 
 def _render(lines: list[str]) -> list[Strip]:

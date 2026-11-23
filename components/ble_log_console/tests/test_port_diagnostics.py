@@ -21,7 +21,9 @@ from src.frontend.port_diagnostics import describe_port_issues
     "mode,pid,label", [("spi", 0x4001, "SPI Bridge"), ("usb", 0x10B1, "USB OTG"), ("usj", 0x1001, "USJ")]
 )
 @pytest.mark.parametrize("language,permission", [("en", "no read/write permission"), ("zh_CN", "没有读写权限")])
-def test_cli_explains_cdc_permission_without_opening_ports(monkeypatch, mode, pid, label, language, permission):
+def test_cli_explains_cdc_permission_without_opening_ports(
+    monkeypatch, mode, pid, label, language, permission, linux_serial_platform
+):
     monkeypatch.setattr("src.i18n._language", language)
     monkeypatch.setattr(
         "serial.tools.list_ports.comports", lambda: [SimpleNamespace(device="/dev/ttyACM0", vid=0x303A, pid=pid)]

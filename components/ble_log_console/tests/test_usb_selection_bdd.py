@@ -94,7 +94,7 @@ def correct_transport(world, mode):
 
 
 @given("USJ 端口暂时没有读写权限")
-def denied_usj(world, monkeypatch):
+def denied_usj(world, monkeypatch, linux_serial_platform):
     world.denied = True
     monkeypatch.setattr(
         "src.backend.support.transport.serial_reader.os.access",

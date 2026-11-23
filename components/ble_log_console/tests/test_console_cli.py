@@ -25,9 +25,10 @@ def test_ports_help_exposes_only_user_transport_modes() -> None:
 
 
 def test_single_path_output_names_the_file_without_claiming_a_saved_recording(capsys) -> None:
-    _echo_paths("Recording file", [Path("/logs/ble_log_20260101_120000.bin")])
+    path = Path("/logs/ble_log_20260101_120000.bin")
+    _echo_paths("Recording file", [path])
 
-    assert capsys.readouterr().out == "Recording file: /logs/ble_log_20260101_120000.bin\n"
+    assert capsys.readouterr().out == f"Recording file: {path}\n"
 
 
 def test_multi_part_output_lists_the_files_without_claiming_a_saved_recording(capsys) -> None:

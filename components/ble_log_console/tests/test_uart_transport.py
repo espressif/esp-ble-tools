@@ -96,7 +96,7 @@ class TestUartTransportReader:
         assert serial_obj.dtr is False
         assert serial_obj.rts is False
 
-    def test_open_retries_without_exclusive_when_the_flag_is_unsupported(self) -> None:
+    def test_open_retries_without_exclusive_when_the_flag_is_unsupported(self, linux_serial_platform) -> None:
         serial_obj = MagicMock()
         serial_obj.is_open = True
 

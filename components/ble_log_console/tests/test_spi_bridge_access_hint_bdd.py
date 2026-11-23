@@ -14,7 +14,7 @@ scenarios("features/spi_bridge_access_hint.feature")
 
 
 @pytest.fixture
-def world(monkeypatch):
+def world(monkeypatch, linux_serial_platform):
     state = SimpleNamespace(devices=[], denied=set(), error=None)
     monkeypatch.setattr("src.i18n._language", "en")
 
