@@ -268,7 +268,7 @@ For connection issues, log display, quality check limitations, source environmen
 
 ### Parser Core integration build
 
-This branch uses the unified BLFD 1.0.0.dev5 package for streaming integrity checks and firmware statistics.
+This branch uses the unified BLFD 1.0.0 package for streaming integrity checks and firmware statistics.
 
 Ordered Host/HCI products start at the first confirmed fresh frame. The report gives the byte offset of that frame in the complete raw recording. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
 Linux x86_64 / CPython 3.11 uses the supplied wheel; Windows and other targets build the supplied source package from the same revision. See [vendor/README.md](vendor/README.md) for compiler requirements. Windows build and hardware validation remain pending.
