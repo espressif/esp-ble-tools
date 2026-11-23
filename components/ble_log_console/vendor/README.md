@@ -21,13 +21,14 @@ The Windows dependency selection is checked on Linux; MSVC compilation,
 Windows executable startup and hardware reception still require Windows testing.
 
 Source file hashes are recorded in the Parser repository in `ble_log_parser_v2/vendor/blfd.json`.
+The bundled files are in `089a5a6/`, named for the BLFD source revision.
 Built with manylinux2014 and repaired with auditwheel.
 
 SHA256 of `esp_blfd-1.0.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl`:
-`eeedf62b7fc598f71d0edbbc42b6cb72c8469990d713562f8a8d3820050ace30`
+`97853d2fbdcce486ff93f6b46f6d4e0f31b26a3cc0a9644a03c78a1471f0f1a9`
 
 SHA256 of `esp_blfd-1.0.0.tar.gz`:
-`457fca6abe0db499d8c76506a2f6dc197a37bb8d84410770ed979ebdd27b01c7`
+`2338d1086563204cb3f4b51b051b6072df815e6c9da24216ce29dc2ef0f79d1d`
 
 The source distribution was built with `python -m build --sdist` from the same source tree.
 It contains the three native engine sources and excludes the internal package.

@@ -40,7 +40,10 @@ def test_dependency_source_matches_target(platform, machine, python_version, suf
 
 
 def test_public_source_distribution_contains_all_native_engines():
-    with tarfile.open(PROJECT / "vendor/esp_blfd-1.0.0.tar.gz") as archive:
+    config = tomllib.loads((PROJECT / "pyproject.toml").read_text())
+    sources = config["tool"]["uv"]["sources"]["esp-blfd"]
+    (sdist,) = (PROJECT / source["path"] for source in sources if source["path"].endswith(".tar.gz"))
+    with tarfile.open(sdist) as archive:
         names = {name.partition("/")[2] for name in archive.getnames()}
     assert {
         "setup.py",
