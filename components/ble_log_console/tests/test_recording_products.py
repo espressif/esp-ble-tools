@@ -52,3 +52,27 @@ def test_resume_during_recording_only_reads_to_next_chunk(tmp_path):
     result = writer.finish(ReceivedEnd(len(data), (path,), True))
     assert result.error is None
     assert result.paths[0].read_bytes() == b"startend"
+
+
+def test_compressed_host_in_excluded_prefix_does_not_require_text_output(tmp_path):
+    from src.backend.analysis.startup import StartupDecision
+    from src.backend.models import CompressedHostStatus
+
+    from tests.test_host_logs import encoded, make_database
+    from tests.test_startup import snapshot
+
+    database = make_database(tmp_path)
+    (database / "BLE_HOST_logs.json").write_text("{broken")
+    blocks = [snapshot(10, 100, 10) + encoded(101), snapshot(70, 300, 70), snapshot(71, 301, 71), snapshot(72, 302, 72)]
+    path = tmp_path / "rec.bin"
+    path.write_bytes(b"".join(blocks))
+    incoming, events = Queue(), Queue()
+    offset = 0
+    for block, ts in zip(blocks, (0, 0.1, 1.1, 2.1)):
+        incoming.put(ReceivedChunk(block, int(ts * 1000), ts, offset))
+        offset += len(block)
+    incoming.put(ReceivedEnd(offset, (path,), True))
+    run_parser_loop(incoming, events, analysis_output=WriterConfig(path), log_database=database)
+    assert next(e.offset_bytes for e in events.queue if isinstance(e, StartupDecision)) == len(blocks[0])
+    products = next(e for e in events.queue if isinstance(e, RecordingProducts))
+    assert not products.error and products.compressed_host_status == CompressedHostStatus.NO_INPUT

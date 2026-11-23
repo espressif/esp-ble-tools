@@ -22,13 +22,14 @@ def record(
     tmp_path,
     *,
     stale=True,
+    clock_origin=0,
     dropped_tail=False,
     part_max_bytes=200 * 1024 * 1024,
     bindings=False,
     fresh_gap=False,
 ):
     """Exercise raw saving, analysis, final result and report with timed input."""
-    items = chunks(stale=stale)
+    items = chunks(stale=stale, clock_origin=clock_origin)
     if bindings:
         import struct
 

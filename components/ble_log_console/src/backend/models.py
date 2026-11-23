@@ -380,6 +380,14 @@ class FirmwareLossSummary:
     written_bytes: int = 0
 
 
+class CompressedHostStatus(str, Enum):
+    SAVED = "Text file generated"
+    NO_TEXT = "No readable text generated. Check that BLE_HOST_logs.json is valid and matches the firmware, then decode the saved .bin again."
+    SKIPPED = "Skipped because no dictionary was selected"
+    NO_INPUT = "No compressed Host frames observed in the export range"
+    UNVERIFIED = "Unable to verify"
+
+
 class CaptureVerdict(str, Enum):
     READY = "READY FOR ANALYSIS"
     WARNING = "SAVED WITH WARNINGS"
@@ -427,6 +435,7 @@ class CaptureReport:
     stream_identity: "StreamIdentity | None" = None
     parsed_paths: tuple[Path, ...] = ()
     product_error: str | None = None
+    compressed_host_status: CompressedHostStatus = CompressedHostStatus.UNVERIFIED
     hci_paths: tuple[Path, ...] = ()
     hci_error: str | None = None
     console_log_error: str | None = None

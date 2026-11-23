@@ -23,6 +23,7 @@ from src.backend.models import (
     CaptureReport,
     CaptureSegmentSummary,
     CaptureVerdict,
+    CompressedHostStatus,
     FirmwareCounterSource,
     FirmwareLossSummary,
     SequenceSummary,
@@ -201,6 +202,9 @@ def build_capture_report(
         findings.append("The console log could not be saved completely; this error does not itself stop raw recording.")
     if hci_error is not None:
         findings.append("HCI files could not be saved completely; retain the original raw recording.")
+    host_status = result.products.compressed_host_status if result.products else CompressedHostStatus.UNVERIFIED
+    if host_status == CompressedHostStatus.NO_TEXT:
+        findings.append("Compressed Host frames were captured, but no readable Host text file was generated.")
     if result.products and result.products.error:
         findings.append("Ordered parser products could not be saved completely.")
     if quality_error:
@@ -286,6 +290,7 @@ def build_capture_report(
             path for path in (result.products.paths if result.products else ()) if path not in binary_hci
         ),
         product_error=result.products.error if result.products else None,
+        compressed_host_status=host_status,
         hci_paths=(*hci_paths, *binary_hci),
         hci_error=hci_error,
         report_path=report_path,
@@ -429,6 +434,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
                 f"  {tr('Possible sequence loss' if report.parser_complete else 'Full-recording sequence continuity', language=language)}"
                 f"{separator}{sequence_result}"
             ),
+            f"  {tr('Compressed Host text', language=language)}{separator}{tr(report.compressed_host_status.value, language=language)}",
             *_stream_content_summary(report, language, separator),
             *_startup_summary(report, language),
             "",
@@ -493,6 +499,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         *(f"  - {reason}" for reason in _localized_reasons(report, language)),
         "",
         f"{tr('Reliability', language=language)}{separator.rstrip()}",
+        f"  {field('Compressed Host text', tr(report.compressed_host_status.value, language=language))}",
         f"  {field('Saved raw data', tr('Confirmed' if report.raw_complete else 'Not confirmed', language=language))}",
         f"  {field('Automated quality check', tr(_quality_scope(report), language=language))}",
         f"  {field('Parser coverage summary', _coverage_text(report, language))}",
@@ -611,7 +618,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
             lines.extend(
                 (
                     f"  {field('Raw suffix offset (bytes)', report.startup.offset_bytes)}",
-                    f"  {field('Start snapshot SN', report.startup.anchor_sn)}",
+                    f"  {field('Confirming snapshot SN', report.startup.anchor_sn)}",
                     f"  {field('Device time span (s)', f'{report.startup.device_jump_sec:.6f}')}",
                     f"  {field('Host receive span (s)', f'{report.startup.host_elapsed_sec:.6f}')}",
                 )
@@ -716,8 +723,7 @@ def _format_sequence(sequence: SequenceSummary, language: str, *, contract_known
     """Render continuity the way the firmware's counter contract reads.
 
     One shared counter makes the capture a single stream, so one totals row and
-    a per-source observation table describe it, and no capture-wide SN range
-    exists because the per-source ranges span different streams. Per-source
+    a per-source observation table describe it. Per-source
     counters make every source a stream of its own, so each source gets a row
     with its own continuity counters.
     """
@@ -740,19 +746,18 @@ def _format_sequence(sequence: SequenceSummary, language: str, *, contract_known
                 (
                     "",
                     f"  {tr('Frames by source', language=language)}:",
-                    "  Source       Observed  SN range",
-                    "  -----------  --------  -----------------------",
+                    "  Source       Observed",
+                    "  -----------  --------",
                 )
             )
         for source in sequence.sources:
-            sn_range = f"{source.first_sn} -> {source.last_sn}"
             if language == "zh_CN":
                 lines.append(
                     f"  {resolve_source_name(source.source)}：{tr('Observed', language=language)} "
-                    f"{source.observed_frames}，{tr('SN range', language=language)} {sn_range}"
+                    f"{source.observed_frames}"
                 )
             else:
-                lines.append(f"  {resolve_source_name(source.source):<11}  {source.observed_frames:>8}  {sn_range}")
+                lines.append(f"  {resolve_source_name(source.source):<11}  {source.observed_frames:>8}")
         return lines
     if language != "zh_CN":
         lines.extend(

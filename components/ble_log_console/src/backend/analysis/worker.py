@@ -91,6 +91,7 @@ def run_parser_loop(
     try:
         parser = BleLogParser(checksum_mode=checksum_mode, identification=identification, log_database=log_database)
         end: ReceivedEnd | None = None
+        opening_chunks: list[ReceivedChunk] = []
         received_bytes = 0
         contiguous = True
         while True:
@@ -123,8 +124,6 @@ def run_parser_loop(
             if chunks:
                 batches = []
                 for chunk in chunks:
-                    if products is not None:
-                        products.receive(chunk)
                     contiguous = contiguous and chunk.raw_offset == received_bytes
                     received_bytes += len(chunk.data)
                     batches.append(
@@ -135,6 +134,16 @@ def run_parser_loop(
                             raw_offset=chunk.raw_offset,
                         )
                     )
+                    if products is not None:
+                        decision = parser.startup.decision
+                        if decision is None:
+                            opening_chunks.append(chunk)
+                        else:
+                            products.start_offset = decision.offset_bytes
+                            for pending in opening_chunks:
+                                products.receive(pending)
+                            opening_chunks.clear()
+                            products.receive(chunk)
                 _put_parser_event(
                     output_queue,
                     ParseBatch(
@@ -162,7 +171,14 @@ def run_parser_loop(
                 )
                 _put_parser_event(output_queue, quality)
         if products is not None:
-            _put_parser_event(output_queue, products.finish(end))
+            for pending in opening_chunks:
+                products.receive(pending)
+            seen: bool | None = parser.last_compressed_host_offset >= products.start_offset
+            if not seen and (
+                not contiguous or end is None or end.raw_bytes != summary.raw_bytes or summary.carried_bytes
+            ):
+                seen = None
+            _put_parser_event(output_queue, products.finish(end, compressed_host_seen=seen))
         _put_parser_event(output_queue, summary)
     except Exception as e:
         _put_parser_event(output_queue, ParserStatus(kind="error", message=str(e)))

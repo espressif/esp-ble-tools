@@ -13,14 +13,15 @@ from src.backend.analysis.startup import StartupDetector
 from tests.helpers import build_frame, snapshot_payload, xor_checksum
 
 
-def snapshot(seconds: float, sn: int, anchor: int, *, reason: int = 10) -> bytes:
-    payload = bytearray(snapshot_payload(int(seconds * 1_000_000), reason_flags=reason))
+def snapshot(seconds: float, sn: int, anchor: int, *, reason: int = 10, os_ms: int | None = None) -> bytes:
+    esp_us = round(seconds * 1_000_000) % (1 << 32)
+    payload = bytearray(snapshot_payload(esp_us, reason_flags=reason))
     payload[7:10] = anchor.to_bytes(3, "little")
-    struct.pack_into("<I", payload, 73, int(seconds * 1_000_000))
+    struct.pack_into("<II", payload, 73, esp_us, (round(seconds * 1000) if os_ms is None else os_ms) % (1 << 32))
     return build_frame(bytes(payload), 0, sn, xor_checksum)
 
 
-def chunks(*, stale: bool = True) -> list[ReceivedChunk]:
+def chunks(*, stale: bool = True, clock_origin: int = 0) -> list[ReceivedChunk]:
     rows = [
         (10, 100, 10, 0.0),
         (70 if stale else 11, 300 if stale else 101, 70 if stale else 11, 0.1 if stale else 1.0),
@@ -30,7 +31,7 @@ def chunks(*, stale: bool = True) -> list[ReceivedChunk]:
     result = []
     offset = 0
     for device, sn, anchor, host in rows:
-        data = snapshot(device, sn, anchor)
+        data = snapshot(clock_origin + device, sn, anchor)
         result.append(ReceivedChunk(data, int(host * 1000), host, offset))
         offset += len(data)
     return result
@@ -84,7 +85,7 @@ def test_ambiguous_or_context_dependent_prefix_is_not_selected(condition):
     elif condition == "reset":
         items[1] = items[1]._replace(data=snapshot(70, 300, 70, reason=11))
     elif condition == "wrap":
-        items[0] = items[0]._replace(data=snapshot(4000, 100, 10))
+        items[0] = items[0]._replace(data=snapshot(4000, 100, 10, os_ms=10_000))
     elif condition == "metadata":
         binding = build_frame(struct.pack("<IB", 1, 3) + b"metadata", 0, 0, xor_checksum)
         items = [ReceivedChunk(binding, 0, 0.0, 0)] + [
@@ -180,3 +181,46 @@ def test_selected_check_retains_unknown_frame_warning():
     parser.finalize()
     assert parser.opening_quality.snapshot.sequence.uncertain
     parser.close()
+
+
+@pytest.mark.parametrize("gap", [4045, 8640])
+def test_long_opening_gap_uses_both_device_clocks(gap):
+    parser = BleLogParser()
+    offset = 0
+    for device, sn, count, host in [
+        (3665.872059, 7691582, 244184, 0.0),
+        (3665.872059 + gap, 15047084, 244184 + gap, 0.1),
+        (3666.872059 + gap, 15048945, 244185 + gap, 1.1),
+        (3667.872059 + gap, 15050660, 244186 + gap, 2.1),
+    ]:
+        data = snapshot(device, sn, count)
+        parser.feed(data, raw_offset=offset, received_monotonic=host)
+        offset += len(data)
+    decision = parser.startup.finish()
+    assert decision.anchor_sn == 15047084
+    assert decision.device_jump_sec == gap
+    parser.close()
+
+
+def test_normal_stream_across_both_clock_wraps_keeps_full_recording():
+    # At 2**32 ms both the 32-bit millisecond and microsecond clocks wrap.
+    items = chunks(stale=False, clock_origin=4_294_956)
+    decision, _ = parse_items(items)
+    assert decision.offset_bytes == 0
+    assert decision.reason == "No confirmed opening backlog"
+
+
+@pytest.mark.parametrize(
+    "sn, count, reason",
+    [
+        (99, 4055, "Opening clock or sequence is ambiguous"),
+        (5000, 9, "Opening clock or sequence is ambiguous"),
+        (5000, 11, "Opening time jump lacks sequence evidence"),
+    ],
+)
+def test_wrapped_time_jump_still_needs_forward_sequence_and_anchor_gap(sn, count, reason):
+    items = chunks(clock_origin=4250)
+    items[1] = items[1]._replace(data=snapshot(4260 + 4045, sn, count))
+    decision, _ = parse_items(items[:2])
+    assert decision.offset_bytes == 0
+    assert decision.reason == reason

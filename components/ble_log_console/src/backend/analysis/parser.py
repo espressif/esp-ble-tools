@@ -191,6 +191,8 @@ class BleLogParser:
         self._chip_name: str | None = None
         self._host_warnings: set[str] = set()
         self.startup = StartupDetector()
+        self.last_compressed_host_offset = -1
+        self._opening_history = []
         self._opening_checker: OpeningChecker | None = None
         self.opening_quality: OpeningQuality | None = None
         self._rules = identification
@@ -276,9 +278,13 @@ class BleLogParser:
         )
 
     def _append_events(self, frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:
+        if frame.source_code == BleLogSource.ENCODE and len(frame.payload) > 4 and frame.payload[4] == 0:
+            self.last_compressed_host_offset = frame.offset
         first = len(events)
         _append_frame_event(frame, events, received_at_ms)
-        self.startup.observe(frame, events[first] if len(events) > first else None)
+        event = events[first] if first < len(events) else None
+        snapshot = event.decoded if isinstance(event, InternalEvent) and isinstance(event.decoded, Snapshot) else None
+        self.startup.observe(frame, snapshot)
         candidate = self.startup.candidate
         offset = candidate.offset_bytes if candidate is not None else 0
         if self._opening_checker is not None and self._opening_checker.offset != offset:
@@ -287,7 +293,14 @@ class BleLogParser:
         if offset:
             if self._opening_checker is None:
                 self._opening_checker = OpeningChecker(offset)
+                for prior_frame, prior_events in self._opening_history:
+                    if prior_frame.offset >= offset:
+                        self._opening_checker.feed(prior_frame, prior_events)
             self._opening_checker.feed(frame, tuple(events[first:]))
+        if self.startup.decision is None:
+            self._opening_history.append((frame, tuple(events[first:])))
+        elif self._opening_history:
+            self._opening_history.clear()
         for event in events[first:]:
             if isinstance(event, InternalEvent):
                 if event.int_src == InternalSource.INIT_DONE:

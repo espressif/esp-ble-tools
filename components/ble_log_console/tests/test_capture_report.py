@@ -141,7 +141,8 @@ def test_ready_report_contains_sequence_and_file_evidence() -> None:
     text = format_capture_report(report)
     assert "READY FOR ANALYSIS" in text
     assert "HOST" in text
-    assert "1 -> 2" in text
+    assert "1 -> 2" not in text
+    assert ["HOST", "2"] in [line.split() for line in text.splitlines()]
     assert "capture.bin" in text
 
 
@@ -519,8 +520,7 @@ def test_shared_counter_report_keeps_one_totals_row_and_a_source_table() -> None
 
     assert "Firmware protocol: v8 (one shared counter)" in text
     assert "All frames" in section and "All sources" not in section
-    # One counter means one continuity verdict, and the sources are only an
-    # observation table: their SN ranges belong to different streams.
+    # All sources share one continuity verdict.
     assert "Missing  Segments" not in section
     assert "Frames by source" in section
 
@@ -536,6 +536,7 @@ def test_per_source_report_gives_every_source_its_own_continuity_row() -> None:
     source_rows = (line for line in section.splitlines() if line.startswith(("  HOST", "  ENCODE")))
     rows = {line.split()[0]: line.rstrip() for line in source_rows}
     assert set(rows) == {"HOST", "ENCODE"}
+    assert "0 -> 3" in rows["HOST"]
     assert rows["HOST"].endswith("GAPS DETECTED")
     assert rows["ENCODE"].endswith("CONTINUOUS")
 

@@ -157,3 +157,74 @@ def prefix_warning_only(world):
     lines = [message.text for message in world.messages if isinstance(message, LogLine)]
     assert len(lines) == 1 and "hello compressed" in lines[0]
     assert "Incomplete Host log" not in lines[0]
+
+
+@given(parsers.parse("v8 录制包含 HCI 和 Host 帧，压缩 Host 的输入为「{content}」"), target_fixture="world")
+def report_input(tmp_path, content):
+    raw = frame(0, 0, snapshot_payload()) + frame(6, 1, struct.pack("<IB", 10, 4) + b"abc")
+    raw += frame(5, 2, struct.pack("<I", 20) + b"ordinary host\n")
+    if content == "压缩日志":
+        raw += encoded(3, log_id=2)
+    elif content == "其他编码":
+        raw += frame(7, 3, struct.pack("<IBBBH", 30, 1, 1, 0x40, 2))
+    return SimpleNamespace(tmp_path=tmp_path, raw=raw)
+
+
+@when(parsers.parse("用「{choice}」字典生成录制产物和报告"))
+def recorded_host_report(world, choice):
+    from datetime import UTC, datetime
+
+    from src.backend.models import TransportConfig, TransportMode
+    from src.backend.pipeline.controller import _result_from_events
+    from src.frontend.capture_report import build_capture_report
+
+    db = make_database(world.tmp_path) if choice != "未选择" else None
+    if choice == "损坏":
+        (db / "BLE_HOST_logs.json").write_text("{broken")
+    incoming, counters, outgoing = Queue(), Queue(), Queue()
+    stop = Event()
+    config = WriterConfig(world.tmp_path / "recording.bin")
+    run_io_loop(BytesReader(world.raw, stop), config, incoming, counters, outgoing, stop)
+    run_analysis_process(incoming, counters, outgoing, log_database=db, analysis_output=config)
+    now = datetime.now(UTC)
+    world.report = build_capture_report(
+        _result_from_events(list(outgoing.queue)),
+        TransportConfig(TransportMode.USJ, "USJ", "test"),
+        started_at=now,
+        ended_at=now,
+        duration_sec=1,
+        console_log_paths=(),
+        report_path=world.tmp_path / "report.txt",
+    )
+
+
+@then(parsers.parse("原始录制完整，结论为「{verdict}」，压缩 Host 显示「{status}」"))
+def host_report_status(world, verdict, status):
+    from src.backend.models import CaptureVerdict
+    from src.frontend.capture_report import format_capture_report, format_capture_summary
+
+    report = world.report
+    assert report.raw_complete and report.parser_complete
+    assert report.raw_paths[0].read_bytes() == world.raw
+    assert report.verdict == (CaptureVerdict.WARNING if verdict == "警告" else CaptureVerdict.READY)
+    for render in (format_capture_summary, format_capture_report):
+        assert status in render(report, "zh_CN")
+        assert "Compressed Host text" in render(report, "en")
+    files = list(world.tmp_path.glob("*_DECOMPRESSED_BLE_HOST.log"))
+    if status == "已生成文本文件":
+        assert len(files) == 1 and "hello compressed" in files[0].read_text()
+    else:
+        assert not files
+    if verdict == "警告":
+        assert "BLE_HOST_logs.json" in format_capture_summary(report, "zh_CN")
+
+
+@then("共享序号报告只在总览检查连续性，来源表仅列帧数")
+def shared_counts_only(world):
+    from src.frontend.capture_report import format_capture_report
+
+    for lang in ("en", "zh_CN"):
+        text = format_capture_report(world.report, lang)
+        assert "None -> None" not in text
+        assert "SN range" not in text and "序号范围" not in text
+    assert world.report.sequence.missing_frames == 0

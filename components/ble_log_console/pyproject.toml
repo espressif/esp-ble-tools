@@ -9,7 +9,7 @@ description = "BLE Log recording and review console"
 requires-python = ">=3.11"
 dependencies = [
     "click",
-    "esp-blfd[host,offline]==1.0.0.dev1",
+    "esp-blfd[host,offline]==1.0.0.dev2",
     "pyserial",
     "rich",
     "textual",
@@ -42,6 +42,6 @@ testpaths = ["tests"]
 
 [tool.uv.sources]
 esp-blfd = [
-    { path = "vendor/esp_blfd-1.0.0.dev1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.11' and implementation_name == 'cpython'" },
-    { path = "vendor/esp_blfd-1.0.0.dev1.tar.gz", marker = "sys_platform != 'linux' or platform_machine != 'x86_64' or python_version != '3.11' or implementation_name != 'cpython'" },
+    { path = "vendor/esp_blfd-1.0.0.dev2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.11' and implementation_name == 'cpython'" },
+    { path = "vendor/esp_blfd-1.0.0.dev2.tar.gz", marker = "sys_platform != 'linux' or platform_machine != 'x86_64' or python_version != '3.11' or implementation_name != 'cpython'" },
 ]

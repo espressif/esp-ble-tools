@@ -18,6 +18,11 @@ def stale_start():
     return SimpleNamespace(options={})
 
 
+@given("开录积压跨越设备微秒时钟回绕且毫秒时钟确认经过时间", target_fixture="world")
+def wrapped_start():
+    return SimpleNamespace(options={"clock_origin": 4250})
+
+
 @given("开录时间连续且没有积压证据", target_fixture="world")
 def normal_start():
     return SimpleNamespace(options={"stale": False})
@@ -122,3 +127,47 @@ def one_decoder(world):
     assert len(world.decoders) == 1
     assert world.result.opening_quality.error is None
     assert not list(world.report.report_path.parent.glob("*analysis*"))
+
+
+@given("两段序号之间有唯一缺口且确认快照前有四个新 HCI 包", target_fixture="world")
+def hci_before_anchor():
+    from tests.test_host_logs import frame
+    from tests.test_startup import snapshot
+
+    def packet(sn, marker):
+        return frame(6, sn, (69_999_000).to_bytes(4, "little") + bytes([4, marker]))
+
+    old = snapshot(10, 100, 10) + packet(101, 0)
+    fresh = b"".join(packet(sn, sn - 295) for sn in range(296, 300))
+    return SimpleNamespace(blocks=[old, fresh + snapshot(70, 300, 70), snapshot(71, 301, 71), snapshot(72, 302, 72)])
+
+
+@then("报告边界和 HCI 产物均从四个新包的第一帧开始")
+def fresh_products(world, tmp_path):
+    from queue import Queue
+
+    from src.backend.analysis.opening_quality import OpeningQuality
+    from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
+    from src.backend.analysis.recording_products import RecordingProducts
+    from src.backend.analysis.startup import StartupDecision
+    from src.backend.analysis.worker import run_parser_loop
+    from src.backend.io.writer import WriterConfig
+
+    path = tmp_path / "rec.bin"
+    raw = b"".join(world.blocks)
+    path.write_bytes(raw)
+    incoming, events = Queue(), Queue()
+    offset = 0
+    for block, ts in zip(world.blocks, (0, 0.1, 1.1, 2.1)):
+        incoming.put(ReceivedChunk(block, int(ts * 1000), ts, offset))
+        offset += len(block)
+    incoming.put(ReceivedEnd(offset, (path,), True))
+    run_parser_loop(incoming, events, analysis_output=WriterConfig(path))
+    expected = len(world.blocks[0])
+    assert next(e.offset_bytes for e in events.queue if isinstance(e, StartupDecision)) == expected
+    assert next(e.offset_bytes for e in events.queue if isinstance(e, OpeningQuality)) == expected
+    (product,) = next(e.paths for e in events.queue if isinstance(e, RecordingProducts))
+    data = product.read_bytes()[16:]
+    assert len(data) == 4 * 26
+    assert [data[i + 25] for i in range(0, len(data), 26)] == [1, 2, 3, 4]
+    assert path.read_bytes() == raw

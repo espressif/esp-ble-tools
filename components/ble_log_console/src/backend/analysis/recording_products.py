@@ -11,19 +11,21 @@ from ble_log_frame_decoder.analysis.recording import RecordingExport
 from ble_log_frame_decoder.checking.protocol import FRAME_CANDIDATE_POLICIES
 
 from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
-from src.backend.models import ChecksumAlgorithm, ChecksumMode
+from src.backend.models import ChecksumAlgorithm, ChecksumMode, CompressedHostStatus
 
 
 @dataclass(frozen=True)
 class RecordingProducts:
     paths: tuple[Path, ...] = ()
     error: str | None = None
+    compressed_host_status: CompressedHostStatus = CompressedHostStatus.UNVERIFIED
 
 
 class RecordingProductWriter:
     def __init__(self, path: Path, database: Path | None, checksum: ChecksumMode | None):
         self.path, self.database, self.checksum = path, database, checksum
         self.export: RecordingExport | None = None
+        self.start_offset = 0
         self.offset = 0
         self.error: str | None = None
 
@@ -34,7 +36,9 @@ class RecordingProductWriter:
                 decoder = FrameDecoder(
                     FrameFormat.BLE_LOG_V2_SUM32, max_frame_size=4106, candidate_policies=FRAME_CANDIDATE_POLICIES
                 )
-            self.export = RecordingExport(self.path, database=self.database, decoder=decoder)
+            self.export = RecordingExport(
+                self.path, database=self.database, decoder=decoder, start_offset=self.start_offset
+            )
         self.export.feed(data)
         self.offset += len(data)
 
@@ -67,7 +71,7 @@ class RecordingProductWriter:
             self.error = str(exc)
             self.close()
 
-    def finish(self, end: ReceivedEnd | None) -> RecordingProducts:
+    def finish(self, end: ReceivedEnd | None, *, compressed_host_seen: bool | None = None) -> RecordingProducts:
         try:
             if self.error is not None:
                 return RecordingProducts(error=self.error)
@@ -77,7 +81,18 @@ class RecordingProductWriter:
                 self._catch_up(end.raw_paths, end.raw_bytes)
             if self.offset != end.raw_bytes:
                 return RecordingProducts(error="Saved parts do not cover the announced recording size")
-            return RecordingProducts(self.export.finish() if self.export else ())
+            paths = self.export.finish() if self.export else ()
+            if any(p.name.endswith("_DECOMPRESSED_BLE_HOST.log") and p.stat().st_size for p in paths):
+                status = CompressedHostStatus.SAVED
+            elif compressed_host_seen is None:
+                status = CompressedHostStatus.UNVERIFIED
+            elif not compressed_host_seen:
+                status = CompressedHostStatus.NO_INPUT
+            elif self.database is None:
+                status = CompressedHostStatus.SKIPPED
+            else:
+                status = CompressedHostStatus.NO_TEXT
+            return RecordingProducts(paths, compressed_host_status=status)
         except Exception as exc:
             return RecordingProducts(error=str(exc))
         finally:
