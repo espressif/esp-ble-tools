@@ -124,7 +124,7 @@ def _recording_state(app: BLELogApp) -> dict[str, object]:
         "console_path": app.saved_console_log_path,
         "console_paths": app.saved_console_log_paths,
         "report_path": app.saved_report_path,
-        "report": app._capture_report,
+        "report": app.capture_report,
         "session": app._capture_session,
         "finalizing": app._finalizing,
         "log_rows": tuple(row.text for row in app.query_one(LogView).lines),
@@ -168,7 +168,6 @@ def attempt_start(start_world: SimpleNamespace) -> None:
         session._event_presenter.handle_event(
             AggregatorUpdate(console_events=(RedirEvent(20, 8, 0, "previous console text\n", 0),))
         )
-        session._finished = True
         app._publish_view_messages(session._finish_result(_completed_result(output)))
         _pause(world)
         assert isinstance(app.screen, CaptureReportScreen)
@@ -237,7 +236,7 @@ def recording_untouched(start_world: SimpleNamespace) -> None:
     assert world.refusals
     assert not list(world.bad_dir.glob("ble_log*"))
     if world.initial_count == 0:
-        assert world.app._capture_session is None and world.app._capture_report is None
+        assert world.app._capture_session is None and world.app.capture_report is None
         assert world.app._output_path is None and world.app.saved_report_path is None
 
 
@@ -270,7 +269,7 @@ def one_corrected_session(start_world: SimpleNamespace) -> None:
     assert world.app._capture_session is not world.before["session"]
     assert not world.app._capture_session.finished
     assert world.app.saved_capture_paths == world.app.saved_console_log_paths == []
-    assert world.app.saved_report_path is None and world.app._capture_report is None
+    assert world.app.saved_report_path is None and world.app.capture_report is None
     assert world.app.query_one(LogView).lines == []
     assert not isinstance(world.app.screen, LaunchScreen)
 

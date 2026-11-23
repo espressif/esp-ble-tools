@@ -92,9 +92,9 @@ def connect_missing_port(world, monkeypatch):
             app.screen.query_one("#database-input", Input).value = str(world.database)
             await pilot.click("#connect-btn")
             async with asyncio.timeout(10):
-                while app._capture_report is None:
+                while app.capture_report is None:
                     await asyncio.sleep(0.05)
-            assert any(missing in error for error in app._capture_report.errors)
+            assert any(missing in error for error in app.capture_report.errors)
 
     asyncio.run(run())
 

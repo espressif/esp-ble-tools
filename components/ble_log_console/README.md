@@ -55,7 +55,7 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 
 3. For direct USB, set **Transport** to **USB** and select the **USB OTG** or **USJ** port matching the firmware. The interface starts in English. Use the language selector at the top right to switch.
 4. Choose **Save to**. For compressed Host text, set **Host dictionary** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages, or leave the boxes clear and click **Connect**. These choices affect the screen only.
-5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If raw data is complete but dictionary decoding failed, use the matching dictionary to decode the saved `.bin` again.
+5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If you selected a dictionary, Console copies it after recording ends. When the report lists `<recording-name>_database/`, include that folder with the logs.
 
 SPI Bridge, USB OTG and USJ use CDC serial reception on every platform. If no Bridge CDC port is found, reconnect the device and refresh the port list; the tool does not switch to direct USB Bulk.
 
@@ -268,7 +268,7 @@ For connection issues, log display, quality check limitations, source environmen
 
 ### Parser Core integration build
 
-This branch uses the unified BLFD 1.0.0.dev2 package for streaming integrity checks and firmware statistics.
+This branch uses the unified BLFD 1.0.0.dev4 package for streaming integrity checks and firmware statistics.
 
-Ordered Host/HCI products start at the first confirmed fresh frame. To reproduce them from the complete raw file, pass the reported byte offset to Log Parser v2 with `--product-start-offset`. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
+Ordered Host/HCI products start at the first confirmed fresh frame. The report gives the byte offset of that frame in the complete raw recording. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
 Linux x86_64 / CPython 3.11 uses the supplied wheel; Windows and other targets build the supplied source package from the same revision. See [vendor/README.md](vendor/README.md) for compiler requirements. Windows build and hardware validation remain pending.

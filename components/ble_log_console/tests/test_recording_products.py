@@ -76,3 +76,23 @@ def test_compressed_host_in_excluded_prefix_does_not_require_text_output(tmp_pat
     assert next(e.offset_bytes for e in events.queue if isinstance(e, StartupDecision)) == len(blocks[0])
     products = next(e for e in events.queue if isinstance(e, RecordingProducts))
     assert not products.error and products.compressed_host_status == CompressedHostStatus.NO_INPUT
+
+
+def test_host_frame_recovered_from_raw_missing_from_live_queue(tmp_path):
+    from src.backend.models import CompressedHostStatus
+
+    from tests.helpers import snapshot_payload
+    from tests.test_host_logs import encoded, make_database
+
+    db = make_database(tmp_path)
+    path = tmp_path / "rec.bin"
+    prefix = frame(0, 0, snapshot_payload())
+    raw = prefix + encoded(1, log_id=99)
+    path.write_bytes(raw)
+    incoming, events = Queue(), Queue()
+    incoming.put(ReceivedChunk(prefix, 0, raw_offset=0))
+    incoming.put(ReceivedEnd(len(raw), (path,), True))
+    run_parser_loop(incoming, events, analysis_output=WriterConfig(path), log_database=db)
+    result = next(item for item in events.queue if isinstance(item, RecordingProducts))
+    assert result.host_missing_id_frames == 1
+    assert result.compressed_host_status == CompressedHostStatus.NO_TEXT

@@ -4,6 +4,7 @@
 import errno
 import struct
 import threading
+import time
 from collections.abc import Callable
 from enum import Enum
 
@@ -227,3 +228,11 @@ class SerialHandleStub:
 
     def close(self) -> None:
         self.is_open = False
+
+
+def wait_for_recording_files(session):
+    deadline = time.monotonic() + 5
+    while not session.finished or session.report.pending_database is not None:
+        session.poll()
+        assert time.monotonic() < deadline, "Recording files did not finish"
+        time.sleep(0.005)

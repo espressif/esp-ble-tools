@@ -237,7 +237,7 @@ The setup screen appears when the application starts:
 The example shows a direct USB connection. The interface starts in English. Use the language selector at the top right to switch languages and keep the current settings.
 
 1. Set **Transport** to **USB** and select the **USB OTG** or **USJ** **Port** that matches the firmware. Both use CDC without a baud-rate setting. For a separate Bridge choose **SPI Bridge**. For a USB-to-UART adapter choose **UART** and set the firmware baud rate.
-2. Choose a writable directory under **Save to**. For **Host dictionary**, select the directory containing `BLE_HOST_logs.json` from the build flashed to the board. Leave it empty to skip compressed Host decoding and still record the raw data. Once a recording file is created, Console remembers both choices, including an explicitly cleared dictionary.
+2. Choose a writable directory under **Save to**. For **Host dictionary**, select the directory containing `BLE_HOST_logs.json` from the build flashed to the board. Leave it empty to skip compressed Host decoding and still record the raw data. Once a recording file is created, Console remembers both choices, including an explicitly cleared dictionary. Console decodes from the selected directory during recording. After recording ends, it copies the module dictionaries (`*_logs.json`) into `<recording-name>_database/` under **Save to** for packaging. You can read the report or start another recording while the copy runs. To include the dictionary, keep Console open and the selected build directory in place until the report shows the copy path.
 3. Under **Live display**, select **Host** or **HCI** to follow those messages. UART also offers **Console**. All start unchecked. For recording alone, click **Connect** with the boxes clear. Log files are saved according to the data received.
 
 > If the port is missing, check the connector, data cable, and running firmware, then click **Refresh**. Port listing uses operating system metadata. A chip model appears only when supplied by the device descriptor. Close serial monitors using the port. On some systems opening a USJ port may reset the board, so try connecting before reproducing the issue.
@@ -291,18 +291,20 @@ From the report, select **Record Again** to record with the same settings, or ex
 - **CHECK CONFIGURATION:** No usable logs were recorded. Check the port, mode, and firmware logging configuration, then record again.
 - **RECORD AGAIN RECOMMENDED:** Saving failed or loss was high. Follow the report's recommendations and record again.
 
-The example below uses a damaged dictionary. The report shows raw data preservation, frame parser coverage, and **Compressed Host text** separately. All 244 bytes were parsed, but the requested Host text could not be generated.
+In the example below, the recording is ready for analysis. The selected dictionary decoded one compressed Host text entry and had no matching log ID for two other frames.
 
 <p align="center">
-  <img src="./figure/report-screen.png" alt="Example report showing complete raw data and a warning that compressed Host text could not be generated" style="width: 90%; max-width: 1000px;">
+  <img src="./figure/report-screen.png" alt="Example report showing complete raw data and a dictionary notice for partially decoded Host text" style="width: 90%; max-width: 1000px;">
 </p>
 
-| Report finding | What to do |
+| Report finding | What it means |
 | --- | --- |
 | Compressed Host text: Text file generated | Open `_DECOMPRESSED_BLE_HOST.log` and check messages around the issue. This status confirms a nonempty file was generated. |
-| Compressed Host frames received but no readable text generated | Check that `BLE_HOST_logs.json` is valid and comes from the build flashed to the board. Use the matching dictionary to decode the saved `.bin` again. |
-| No dictionary selected, or no compressed Host frames observed in the export range | For the former, supply a dictionary and decode again. For the latter, check plain `_host.log` if present and verify the firmware output and reproduction steps if compressed logs were expected. |
-| Opening backlog confirmed | The original `.bin` keeps all received bytes. Pass the fresh interval’s byte offset from the report to Log Parser v2 with `--product-start-offset` to reproduce the Host/HCI files. |
+| Compressed Host text: Partially decoded | The report gives the number of text entries written and the number of frames without a usable dictionary entry. Check that the dictionary comes from the flashed firmware build. |
+| Compressed Host frames received but no readable text generated | A dictionary was selected. No compressed Host text file was generated. Check that `BLE_HOST_logs.json` comes from the flashed firmware build. |
+| No dictionary selected | Compressed Host frames were received. Decoding was skipped. |
+| No compressed Host frames observed in the export range | The export range contained no compressed Host logs. |
+| Opening backlog confirmed | The original `.bin` keeps all received bytes. The report lists the byte offset where the exported Host/HCI logs begin. |
 | v8 shared sequence numbers | Read the overall counts for gaps, duplicates, and wraps. Each source row shows its frame count. For example, HCI 100, Host 101, HCI 102 form one continuous stream. |
 
 <a id="recording-files"></a>
@@ -314,6 +316,7 @@ In the **Save to** directory, look for files with the same recording timestamp. 
 | File | What it contains or when to submit it |
 | --- | --- |
 | `.bin` and `_report.txt` | Submit the raw data and quality report together. Include every `part` file for a split recording. |
+| `<recording-name>_database/` | Copy of the selected module dictionaries for this recording. Include this folder with the raw data and report. The report lists its path or the copy error. |
 | `_host.log`, `_DECOMPRESSED_BLE_HOST.log` | Plain Host text and dictionary-decoded compressed Host text, respectively. |
 | `_hci_btsnoop.log`, `_ll_hci_btsnoop.log` | Host-side and controller-side HCI, respectively, in device time. A v8 recording spanning multiple initializations may produce separate files. |
 | `_console.log`, `_hci.log` | Live transcripts in computer receive time. Include the generated `_console.log` when reporting startup or serial text. |

@@ -382,8 +382,9 @@ class FirmwareLossSummary:
 
 class CompressedHostStatus(str, Enum):
     SAVED = "Text file generated"
-    NO_TEXT = "No readable text generated. Check that BLE_HOST_logs.json is valid and matches the firmware, then decode the saved .bin again."
-    SKIPPED = "Skipped because no dictionary was selected"
+    PARTIAL = "Partially decoded"
+    NO_TEXT = "Compressed Host frames received. No readable text was generated with the selected dictionary."
+    SKIPPED = "Compressed Host frames received. Decoding skipped because no dictionary was selected."
     NO_INPUT = "No compressed Host frames observed in the export range"
     UNVERIFIED = "Unable to verify"
 
@@ -430,6 +431,7 @@ class CaptureReport:
     errors: tuple[str, ...]
     warnings: tuple[str, ...]
     report_write_error: str | None = None
+    report_update_error: str | None = None
     firmware_version: int | None = None
     firmware_contract_known: bool = True
     stream_identity: "StreamIdentity | None" = None
@@ -445,6 +447,11 @@ class CaptureReport:
     original_sequence: SequenceSummary | None = None
     integrity: "CheckResult | None" = None
     firmware: "FirmwareSnapshot | None" = None
+    host_text_entries: int = 0
+    host_missing_id_frames: int = 0
+    pending_database: Path | None = None
+    database_copy: Path | None = None
+    database_copy_error: str | None = None
 
 
 _LBM_NAMES: dict[tuple[int, int], str] = {

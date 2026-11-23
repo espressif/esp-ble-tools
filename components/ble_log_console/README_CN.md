@@ -49,7 +49,7 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 
 3. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
 4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Host 字典** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。想看实时消息时勾选 **Host** 或 **HCI**，也可以全部留空直接 **连接**。显示选择只影响屏幕。
-5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告；需要 Host 文本时，同时检查「压缩 Host 文本」一项。原始数据完整而字典解码失败时，可换字典重新解析已保存的 `.bin`。
+5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了字典时，工具会在录制结束后复制字典。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
 
 SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
 
@@ -264,7 +264,7 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 
 ### Parser Core 接入版本
 
-此分支使用统一的 BLFD 1.0.0.dev2 包进行流式完整性检查和固件统计。
+此分支使用统一的 BLFD 1.0.0.dev4 包进行流式完整性检查和固件统计。
 
-有序 Host/HCI 产物从确认的新序号段第一帧开始。使用完整原始文件和报告中的字节偏移，可通过 Log Parser v2 的 `--product-start-offset` 复现。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
+有序 Host/HCI 产物从确认的新序号段第一帧开始。报告记录该帧在原始录制中的字节偏移。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
 Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。

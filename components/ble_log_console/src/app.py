@@ -205,12 +205,6 @@ class BLELogApp(App):
         self._capture_start_time = 0.0
         self._finalizing = False
         self._capture_session: CaptureSession | None = None
-        self._capture_report: CaptureReport | None = None
-        self._saved_capture_path: Path | None = None
-        self._saved_capture_paths: list[Path] = []
-        self._saved_console_log_path: Path | None = None
-        self._saved_console_log_paths: list[Path] = []
-        self._saved_report_path: Path | None = None
         self._funnel_snapshots: list[FunnelSnapshot] = []
         self._buf_util_snapshots: list[BufUtilEntry] = []
 
@@ -240,27 +234,33 @@ class BLELogApp(App):
 
     @property
     def saved_capture_path(self) -> Path | None:
-        return self._saved_capture_path
+        return self._capture_session.saved_capture_path if self._capture_session else None
 
     @property
     def saved_capture_paths(self) -> list[Path]:
-        return list(self._saved_capture_paths)
+        return list(self._capture_session.saved_capture_paths) if self._capture_session else []
 
     @property
     def saved_console_log_path(self) -> Path | None:
-        return self._saved_console_log_path
+        return self._capture_session.saved_console_log_path if self._capture_session else None
 
     @property
     def saved_console_log_paths(self) -> list[Path]:
-        return list(self._saved_console_log_paths)
+        return list(self._capture_session.saved_console_log_paths) if self._capture_session else []
+
+    @property
+    def capture_report(self) -> CaptureReport | None:
+        return self._capture_session.report if self._capture_session else None
 
     @property
     def saved_hci_paths(self) -> list[Path]:
-        return list(self._capture_report.hci_paths) if self._capture_report is not None else []
+        report = self.capture_report
+        return list(report.hci_paths) if report else []
 
     @property
     def saved_report_path(self) -> Path | None:
-        return self._saved_report_path
+        report = self.capture_report
+        return report.report_path if report and not report.report_write_error else None
 
     def _on_launch_result(self, config: LaunchConfig | None) -> None:
         if config is None:
@@ -299,12 +299,6 @@ class BLELogApp(App):
     def _resolve_output_path(self) -> None:
         self._log_dir.mkdir(parents=True, exist_ok=True)
         self._output_path = unique_capture_path(self._log_dir)
-        self._saved_capture_path = None
-        self._saved_capture_paths = []
-        self._saved_console_log_path = None
-        self._saved_console_log_paths = []
-        self._saved_report_path = None
-        self._capture_report = None
         self._finalizing = False
         self._capture_session = None
 
@@ -339,30 +333,18 @@ class BLELogApp(App):
 
     def _poll_pipeline(self) -> None:
         capture_session = self._capture_session
-        if capture_session is None or capture_session.finished:
+        if capture_session is None:
             return
-
+        if capture_session.finished:
+            report = capture_session.report
+            if isinstance(self.screen, CaptureReportScreen) and report is not None and self.screen.report is not report:
+                self.screen.update_report(report)
+            return
         self._publish_view_messages(capture_session.poll())
 
     def _publish_view_messages(self, messages: tuple[Message, ...]) -> None:
-        self._sync_capture_state()
         for message in messages:
             self.post_message(message)
-
-    def _sync_capture_state(self) -> None:
-        if self._capture_session is None:
-            return
-        self._saved_capture_path = self._capture_session.saved_capture_path
-        self._saved_capture_paths = self._capture_session.saved_capture_paths
-        self._saved_console_log_path = self._capture_session.saved_console_log_path
-        self._saved_console_log_paths = self._capture_session.saved_console_log_paths
-        if self._capture_session.report is not None:
-            self._capture_report = self._capture_session.report
-            self._saved_report_path = (
-                self._capture_session.report.report_path
-                if self._capture_session.report.report_write_error is None
-                else None
-            )
 
     # --- Message handlers ---
 
@@ -407,9 +389,6 @@ class BLELogApp(App):
         panel.finalizing = False
 
     def on_capture_finished(self, msg: CaptureFinished) -> None:
-        self._sync_capture_state()
-        self._capture_report = msg.report
-        self._saved_report_path = msg.report.report_path if msg.report.report_write_error is None else None
         self._finalizing = False
         panel = self.query_one(StatusPanel)
         panel.disconnected = True

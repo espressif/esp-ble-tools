@@ -19,6 +19,8 @@ class RecordingProducts:
     paths: tuple[Path, ...] = ()
     error: str | None = None
     compressed_host_status: CompressedHostStatus = CompressedHostStatus.UNVERIFIED
+    host_text_entries: int = 0
+    host_missing_id_frames: int = 0
 
 
 class RecordingProductWriter:
@@ -82,8 +84,12 @@ class RecordingProductWriter:
             if self.offset != end.raw_bytes:
                 return RecordingProducts(error="Saved parts do not cover the announced recording size")
             paths = self.export.finish() if self.export else ()
+            entries = self.export.host_text_entries if self.export else 0
+            missing = self.export.host_missing_id_frames if self.export else 0
+            if self.export and self.export.compressed_host_seen:
+                compressed_host_seen = True
             if any(p.name.endswith("_DECOMPRESSED_BLE_HOST.log") and p.stat().st_size for p in paths):
-                status = CompressedHostStatus.SAVED
+                status = CompressedHostStatus.PARTIAL if missing else CompressedHostStatus.SAVED
             elif compressed_host_seen is None:
                 status = CompressedHostStatus.UNVERIFIED
             elif not compressed_host_seen:
@@ -92,7 +98,9 @@ class RecordingProductWriter:
                 status = CompressedHostStatus.SKIPPED
             else:
                 status = CompressedHostStatus.NO_TEXT
-            return RecordingProducts(paths, compressed_host_status=status)
+            return RecordingProducts(
+                paths, compressed_host_status=status, host_text_entries=entries, host_missing_id_frames=missing
+            )
         except Exception as exc:
             return RecordingProducts(error=str(exc))
         finally:

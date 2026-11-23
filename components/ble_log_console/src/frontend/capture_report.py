@@ -9,6 +9,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import ClassVar
 
 from textual import on
@@ -203,8 +204,6 @@ def build_capture_report(
     if hci_error is not None:
         findings.append("HCI files could not be saved completely; retain the original raw recording.")
     host_status = result.products.compressed_host_status if result.products else CompressedHostStatus.UNVERIFIED
-    if host_status == CompressedHostStatus.NO_TEXT:
-        findings.append("Compressed Host frames were captured, but no readable Host text file was generated.")
     if result.products and result.products.error:
         findings.append("Ordered parser products could not be saved completely.")
     if quality_error:
@@ -291,6 +290,8 @@ def build_capture_report(
         ),
         product_error=result.products.error if result.products else None,
         compressed_host_status=host_status,
+        host_text_entries=result.products.host_text_entries if result.products else 0,
+        host_missing_id_frames=result.products.host_missing_id_frames if result.products else 0,
         hci_paths=(*hci_paths, *binary_hci),
         hci_error=hci_error,
         report_path=report_path,
@@ -386,6 +387,42 @@ def _no_regular_frames_advice(report: CaptureReport) -> str:
     )
 
 
+def _host_text_summary(report: CaptureReport, language: str, separator: str) -> list[str]:
+    status = tr(report.compressed_host_status.value, language=language)
+    lines = [f"{tr('Compressed Host text', language=language)}{separator}{status}"]
+    if report.host_missing_id_frames and report.compressed_host_status in (
+        CompressedHostStatus.PARTIAL,
+        CompressedHostStatus.NO_TEXT,
+    ):
+        lines.append(
+            tr(
+                "Text entries written: {entries:,}. Frames without a usable dictionary entry: {frames:,}.",
+                language=language,
+                entries=report.host_text_entries,
+                frames=report.host_missing_id_frames,
+            )
+        )
+    if report.compressed_host_status in (CompressedHostStatus.NO_TEXT, CompressedHostStatus.PARTIAL):
+        lines.append(tr("Check that BLE_HOST_logs.json comes from the flashed firmware build.", language=language))
+    return lines
+
+
+def _database_copy_lines(report: CaptureReport, language: str) -> list[str]:
+    if report.pending_database is not None:
+        return [
+            tr(
+                "Dictionary copy pending. Keep Console open to finish copying from {path}.",
+                language=language,
+                path=report.pending_database,
+            )
+        ]
+    if report.database_copy_error is not None:
+        return [tr("Dictionary copy not saved: {error}", language=language, error=report.database_copy_error)]
+    if report.database_copy is not None:
+        return [tr("Dictionary copy: {path}", language=language, path=report.database_copy)]
+    return []
+
+
 def format_capture_summary(report: CaptureReport, language: str | None = None) -> str:
     language = language or get_language()
     separator = "：" if language == "zh_CN" else ": "
@@ -434,12 +471,19 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
                 f"  {tr('Possible sequence loss' if report.parser_complete else 'Full-recording sequence continuity', language=language)}"
                 f"{separator}{sequence_result}"
             ),
-            f"  {tr('Compressed Host text', language=language)}{separator}{tr(report.compressed_host_status.value, language=language)}",
             *_stream_content_summary(report, language, separator),
             *_startup_summary(report, language),
             "",
+            *_host_text_summary(report, language, separator),
+            "",
             f"{tr('Detailed report', language=language)}{separator}{report_path}",
             f"{tr('Raw data file', language=language)}{separator}{raw_path}",
+            *_database_copy_lines(report, language),
+            *(
+                (tr("Could not update the saved report: {error}", language=language, error=report.report_update_error),)
+                if report.report_update_error
+                else ()
+            ),
         )
     )
 
@@ -499,10 +543,11 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
         *(f"  - {reason}" for reason in _localized_reasons(report, language)),
         "",
         f"{tr('Reliability', language=language)}{separator.rstrip()}",
-        f"  {field('Compressed Host text', tr(report.compressed_host_status.value, language=language))}",
         f"  {field('Saved raw data', tr('Confirmed' if report.raw_complete else 'Not confirmed', language=language))}",
         f"  {field('Automated quality check', tr(_quality_scope(report), language=language))}",
         f"  {field('Parser coverage summary', _coverage_text(report, language))}",
+        "",
+        *_host_text_summary(report, language, separator),
         "",
         f"{tr('Recording', language=language)}{separator.rstrip()}",
         f"  {field('Mode', cfg.mode.value)}",
@@ -626,6 +671,7 @@ def format_capture_report(report: CaptureReport, language: str | None = None) ->
 
     lines.extend(("", f"{tr('Files', language=language)}{separator.rstrip()}"))
     lines.extend(f"  {field('Raw', path)}" for path in report.raw_paths)
+    lines.extend(f"  {line}" for line in _database_copy_lines(report, language))
     lines.extend(f"  {field('Console log', path)}" for path in report.console_log_paths)
     lines.extend(f"  {field('HCI log', path)}" for path in report.hci_paths)
     lines.extend(f"  {field('Parser output', path)}" for path in report.parsed_paths)
@@ -834,13 +880,14 @@ def _format_segment(segment: CaptureSegmentSummary, language: str) -> str:
 
 def write_capture_report(report: CaptureReport, language: str | None = None) -> None:
     report.report_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(report.report_path, "w", encoding="utf-8", newline="\n") as file_obj:
-        file_obj.write(format_capture_report(report, language))
-        file_obj.flush()
-        try:
-            os.fsync(file_obj.fileno())
-        except OSError:
-            pass
+    # Readers can open the first report while the dictionary result is being saved.
+    with TemporaryDirectory(prefix=".ble-report-", dir=report.report_path.parent) as directory:
+        staged = Path(directory) / report.report_path.name
+        with staged.open("w", encoding="utf-8", newline="\n") as file:
+            file.write(format_capture_report(report, language))
+            file.flush()
+            os.fsync(file.fileno())
+        staged.replace(report.report_path)
 
 
 class CaptureReportScreen(ModalScreen[str]):
@@ -918,10 +965,14 @@ class CaptureReportScreen(ModalScreen[str]):
                 classes=self.report.verdict.name.lower(),
             )
             with VerticalScroll(id="capture-report-scroll"):
-                yield Static(format_capture_summary(self.report), markup=False)
+                yield Static(format_capture_summary(self.report), markup=False, id="report-summary")
             with Center(), Horizontal(id="capture-report-actions"):
                 yield Button("Record Again", variant="primary", id="record-again")
                 yield Button("Exit", id="exit-report")
+
+    def update_report(self, report: CaptureReport) -> None:
+        self.report = report
+        self.query_one("#report-summary", Static).update(format_capture_summary(report))
 
     @on(Button.Pressed, "#record-again")
     def record_again(self) -> None:
