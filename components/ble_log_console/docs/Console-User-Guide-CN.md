@@ -17,8 +17,8 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 | 目标板上的外设 | 什么时候选 | 配置与接线 |
 | --- | --- | --- |
-| **USB OTG** | 板上有芯片原生 USB 口，或引出了对应 IO。固件支持通过 TinyUSB CDC 输出日志。 | [USB OTG 固件配置](#22-usb-otg-固件配置) · [USB 直连接线图](#usb-direct) |
-| **USB Serial/JTAG（USJ）** | 板上有芯片原生 USB 口，或引出了对应 IO。固件支持通过 USJ 输出日志。 | [USJ 固件配置](#23-usj-固件配置) · [USB 直连接线图](#usb-direct) |
+| **USB Serial/JTAG（USJ）** | 板上有芯片原生 USB 口，或引出了对应 IO。固件支持通过 USJ 输出日志。 | [USJ 固件配置](#22-usj-固件配置) · [USB 直连接线图](#usb-direct) |
+| **USB OTG** | 板上有芯片原生 USB 口，或引出了对应 IO。固件支持通过 TinyUSB CDC 输出日志。 | [USB OTG 固件配置](#23-usb-otg-固件配置) · [USB 直连接线图](#usb-direct) |
 | **SPI** | 目标板有空闲 SPI，可引出 MOSI、SCLK、CS 和 GND，手边有独立的 SPI Bridge。 | [SPI 固件配置](#31-固件配置) · [Bridge 准备与接线图](#3-spi-bridge-模式) |
 | **UART** | 板上有可用的 USB 转串口，或能引出 UART TX 和 GND 连接外置 USB 转串口。 | [UART 引脚与波特率](#41-固件配置) · [UART 接线图](#4-uart-模式) |
 
@@ -152,13 +152,13 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 > 注意：
 > - 有板载 USB 插座时，请使用支持数据传输的 USB 线。若仅引出排针或测试点，请按原理图确认所选外设的 D+、D−，连接 D+、D− 和 GND（供电与 VBUS 按板卡设计处理）。接在板载 USB 转串口芯片上的插座仅用于 UART 模式。
-> - USB OTG（固件配置项称为 USB Output）与 USJ 使用不同的芯片外设。虽然接线示意图相同，但并非所有芯片都同时支持两种模式，同一块板上的插座也可能不同。
+> - USB OTG 与 USJ 使用不同的芯片外设。虽然接线示意图相同，但并非所有芯片都同时支持两种模式，同一块板上的插座也可能不同。
 
 <a id="21-选择-usb-output-还是-usj"></a>
 
 ### 2.1 选择 USB OTG 还是 USJ
 
-按下表确认芯片支持的输出方式，并在固件中启用。Console 中统一先选 **USB**，再选标有 **USB OTG** 或 **USJ** 的端口。
+板上引出 USJ 时优先选 USJ。下表列出各芯片支持的方式。Console 中统一先选 **USB**，再选标有 **USB OTG** 或 **USJ** 的端口。
 
 | 芯片 | USB OTG（最高总线速率） | USJ（最高总线速率） |
 | --- | --- | --- |
@@ -169,51 +169,28 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 两种模式均无需设置波特率。表中为 USB 理论总线速率，实际日志吞吐能力以业务试录和质量报告为准。
 
+以下是首次配置固件的步骤。**BT Logs** 位于 `idf.py menuconfig` 的 **Component config → Bluetooth → Common Options → BT Logs**，BLE Log 开关为 **Enable BT Log Async Output (Dev Only)**。
+
+<a id="23-usj-固件配置"></a>
+
+### 2.2 USJ 固件配置
+
+1. 保留默认主控制台 UART0，在 **Component config → ESP-STDIO → Channel for console secondary output** 选择 **No secondary console**。
+2. 在 **BT Logs** 启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB Serial/JTAG as transport**。
+
+若 USJ 不可选，按传输列表中的提示操作。
+
 <a id="22-usb-output-固件配置"></a>
+<a id="22-usb-otg-固件配置"></a>
 
-### 2.2 USB OTG 固件配置
+### 2.3 USB OTG 固件配置
 
-**板上固件已启用 USB OTG（USB Output）？** 用数据线将板上的 USB OTG 口连接到电脑，在 Console 中选择 **USB → USB OTG**，即可[开始录制](#select-port)。
-
-首次在固件中启用时，按以下步骤操作：
-
-- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED=y` 和 `CONFIG_BLE_LOG_PRPH_USB=y`（menuconfig 中显示为 USB Output）。
-- 在工程的 `main/idf_component.yml` 中加入 TinyUSB 依赖（已有该文件时请合并，保留原有依赖）：
-
-  ```yaml
-  dependencies:
-    espressif/esp_tinyusb: "^2.0.0"
-  ```
-
-- 执行 `idf.py reconfigure` 拉取组件，然后开启 `CONFIG_TINYUSB_CDC_ENABLED=y`。
-- 编译并烧录固件。若编译提示 CDC 缓冲区配置错误，按报错信息调整对应项后重新编译。
-
-> 配置说明：
-> - 该模式要求芯片支持 USB OTG，并运行 TinyUSB CDC。若 menuconfig 无此选项，请改用芯片及固件支持的其他模式。
-> - 请确认工程内没有其他 USB 功能占用同一外设；普通控制台可保留在 UART 上。固件启动 BLE Log 后，电脑端会出现 USB ID 为 `303A:10B1` 的端口。
-
-### 2.3 USJ 固件配置
-
-- 确认目标芯片带有 USB Serial/JTAG，且所用 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。
-- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED=y`，并设置：
-  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
-  - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y`
-- 将主控制台改到其他通道（如默认 UART0），不要选择 `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`。
-- 确认 `esp_trace`、OpenThread RCP 等功能未占用 USB Serial/JTAG，并保持 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`。
-- 编译并烧录固件，将芯片的 USB Serial/JTAG 口连接到电脑。
-
-> 配置说明：
-> - USJ 无需 TinyUSB 依赖，电脑端识别到的 USB ID 为 `303A:1001`。
-> - 若 menuconfig 中未显示 USJ 输出选项，请先确认芯片与 SDK 支持情况，再排查端口是否被控制台或其他功能占用，详见 [USJ 配置](Config-Guide-CN.md#usj)。
-> - 设备通过 USJ 输出的开机或崩溃文本会保存在 `_console.log` 中；若需边录边看，可通过命令行加上 `--show-log console` 启动。若端口始终只输出普通文本，请检查固件是否已启用 BLE Log。
+1. 在工程根目录运行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。已有此依赖的工程可直接执行第 2 步。
+2. 在 `idf.py menuconfig` 的 **BT Logs** 中启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**。CDC 会自动启用，缓冲区沿用默认值。
 
 ### 2.4 在 PC 端启动应用
 
-[返回「选择模式和端口」，继续录制](#select-port)。
-
-> 使用说明：
-> - USB OTG 和 USJ 均不支持通过工具的 `r` 快捷键复位设备；USJ 打开端口时的复位注意事项见[选择模式和端口](#select-port)。
-> - 正式复现问题时，请先开始录制并确认数据正常接收，再触发问题。
+固件已启用对应输出时，可直接接线。首次配置后，编译并烧录固件，用数据线连接对应的原生 USB 口，在 Console 中选 **USB → USJ** 或 **USB → USB OTG**，即可[开始录制](#select-port)。
 
 ## 3. SPI Bridge 模式
 

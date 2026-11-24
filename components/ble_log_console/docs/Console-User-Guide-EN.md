@@ -17,8 +17,8 @@ BLE Log Console receives, displays, and saves BLE logs from an ESP device on you
 
 | Peripheral on the board | When to choose it | Setup instructions |
 | --- | --- | --- |
-| **USB OTG** | The board has a USB OTG connector or exposes its D+ and D− signals. The firmware supports log output over TinyUSB CDC. | [USB OTG firmware setup](#22-usb-otg-firmware-configuration) · [Direct USB wiring](#usb-direct) |
-| **USB Serial/JTAG (USJ)** | The board has a USJ connector or exposes its D+ and D− signals. The firmware supports log output over USJ. | [USJ firmware setup](#23-usj-firmware-configuration) · [Direct USB wiring](#usb-direct) |
+| **USB Serial/JTAG (USJ)** | The board has a USJ connector or exposes its D+ and D− signals. The firmware supports log output over USJ. | [USJ firmware setup](#22-usj-firmware-configuration) · [Direct USB wiring](#usb-direct) |
+| **USB OTG** | The board has a USB OTG connector or exposes its D+ and D− signals. The firmware supports log output over TinyUSB CDC. | [USB OTG firmware setup](#23-usb-otg-firmware-configuration) · [Direct USB wiring](#usb-direct) |
 | **SPI** | The target has a free SPI peripheral, you can reach MOSI, SCLK, CS, and GND, and you have a separate SPI Bridge. | [SPI firmware setup](#31-firmware-configuration) · [Bridge setup and wiring](#3-spi-bridge-mode) |
 | **UART** | The board has an available USB-to-UART adapter, or you can wire UART TX and GND to an external adapter. | [UART pins and baud rate](#41-firmware-configuration) · [UART wiring](#4-uart-mode) |
 
@@ -152,13 +152,13 @@ Device connection diagram:
 
 > Notes:
 > - Use a data-capable USB cable for an onboard USB port. If only pins or test pads are exposed, check the schematic for the selected peripheral’s D+ and D− signals and wire D+, D−, and GND accordingly (handle power and VBUS per board design). A USB port wired to an onboard USB-to-UART chip is for UART mode only.
-> - USB OTG (named **USB Output** in firmware Kconfig) and USJ use different chip peripherals. Although they share the wiring diagram above, not every chip supports both modes, and they may not share the same connector on a given board.
+> - USB OTG and USJ use different chip peripherals. Although they share the wiring diagram above, not every chip supports both modes, and they may not share the same connector on a given board.
 
 <a id="21-choose-usb-output-or-usj"></a>
 
 ### 2.1 Choose USB OTG or USJ
 
-Check which output your chip supports below and enable it in firmware. In Console, select **USB**, then pick the port labeled **USB OTG** or **USJ**.
+Start with USJ if the board exposes it. The table lists the outputs supported by each chip. In Console, select **USB**, then pick the port labeled **USB OTG** or **USJ**.
 
 | Chip | USB OTG (maximum bus rate) | USJ (maximum bus rate) |
 | --- | --- | --- |
@@ -169,51 +169,28 @@ Check which output your chip supports below and enable it in firmware. In Consol
 
 Neither mode requires a baud rate. The table shows USB bus rates; verify actual log throughput with a trial recording and quality report.
 
+For initial firmware setup, open **Component config → Bluetooth → Common Options → BT Logs** in `idf.py menuconfig` to find **Enable BT Log Async Output (Dev Only)** and the transport choices.
+
+<a id="23-usj-firmware-configuration"></a>
+
+### 2.2 USJ Firmware Configuration
+
+1. Keep the primary console on UART0. Under **Component config → ESP-STDIO → Channel for console secondary output**, select **No secondary console**.
+2. Enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB Serial/JTAG as transport**.
+
+If USJ is unavailable, follow the message in the transport list.
+
 <a id="22-usb-output-firmware-configuration"></a>
+<a id="22-usb-otg-firmware-configuration"></a>
 
-### 2.2 USB OTG Firmware Configuration
+### 2.3 USB OTG Firmware Configuration
 
-**Is USB OTG (USB Output) already enabled in firmware?** Connect the board's USB OTG port to the PC with a USB data cable, then select **USB → USB OTG** in Console to [start recording](#select-port).
-
-To enable it in firmware for the first time:
-
-- Enable `CONFIG_BLE_LOG_ENABLED=y` and `CONFIG_BLE_LOG_PRPH_USB=y` (shown as **USB Output** in menuconfig).
-- Add the TinyUSB dependency to `main/idf_component.yml` (merge with existing dependencies if the file already exists):
-
-  ```yaml
-  dependencies:
-    espressif/esp_tinyusb: "^2.0.0"
-  ```
-
-- Run `idf.py reconfigure` to fetch the component, then enable `CONFIG_TINYUSB_CDC_ENABLED=y`.
-- Build and flash the firmware. If the build reports a CDC buffer configuration error, adjust the named option and rebuild.
-
-> Configuration notes:
-> - This mode requires a chip with USB OTG support running TinyUSB CDC. If the option is unavailable in menuconfig, select another mode supported by your chip and firmware.
-> - Confirm that no other USB feature in the project occupies the same peripheral; the standard console can remain on UART. Once BLE Log starts, a port with USB ID `303A:10B1` appears on the PC.
-
-### 2.3 USJ Firmware Configuration
-
-- Confirm that the target chip has USB Serial/JTAG and that your ESP-IDF version provides `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`.
-- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project and set:
-  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
-  - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y`
-- Route the primary console to another channel (such as UART0); do not select `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`.
-- Confirm that `esp_trace`, OpenThread RCP, or other features do not occupy USB Serial/JTAG, and keep `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`.
-- Build and flash the firmware, then connect the chip's USB Serial/JTAG port to the PC.
-
-> Configuration notes:
-> - USJ requires no TinyUSB dependency; its PC-side USB ID is `303A:1001`.
-> - If the USJ output option is hidden in menuconfig, verify chip and SDK support first, then check whether a console or another feature owns the port. See [USJ configuration](Config-Guide-EN.md#usj).
-> - Boot or crash messages printed over USJ are saved to `_console.log`; to watch them live, launch USJ recording from the command line with `--show-log console`. If the port outputs only plain text, verify that BLE Log is enabled in firmware.
+1. From the project root, run `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`. If the project already includes this dependency, go to step 2.
+2. In `idf.py menuconfig`, enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**. This enables CDC with the default buffer settings.
 
 ### 2.4 Start the Application on the PC
 
-[Return to port selection and continue recording](#select-port).
-
-> Usage notes:
-> - Neither USB OTG nor USJ supports resetting the device with the `r` shortcut; see [Select the Mode and Port](#select-port) for USJ port-open reset precautions.
-> - When reproducing an issue, start recording and confirm reception first before triggering the issue.
+If the board already runs configured firmware, connect it directly. After first-time setup, build and flash the firmware. Connect the matching native USB port with a data cable, select **USB → USJ** or **USB → USB OTG** in Console, and [start recording](#select-port).
 
 ## 3. SPI Bridge Mode
 

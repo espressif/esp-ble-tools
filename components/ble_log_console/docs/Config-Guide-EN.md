@@ -10,63 +10,39 @@ This guide helps determine a usable BLE Log sdkconfig and wiring setup based on 
 
 **Reading order: Select direct USB, SPI Bridge, or UART → Configure and wire → Verify a recording → Submit the files.**
 
-[USB configuration](#usb) · [USJ configuration](#usj) · [SPI configuration](#spi) · [UART configuration](#uart) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
+[USJ configuration](#usj) · [USB OTG configuration](#usb) · [SPI configuration](#spi) · [UART configuration](#uart) · [Capture verification](#verification) · [Deliverables](#deliverables) · [Configuration record](#records) · [Buffers and log volume](#advanced)
 
 ## Quick Selection
 
 | Priority | Conditions | Selection and next step |
 | --- | --- | --- |
-| 1. Direct USB (recommended) | The board exposes native USB and the firmware supports BLE Log on that peripheral. | Use [USB OTG](#usb) for TinyUSB CDC or [USJ](#usj) for built-in USB Serial/JTAG. Select **USB** in Console for either. |
+| 1. Direct USB (recommended) | The board exposes native USB and the firmware supports BLE Log on that peripheral. | Start with [USJ](#usj) if the board exposes it. Choose [USB OTG](#usb) for TinyUSB CDC. Select **USB** in Console for either. |
 | 2. SPI Bridge | A separate Bridge and an available SPI peripheral with accessible MOSI, SCLK, CS, and GND are available. | Connect the two boards as shown in [SPI configuration](#spi). |
 | 3. UART | An onboard USB-to-UART converter is available, or UART TX and GND are accessible for an external adapter. | Check the TX pin and matching baud rates in [UART configuration](#uart). |
 
-<a id="usb"></a>
-
 ## 1. Direct USB Configuration (Recommended)
 
-### 1.1 USB Output (USB OTG)
-
-1. Enable `CONFIG_BLE_LOG_ENABLED=y` and `CONFIG_BLE_LOG_PRPH_USB=y` in the target project. Add the `espressif/esp_tinyusb` dependency to `main/idf_component.yml`, run `idf.py reconfigure`, and enable `CONFIG_TINYUSB_CDC_ENABLED=y`.
-2. Build and flash the firmware. If the build reports a CDC buffer error, match the TinyUSB TX and EP sizes to their BLE Log counterparts and set the TinyUSB RX size to at least the EP size. If the board already runs firmware configured for USB Output, go to step 3.
-3. Connect the board’s USB OTG port to the computer with a data cable. Select **USB → USB OTG** (`303A:10B1`) in Console. There is no baud rate to set. Choose a save directory and make a [trial recording](#verification).
+For initial firmware setup, open **Component config → Bluetooth → Common Options → BT Logs** in `idf.py menuconfig` to find **Enable BT Log Async Output (Dev Only)** and the transport choices.
 
 <a id="usj"></a>
 
-### 1.2 USB Serial/JTAG (USJ)
+### 1.1 USB Serial/JTAG (USJ)
 
-USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. Use a data cable if the board has a USJ connector. For exposed pins, see [direct USB wiring](Console-User-Guide-EN.md#usb-direct). USJ requires no baud-rate setting.
+1. Keep the primary console on UART0. Under **Component config → ESP-STDIO → Channel for console secondary output**, select **No secondary console**.
+2. Enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB Serial/JTAG as transport**.
 
-> **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
+If USJ is unavailable, follow the message in the transport list to free the port or enable the USJ module.
 
-#### Connection Requirements
+<a id="usb"></a>
 
-| Item | Requirement and explanation | Suggested action |
-| --- | --- | --- |
-| Firmware option | **`CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is available for this chip and ESP-IDF.**<br>The chip must have a USB Serial/JTAG controller. | If the option is absent, use SPI or UART. |
-| Port ownership | **BLE Log must be the only user of the USB Serial/JTAG port.**<br>The option is hidden while the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, or while `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` is disabled. menuconfig then shows “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”. On chips with USB Serial/JTAG, the secondary console uses this port by default. | Move these users off the port only if the problem remains reproducible. Otherwise, use SPI or UART. |
-| USB connection | **The PC connects directly to the chip's built-in USB Serial/JTAG port.**<br>The PC lists it with USB ID `303A:1001`. A USB connector behind an onboard USB-to-UART converter is a UART connection. | Use `ports --mode usj` to list only `303A:1001` ports, or select a port labeled **USJ** in the interactive **USB** list. |
-| Text on the port | Boot messages printed before BLE Log starts, and some ROM output such as a panic dump, can still appear on this port. | This is expected. The tool saves printable text, warns if text continues, and keeps recording. |
+### 1.2 USB OTG
 
-#### Configuration and Connection
+1. From the project root, run `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`. If the project already includes this dependency, go to step 2.
+2. In `idf.py menuconfig`, enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**. This enables CDC with the default buffer settings.
 
-| Configuration / connection | Value | Connection / explanation |
-| --- | --- | --- |
-| `CONFIG_BLE_LOG_ENABLED` | `y` | Enable BLE Log. |
-| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | Not set | Select another primary console channel, such as the default UART0. |
-| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | Disable the secondary console on USB Serial/JTAG. |
-| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | Select USB Serial/JTAG output. Shown only when the firmware offers it and the port is free. |
-| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | Keep the default `2048` | TX ring in bytes, from 2048 to 10240, and at least `CONFIG_BLE_LOG_POOL_TRANS_SIZE`. A larger ring does not raise the link rate. |
-| USB | No configuration option | Chip's built-in USB Serial/JTAG port → PC. |
+Build and flash the firmware, then connect the matching native USB port with a data cable. Select **USB → USJ** or **USB → USB OTG** in Console and [make a trial recording](#verification).
 
-The USJ link rate is not configurable. Use the trial recording and quality report to check whether it carries the required log volume.
-
-#### Connect the Tool
-
-After building and flashing the firmware, close serial monitors using the port. In BLE Log Console, select **USB**, then the **USJ** port with USB ID `303A:1001`; the command-line equivalent is `--mode usj`. USJ has no baud rate, so do not run the UART baud rate probe script for it.
-
-> The tool does not send a reset sequence. While opening the port it releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, and then leaves both lines released. The operating system or its USB driver can still change these lines while opening the device, which can reset the board. Connect when the application can be interrupted, and check whether connecting resets the board on this PC.
-
-**Next: [Capture verification](#verification).**
+On older ESP-IDF versions with separate BLE Log CDC buffer options, enable CDC in TinyUSB and follow that version’s build messages for buffer sizes.
 
 <a id="spi"></a>
 

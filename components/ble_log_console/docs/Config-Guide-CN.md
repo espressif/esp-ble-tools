@@ -10,63 +10,39 @@
 
 **阅读顺序：选择 USB 直连、SPI Bridge 或 UART → 配置与接线 → 试录验证 → 提交产物。**
 
-[USB 配置](#usb) · [USJ 配置](#usj) · [SPI 配置](#spi) · [UART 配置](#uart) · [采集验证](#verification) · [最终产物](#deliverables) · [配置记录](#records) · [缓冲与日志量](#advanced)
+[USJ 配置](#usj) · [USB OTG 配置](#usb) · [SPI 配置](#spi) · [UART 配置](#uart) · [采集验证](#verification) · [最终产物](#deliverables) · [配置记录](#records) · [缓冲与日志量](#advanced)
 
 ## 快速选择
 
 | 顺序 | 使用条件 | 选择与操作 |
 | --- | --- | --- |
-| 1. USB 直连（推荐） | 板卡引出了芯片原生 USB，所用固件支持通过该外设输出 BLE Log。 | 固件使用 TinyUSB CDC 时选 [USB OTG](#usb)，使用内置 USB Serial/JTAG 时选 [USJ](#usj)。两者在 Console 中都选 **USB**。 |
+| 1. USB 直连（推荐） | 板卡引出了芯片原生 USB，所用固件支持通过该外设输出 BLE Log。 | 板上引出内置 [USJ](#usj) 时优先选用；使用 TinyUSB CDC 时选 [USB OTG](#usb)。两者在 Console 中都选 **USB**。 |
 | 2. SPI Bridge | 目标板有空闲 SPI，可接出 MOSI、SCLK、CS 和 GND，手边有独立 Bridge。 | 按 [SPI 配置](#spi) 连接两块板。 |
 | 3. UART | 有可用的板载 USB 转串口，或能引出 UART TX 和 GND 接外置适配器。 | 按 [UART 配置](#uart) 核对 TX 和双方波特率。 |
 
-<a id="usb"></a>
-
 ## 1. USB 直连配置（推荐）
 
-### 1.1 USB Output（USB OTG）
-
-1. 在目标工程中启用 `CONFIG_BLE_LOG_ENABLED=y` 和 `CONFIG_BLE_LOG_PRPH_USB=y`。在 `main/idf_component.yml` 加入 `espressif/esp_tinyusb` 依赖，执行 `idf.py reconfigure` 后启用 `CONFIG_TINYUSB_CDC_ENABLED=y`。
-2. 编译并烧录固件。若构建提示 CDC 缓冲区配置错误，按报错调整：TinyUSB 的 TX、EP 大小分别与 BLE Log 的对应值相等，TinyUSB 的 RX 大小至少为 EP 大小。板上已运行配置好的固件时，直接执行第 3 步。
-3. 用数据线连接板上的 USB OTG 口与电脑，在 Console 中选 **USB → USB OTG**（`303A:10B1`），无需设置波特率。选好保存目录后开始[试录验证](#verification)。
+以下是首次配置固件的步骤。**BT Logs** 位于 `idf.py menuconfig` 的 **Component config → Bluetooth → Common Options → BT Logs**，BLE Log 开关为 **Enable BT Log Async Output (Dev Only)**。
 
 <a id="usj"></a>
 
-### 1.2 USB Serial/JTAG (USJ)
+### 1.1 USB Serial/JTAG (USJ)
 
-USJ 通过芯片内置的 USB Serial/JTAG 端口发送 BLE Log，该端口通常也是烧录用的 USB 口。有对应 USB 插座时用数据线直连；只有引脚时，参照[USB 直连接线说明](Console-User-Guide-CN.md#usb-direct)。USJ 无需设置波特率。
+1. 保留默认主控制台 UART0，在 **Component config → ESP-STDIO → Channel for console secondary output** 选择 **No secondary console**。
+2. 在 **BT Logs** 启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB Serial/JTAG as transport**。
 
-> **USJ 需要固件支持。** 只有构建固件所用的 ESP-IDF 在 BLE Log 外设选项中提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 时，才能使用 USJ。没有该选项时，这个固件不能使用 USJ，请改用 [SPI](#spi) 或 [UART](#uart)。
+若 USJ 不可选，按传输列表中的提示释放端口或启用 USJ 模块。
 
-#### 接入条件
+<a id="usb"></a>
 
-| 确认项 | 条件与说明 | 处理建议 |
-| --- | --- | --- |
-| 固件选项 | **当前芯片和 ESP-IDF 提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`。**<br>芯片需带有 USB Serial/JTAG 控制器。 | 没有该选项时选择 SPI 或 UART。 |
-| 端口占用 | **USB Serial/JTAG 端口只能由 BLE Log 使用。**<br>主控制台或第二控制台、esp_trace、OpenThread RCP 使用 USB Serial/JTAG，或关闭了 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG` 时，该选项会被隐藏，menuconfig 中显示 “USB Serial/JTAG BLE Log is hidden (port owned elsewhere)”。带 USB Serial/JTAG 的芯片上，第二控制台默认使用该端口。 | 仅当原问题仍可复现时，才把这些功能移出该端口；否则选择 SPI 或 UART。 |
-| USB 连接 | **电脑直接连接芯片内置的 USB Serial/JTAG 端口。**<br>电脑上显示的 USB ID 为 `303A:1001`。经过板载 USB 转串口芯片的 USB 口属于 UART 连接。 | 使用 `ports --mode usj` 仅列出 `303A:1001` 端口，或在交互界面的 **USB** 列表中选择标有 **USJ** 的端口。 |
-| 端口上的文本 | BLE Log 启动前打印的启动信息，以及崩溃转储等部分 ROM 输出，仍可能出现在该端口。 | 属于正常现象。工具会保存可打印文本；文本持续出现时给出警告，录制继续。 |
+### 1.2 USB OTG
 
-#### 配置和连接
+1. 在工程根目录运行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。已有此依赖的工程可直接执行第 2 步。
+2. 在 `idf.py menuconfig` 的 **BT Logs** 中启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**。CDC 会自动启用，缓冲区沿用默认值。
 
-| 配置项／连接 | 设置值 | 对应连接／说明 |
-| --- | --- | --- |
-| `CONFIG_BLE_LOG_ENABLED` | `y` | 启用 BLE Log。 |
-| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | 不选择 | 主控制台改用其他通道，例如默认的 UART0。 |
-| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | 关闭 USB Serial/JTAG 上的第二控制台。 |
-| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | 选择 USB Serial/JTAG 输出。仅在固件提供该选项且端口空闲时显示。 |
-| `CONFIG_BLE_LOG_USJ_TX_BUFSIZE` | 保持默认 `2048` | 发送环形缓冲大小（字节），范围 2048 到 10240，且不小于 `CONFIG_BLE_LOG_POOL_TRANS_SIZE`。增大缓冲不会提高链路速率。 |
-| USB | 无配置项 | 芯片内置 USB Serial/JTAG 端口 → 电脑。 |
+编译并烧录固件，用数据线连接对应的原生 USB 口，在 Console 中选 **USB → USJ** 或 **USB → USB OTG**，然后[试录](#verification)。
 
-USJ 链路速率不可配置，是否足以承载所需日志量，以试录和质量报告为准。
-
-#### 连接工具
-
-编译、烧录后，关闭占用该端口的串口监视器，在 BLE Log Console 中选择 **USB**，再选择标有 **USJ**、USB ID 为 `303A:1001` 的端口；命令行对应 `--mode usj`。USJ 没有波特率，不需要运行 UART 波特率探测脚本。
-
-> 工具不会发送复位时序。打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，可能使板卡复位。请在业务可以中断时连接，并在这台电脑上确认连接是否会导致复位。
-
-**下一步：[采集验证](#verification)。**
+旧版 ESP-IDF 若仍单列 BLE Log CDC 缓冲配置，请在 TinyUSB 中启用 CDC，并按该版本的构建提示设置缓冲区。
 
 <a id="spi"></a>
 
