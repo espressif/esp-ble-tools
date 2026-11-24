@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ble-log-config-assistant"
+dynamic = ["version"]
+description = "A bilingual TUI wizard for enabling BLE Log in ESP-IDF projects"
+requires-python = ">=3.10"
+dependencies = [
+    "textual",
+    "textual-fspicker",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller"]
+test = ["pytest"]
+
+[project.scripts]
+ble-log-config-assistant = "ble_log_config_assistant.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ble_log_config_assistant.__version__"}
