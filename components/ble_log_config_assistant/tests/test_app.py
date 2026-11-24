@@ -91,3 +91,31 @@ def test_switch_language_from_project_and_explain_uart_and_usj(tmp_path):
             assert app.query_one("#next-btn").label.plain == "下一步"
 
     asyncio.run(check())
+
+
+def test_spi_pin_conflict_stays_on_parameter_page(tmp_path, monkeypatch):
+    (tmp_path / "CMakeLists.txt").touch()
+    language = tmp_path / "settings.json"
+    language.write_text('{"language": "zh"}')
+
+    async def check():
+        app = ConfigurationAssistant(tmp_path, language)
+        messages = []
+        plans = []
+        monkeypatch.setattr(app, "notify", lambda message, **_: messages.append(message))
+        monkeypatch.setattr(app, "prepare_review", lambda project, plan: plans.append(plan))
+        async with app.run_test(size=(80, 30)) as pilot:
+            app.query_one("#transport-select", Select).value = "spi"
+            await pilot.click("#next-btn")
+            for signal in ("mosi", "sclk", "cs"):
+                app.query_one(f"#{signal}-gpio-input").value = "25"
+            app.next_page()
+            assert app.query_one(ContentSwitcher).current == "parameters-page"
+            assert messages == ["MOSI 和 SCLK 都使用了 GPIO25，请修改其中一个引脚。"]
+            assert not plans
+            app.query_one("#sclk-gpio-input").value = "26"
+            app.query_one("#cs-gpio-input").value = "27"
+            app.next_page()
+            assert [(p.mosi_gpio, p.sclk_gpio, p.cs_gpio) for p in plans] == [(25, 26, 27)]
+
+    asyncio.run(check())

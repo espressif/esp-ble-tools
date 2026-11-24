@@ -119,8 +119,15 @@ def build_settings(plan: ConfigPlan) -> dict[str, object]:
             "BLE_LOG_PRPH_UART_DMA_TX_IO_NUM": plan.tx_gpio,
         }
     if plan.mode == "spi":
-        for label, value in (("MOSI GPIO", plan.mosi_gpio), ("SCLK GPIO", plan.sclk_gpio), ("CS GPIO", plan.cs_gpio)):
-            _require_non_negative(label, value)
+        assigned = {}
+        for signal, gpio in (("MOSI", plan.mosi_gpio), ("SCLK", plan.sclk_gpio), ("CS", plan.cs_gpio)):
+            _require_non_negative(signal, gpio)
+            if gpio in assigned:
+                raise ConfigError(
+                    f"{assigned[gpio]} and {signal} both use GPIO{gpio}. Choose a different pin for one of them.",
+                    f"{assigned[gpio]} 和 {signal} 都使用了 GPIO{gpio}，请修改其中一个引脚。",
+                )
+            assigned[gpio] = signal
         return {
             "BLE_LOG_ENABLED": True,
             "BLE_LOG_PRPH_SPI_MASTER_DMA": True,

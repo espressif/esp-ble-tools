@@ -38,6 +38,15 @@ def test_profiles_only_change_required_ble_log_settings():
     }
 
 
+@pytest.mark.parametrize(
+    ("pins", "signals"),
+    [((25, 25, 27), "MOSI and SCLK"), ((25, 26, 25), "MOSI and CS"), ((26, 25, 25), "SCLK and CS")],
+)
+def test_duplicate_spi_pins_are_rejected(pins, signals):
+    with pytest.raises(ValueError, match=f"{signals} both use GPIO25"):
+        build_settings(ConfigPlan("spi", mosi_gpio=pins[0], sclk_gpio=pins[1], cs_gpio=pins[2]))
+
+
 def test_apply_writes_only_reviewed_settings_and_preserves_case(tmp_path: Path):
     (tmp_path / "CMakeLists.txt").write_text("project(test)\n", encoding="utf-8")
     sdkconfig = tmp_path / "sdkconfig"

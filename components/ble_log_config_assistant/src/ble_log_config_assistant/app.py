@@ -351,6 +351,8 @@ class ConfigurationAssistant(App[None]):
                 plan = ConfigPlan(mode=mode)
             build_settings(plan)
             return plan
+        except ConfigError as error:
+            raise ValueError(error.zh if self.language == "zh" else str(error)) from error
         except ValueError as error:
             raise ValueError(self.text("bad_number")) from error
 
