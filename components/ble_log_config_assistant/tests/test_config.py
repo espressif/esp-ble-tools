@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from ble_log_config_assistant.app import load_language, save_language
-from ble_log_config_assistant.config import ConfigPlan, apply_prepared, build_settings, prepare_change
+from ble_log_config_assistant.config import ConfigPlan, apply_prepared, build_settings, configured_mode, prepare_change
 
 
 class FakeConfServer:
@@ -36,6 +36,15 @@ def test_profiles_only_change_required_ble_log_settings():
         "BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM": 5,
         "BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM": 6,
     }
+
+
+@pytest.mark.parametrize(
+    ("pins", "signals"),
+    [((25, 25, 27), "MOSI and SCLK"), ((25, 26, 25), "MOSI and CS"), ((26, 25, 25), "SCLK and CS")],
+)
+def test_duplicate_spi_pins_are_rejected(pins, signals):
+    with pytest.raises(ValueError, match=f"{signals} both use GPIO25"):
+        build_settings(ConfigPlan("spi", mosi_gpio=pins[0], sclk_gpio=pins[1], cs_gpio=pins[2]))
 
 
 def test_apply_writes_only_reviewed_settings_and_preserves_case(tmp_path: Path):
@@ -147,3 +156,17 @@ def test_existing_tinyusb_is_reused(tmp_path):
     prepared = prepare_change(tmp_path, plan, server_factory=lambda p: FakeConfServer(p, effective))
     assert not prepared.add_tinyusb
     assert build_settings(ConfigPlan("usj"))["ESP_CONSOLE_SECONDARY_NONE"]
+
+
+@pytest.mark.parametrize(
+    ("contents", "mode"),
+    [
+        ("CONFIG_BLE_LOG_ENABLED=y\nCONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y", "usj"),
+        ("CONFIG_BLE_LOG_ENABLED=y\r\nCONFIG_BLE_LOG_PRPH_USB=y", "otg"),
+        ("# CONFIG_BLE_LOG_ENABLED is not set\nCONFIG_BLE_LOG_PRPH_USB=y", None),
+        ("CONFIG_BLE_LOG_ENABLED=y\nCONFIG_BLE_LOG_PRPH_SPI_MASTER_HD=y", None),
+    ],
+)
+def test_configured_mode_reads_enabled_transport(tmp_path, contents, mode):
+    (tmp_path / "sdkconfig").write_bytes(contents.encode())
+    assert configured_mode(tmp_path) == mode

@@ -49,11 +49,25 @@ class ConfigError(ValueError):
         self.zh = zh
 
 
-# A Kconfig choice switches off the previously selected member.
-TRANSPORT_CHOICES = {
-    "BLE_LOG_PRPH_" + name
-    for name in ("DUMMY", "TEST", "SPI_MASTER_DMA", "SPI_MASTER_HD", "UART_DMA", "USB", "USB_SERIAL_JTAG")
+MODE_SYMBOLS = {
+    "usj": "BLE_LOG_PRPH_USB_SERIAL_JTAG",
+    "otg": "BLE_LOG_PRPH_USB",
+    "spi": "BLE_LOG_PRPH_SPI_MASTER_DMA",
+    "uart": "BLE_LOG_PRPH_UART_DMA",
 }
+# A Kconfig choice switches off the previously selected member.
+TRANSPORT_CHOICES = {*MODE_SYMBOLS.values(), "BLE_LOG_PRPH_DUMMY", "BLE_LOG_PRPH_TEST", "BLE_LOG_PRPH_SPI_MASTER_HD"}
+
+
+def configured_mode(project: Path) -> str | None:
+    try:
+        lines = set((project / "sdkconfig").read_bytes().splitlines())
+    except OSError:
+        return None
+    if b"CONFIG_BLE_LOG_ENABLED=y" not in lines:
+        return None
+    selected = [symbol for symbol in TRANSPORT_CHOICES if f"CONFIG_{symbol}=y".encode() in lines]
+    return next((mode for mode, symbol in MODE_SYMBOLS.items() if selected == [symbol]), None)
 
 
 def _edit_settings(original: bytes, settings: dict[str, object]) -> bytes:
@@ -119,8 +133,15 @@ def build_settings(plan: ConfigPlan) -> dict[str, object]:
             "BLE_LOG_PRPH_UART_DMA_TX_IO_NUM": plan.tx_gpio,
         }
     if plan.mode == "spi":
-        for label, value in (("MOSI GPIO", plan.mosi_gpio), ("SCLK GPIO", plan.sclk_gpio), ("CS GPIO", plan.cs_gpio)):
-            _require_non_negative(label, value)
+        assigned = {}
+        for signal, gpio in (("MOSI", plan.mosi_gpio), ("SCLK", plan.sclk_gpio), ("CS", plan.cs_gpio)):
+            _require_non_negative(signal, gpio)
+            if gpio in assigned:
+                raise ConfigError(
+                    f"{assigned[gpio]} and {signal} both use GPIO{gpio}. Choose a different pin for one of them.",
+                    f"{assigned[gpio]} 和 {signal} 都使用了 GPIO{gpio}，请修改其中一个引脚。",
+                )
+            assigned[gpio] = signal
         return {
             "BLE_LOG_ENABLED": True,
             "BLE_LOG_PRPH_SPI_MASTER_DMA": True,

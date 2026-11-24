@@ -91,3 +91,63 @@ def test_switch_language_from_project_and_explain_uart_and_usj(tmp_path):
             assert app.query_one("#next-btn").label.plain == "下一步"
 
     asyncio.run(check())
+
+
+def test_spi_pin_conflict_stays_on_parameter_page(tmp_path, monkeypatch):
+    (tmp_path / "CMakeLists.txt").touch()
+    language = tmp_path / "settings.json"
+    language.write_text('{"language": "zh"}')
+
+    async def check():
+        app = ConfigurationAssistant(tmp_path, language)
+        messages = []
+        plans = []
+        monkeypatch.setattr(app, "notify", lambda message, **_: messages.append(message))
+        monkeypatch.setattr(app, "prepare_review", lambda project, plan: plans.append(plan))
+        async with app.run_test(size=(80, 30)) as pilot:
+            app.query_one("#transport-select", Select).value = "spi"
+            await pilot.click("#next-btn")
+            for signal in ("mosi", "sclk", "cs"):
+                app.query_one(f"#{signal}-gpio-input").value = "25"
+            app.next_page()
+            assert app.query_one(ContentSwitcher).current == "parameters-page"
+            assert messages == ["MOSI 和 SCLK 都使用了 GPIO25，请修改其中一个引脚。"]
+            assert not plans
+            app.query_one("#sclk-gpio-input").value = "26"
+            app.query_one("#cs-gpio-input").value = "27"
+            app.next_page()
+            assert [(p.mosi_gpio, p.sclk_gpio, p.cs_gpio) for p in plans] == [(25, 26, 27)]
+
+    asyncio.run(check())
+
+
+def test_preselect_project_transport_at_launch_and_after_choosing_directory(tmp_path):
+    spi = tmp_path / "spi"
+    uart = tmp_path / "uart"
+    for project, symbol in ((spi, "SPI_MASTER_DMA"), (uart, "UART_DMA")):
+        project.mkdir()
+        (project / "CMakeLists.txt").touch()
+        (project / "sdkconfig").write_text(f"CONFIG_BLE_LOG_ENABLED=y\nCONFIG_BLE_LOG_PRPH_{symbol}=y\n")
+    language = tmp_path / "settings.json"
+    language.write_text('{"language": "zh"}')
+
+    async def check():
+        app = ConfigurationAssistant(spi, language)
+        async with app.run_test(size=(80, 30)) as pilot:
+            transport = app.query_one("#transport-select", Select)
+            assert transport.value == "spi"
+            assert "工程当前配置：SPI" in str(app.query_one("#transport-help", Static).content)
+            transport.value = "uart"
+            await pilot.click("#next-btn")
+            await pilot.click("#back-btn")
+            assert transport.value == "uart"
+            assert app.query_one(ContentSwitcher).current == "transport-page"
+            await pilot.pause(0.4)
+            await pilot.click("#back-btn")
+            assert app.query_one(ContentSwitcher).current == "project-page"
+            app.query_one("#project-input").value = str(uart)
+            await pilot.click("#next-btn")
+            assert transport.value == "uart"
+            assert "工程当前配置：串口" in str(app.query_one("#transport-help", Static).content)
+
+    asyncio.run(check())
