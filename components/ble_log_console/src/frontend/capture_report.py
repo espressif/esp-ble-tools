@@ -472,7 +472,7 @@ def format_capture_summary(report: CaptureReport, language: str | None = None) -
                 f"{separator}{sequence_result}"
             ),
             *_stream_content_summary(report, language, separator),
-            *_startup_summary(report, language),
+            *(_startup_summary(report, language) if not report.quality_start_offset else ()),
             "",
             *_host_text_summary(report, language, separator),
             "",

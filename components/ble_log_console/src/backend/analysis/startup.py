@@ -11,12 +11,14 @@ here. Other streams pass through unchanged. A decision is made once per opening.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from itertools import pairwise
 
 from ble_log_frame_decoder import (
     INIT,
     PERIODIC,
     TS_VALID,
     BleLogFrame,
+    BleLogSource,
     Snapshot,
     is_snapshot,
     is_task_binding,
@@ -26,6 +28,7 @@ from ble_log_frame_decoder import (
 STARTUP_MAX_SECONDS = 5.0
 STARTUP_MAX_BYTES = 2 * 1024 * 1024
 MIN_BACKLOG_SECONDS = 3.0
+MIN_FIRST_READ_GAP_SECONDS = 0.5
 STABLE_INTERVALS = 2
 SN_MODULUS = 1 << 24
 CLOCK_MODULUS = 1 << 32
@@ -80,6 +83,8 @@ class StartupDetector:
         self._max_seconds = max_seconds
         self._bytes = 0
         self._started: float | None = None
+        self._first_read_end = 0
+        self._first_read_clocks: dict[int, int] = {}
         self._received = 0.0
         self._previous: _Anchor | None = None
         self._candidate: StartupDecision | None = None
@@ -105,6 +110,7 @@ class StartupDetector:
         self._received = received
         if self._started is None:
             self._started = received
+            self._first_read_end = self._bytes
         if self._bytes > STARTUP_MAX_BYTES or received - self._started >= self._max_seconds:
             self._opening_rows.clear()
             self.decision = StartupDecision(reason="Opening observation limit reached")
@@ -128,11 +134,20 @@ class StartupDetector:
             return
         self._opening_rows.append((frame.sequence_number, frame.offset))
         if frame.source_code != 0:
+            if (
+                self._bytes == self._first_read_end
+                and frame.source_code in (BleLogSource.CUSTOM, BleLogSource.HOST, BleLogSource.HCI, BleLogSource.ENCODE)
+                and len(frame.payload) >= 4
+            ):
+                # Public v8 writers prepend ESP microseconds. LL payloads use a different clock.
+                self._first_read_clocks[frame.offset] = int.from_bytes(frame.payload[:4], "little")
             return
         if not is_snapshot(frame.payload):
             self.decision = StartupDecision(reason="Opening metadata requires the original prefix")
             return
         snapshot = snapshot or parse_snapshot(frame.payload)
+        if self._bytes == self._first_read_end:
+            self._first_read_clocks[frame.offset] = snapshot.esp_ts
         if snapshot.reason_flags & INIT:
             self.decision = StartupDecision(reason="Device initialization observed")
             return
@@ -188,6 +203,42 @@ class StartupDetector:
         del rows[:first]  # A subsequent time jump can replace this candidate.
         return offset, fresh, min(span, SN_MODULUS // 2)
 
+    def _first_read_start(self, previous: _Anchor, anchor: _Anchor, host_delta: float) -> tuple[int, int, int] | None:
+        # A fragmented FIFO prefix can end within one periodic snapshot interval.
+        # Find the uninterrupted sequence ending at the confirming snapshot.
+        rows = self._opening_rows
+        first = len(rows) - 1
+        while first and (rows[first][0] - rows[first - 1][0]) % SN_MODULUS == 1:
+            first -= 1
+        if not first or first == len(rows) - 1:
+            return None
+        fresh, offset = rows[first]
+        _, before = rows[first - 1]
+        if not previous.offset <= before < offset < self._first_read_end:
+            return None
+
+        # Corroborate the gap locally using timestamps from the first read.
+        # The fresh frame's age at the next snapshot must fit host elapsed time.
+        old_clock = self._first_read_clocks.get(before)
+        fresh_clock = next(
+            (self._first_read_clocks[pos] for _, pos in rows[first:] if pos in self._first_read_clocks), None
+        )
+        if old_clock is None or fresh_clock is None:
+            return None
+        jump = (fresh_clock - old_clock) % CLOCK_MODULUS / 1_000_000
+        remaining = (anchor.device_us - fresh_clock) % CLOCK_MODULUS / 1_000_000
+        interval = (anchor.device_us - previous.device_us) % CLOCK_MODULUS / 1_000_000
+        if not MIN_FIRST_READ_GAP_SECONDS <= jump <= interval or remaining > host_delta + 0.25:
+            return None
+
+        # A reverse or half-ring jump requires the independent long-gap proof.
+        origin = rows[0][0]
+        distances = [(sn - origin) % SN_MODULUS for sn, _ in rows[: first + 1]]
+        if distances[-1] >= SN_MODULUS // 2 or any(b <= a for a, b in pairwise(distances)):
+            return None
+        del rows[:first]
+        return offset, fresh, SN_MODULUS // 2
+
     def _observe(self, anchor: _Anchor) -> StartupDecision | None:
         previous = self._previous
         self._previous = anchor
@@ -205,13 +256,26 @@ class StartupDetector:
         ):
             return StartupDecision(reason="Opening clock or sequence is ambiguous")
 
-        if device_delta - host_delta >= MIN_BACKLOG_SECONDS and device_delta >= 4 * host_delta:
+        long_jump = device_delta - host_delta >= MIN_BACKLOG_SECONDS and device_delta >= 4 * host_delta
+        first_read_jump = (
+            self._candidate is None
+            and previous.offset < self._first_read_end
+            and count_delta > 1
+            and device_delta - host_delta >= MIN_FIRST_READ_GAP_SECONDS
+            and device_delta >= 2 * host_delta
+        )
+        if long_jump or first_read_jump:
             if sn_delta <= 1 or count_delta <= 1:
                 return StartupDecision(reason="Opening time jump lacks sequence evidence")
             os_delta_ms = (anchor.os_ms - previous.os_ms) % CLOCK_MODULUS
             if abs(device_delta * 1_000_000 - os_delta_ms * 1000) > OS_TICK_TOLERANCE_US:
                 return StartupDecision(reason="Opening clock or sequence is ambiguous")
-            start = self._fresh_start(previous, anchor)
+            start = self._fresh_start(previous, anchor) if long_jump else None
+            if start is None and first_read_jump:
+                start = self._first_read_start(previous, anchor, host_delta)
+            if start is None and not long_jump:
+                self._stable = 0
+                return None
             if start is None:
                 return StartupDecision(reason="Opening time jump has no clear frame boundary")
             offset, self._fresh_sn, self._fresh_span = start

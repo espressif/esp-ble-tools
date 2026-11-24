@@ -21,6 +21,7 @@ from tests.test_startup import chunks
 def record(
     tmp_path,
     *,
+    items=None,
     stale=True,
     clock_origin=0,
     dropped_tail=False,
@@ -29,7 +30,8 @@ def record(
     fresh_gap=False,
 ):
     """Exercise raw saving, analysis, final result and report with timed input."""
-    items = chunks(stale=stale, clock_origin=clock_origin)
+    if items is None:
+        items = chunks(stale=stale, clock_origin=clock_origin)
     if bindings:
         import struct
 
@@ -85,7 +87,7 @@ def test_selected_interval_is_checked_live_and_raw_is_preserved(tmp_path):
     assert result.parser_frames == len(items)
     assert report.parser_complete and report.raw_complete
     assert result.parser_raw_bytes == result.raw_bytes
-    assert "Quality metrics cover the confirmed fresh interval" in format_capture_summary(report, "en")
+    assert "Quality metrics cover the confirmed fresh interval" in format_capture_report(report, "en")
     assert "Raw suffix offset (bytes)" in format_capture_report(report, "en")
     assert not list(tmp_path.glob("*analysis*"))
     assert (tmp_path / "capture.bin").read_bytes() == b"".join(c.data for c in items)

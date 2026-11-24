@@ -37,6 +37,36 @@ def chunks(*, stale: bool = True, clock_origin: int = 0) -> list[ReceivedChunk]:
     return result
 
 
+def short_fifo_chunks(*, next_read=False, fresh_us=10_800_000, prefix_sn=25, extra_gap=False):
+    def packet(sn, us):
+        return build_frame(struct.pack("<I", us) + b"data", 1, sn, xor_checksum)
+
+    old = packet(prefix_sn, 9_800_000) + packet(60, 9_900_000) + snapshot(10, 100, 10)
+    fresh = packet(295 if extra_gap else 298, fresh_us) + packet(299, fresh_us + 100)
+    batches = [(old, 0), (fresh, 0.05)] if next_read else [(old + fresh, 0)]
+    batches += [(snapshot(11 + n, 300 + n, 12 + n), 0.2 + n) for n in range(3)]
+    items = []
+    offset = 0
+    for data, received in batches:
+        items.append(ReceivedChunk(data, round(received * 1000), received, offset))
+        offset += len(data)
+    return items
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"next_read": True},  # The gap happened across reads.
+        {"fresh_us": 10_005_000},  # The device clock was continuous at the sequence gap.
+        {"prefix_sn": 298},  # An apparently fresh frame also occurred in the old prefix.
+        {"extra_gap": True},  # Loss within the fresh burst cannot move the boundary.
+    ],
+)
+def test_short_fifo_needs_an_unambiguous_first_read_boundary(options):
+    decision, _ = parse_items(short_fifo_chunks(**options))
+    assert decision.offset_bytes == 0
+
+
 def parse_items(items):
     parser = BleLogParser()
     batches = [

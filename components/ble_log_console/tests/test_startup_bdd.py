@@ -18,6 +18,20 @@ def stale_start():
     return SimpleNamespace(options={})
 
 
+@given("首次读取同时包含多段旧日志和时钟前跳后的连续新帧", target_fixture="world")
+def short_fifo():
+    from tests.test_startup import short_fifo_chunks
+
+    return SimpleNamespace(options={"items": short_fifo_chunks()})
+
+
+@then("新数据区间从首批收到的第一条新日志开始")
+def starts_inside_first_read(world):
+    frames = FrameDecoder().feed(world.items[0].data)
+    first_fresh = next(frame for frame in frames if frame.sequence_number == 298)
+    assert world.report.quality_start_offset == first_fresh.offset
+
+
 @given("开录积压跨越设备微秒时钟回绕且毫秒时钟确认经过时间", target_fixture="world")
 def wrapped_start():
     return SimpleNamespace(options={"clock_origin": 4250})
@@ -56,8 +70,12 @@ def independent_suffix(world):
 
 @then("报告按新数据区间给出结论并保留原始流断档信息")
 def explicit_scope(world):
-    assert "质量指标仅评估已确认的新数据区间" in format_capture_summary(world.report, "zh_CN")
-    assert "原始流缺失序号数" in format_capture_summary(world.report, "zh_CN")
+    detailed = format_capture_report(world.report, "zh_CN")
+    assert "质量指标仅评估已确认的新数据区间" in detailed
+    assert "原始流缺失序号数" in detailed
+    summary = format_capture_summary(world.report, "zh_CN")
+    assert "原始流缺失序号数" not in summary
+    assert "检测到开录积压，" not in summary
     assert world.report.verdict is CaptureVerdict.READY
     assert world.report.sequence.missing_frames == 0
     assert "原始数据切分偏移（字节）" in format_capture_report(world.report, "zh_CN")
@@ -89,7 +107,7 @@ def subsequent_loss():
 def context_retained(world):
     assert world.report.verdict is CaptureVerdict.READY
     assert world.report.quality_start_offset > 0
-    assert "保留 Host 任务映射" in format_capture_summary(world.report, "zh_CN")
+    assert "保留 Host 任务映射" in format_capture_report(world.report, "zh_CN")
 
 
 @then("新数据区间的丢包仍触发重录建议")
