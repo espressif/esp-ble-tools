@@ -4,13 +4,21 @@
 
 BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的电脑端工具。
 
-**推荐 USB 直连。** 若目标板引出了原生 USB 口，且固件支持 USB Output 或 USJ，用一根数据线即可录制。
+**推荐 USB 直连。** 若目标板引出了原生 USB 口，且固件支持 USB OTG 或 USJ，用一根数据线即可录制。
 
 | 连接方式 | 工具中如何选择 |
 | --- | --- |
 | USB 直连 | 选 **USB**，再选 **USB OTG**（固件 TinyUSB CDC）或 **USJ**（内置 USB Serial/JTAG）。无需设置波特率。 |
 | SPI Bridge | 目标板 SPI 接独立 Bridge，选 **SPI Bridge** 和 Bridge 端口。 |
 | UART | 选 **UART**、转串口端口和固件使用的波特率。 |
+
+> **简化固件配置：** 选定输出外设后，可在工程的 **ESP-IDF 终端**中运行 [BLE Log 配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) 向导，一键校验并写入对应的 `sdkconfig` 配置（自动备份原文件），编译烧录后再用 **BLE Log Console** 录制日志。
+
+## 支持平台
+
+- Windows（`x86_64`）
+- Linux（`x86_64`）
+- macOS（`x86_64`、`arm64`，通过源码运行）
 
 ## 工具下载
 
@@ -40,15 +48,15 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 ```bash
 # Windows
-ble_log_console_windows_v1.1.0.exe
+ble_log_console_windows_v1.1.1.exe
 
 # Linux
-chmod +x ./ble_log_console_ubuntu_v1.1.0
-./ble_log_console_ubuntu_v1.1.0
+chmod +x ./ble_log_console_ubuntu_v1.1.1
+./ble_log_console_ubuntu_v1.1.1
 ```
 
 3. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
-4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Database** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。想看实时消息时勾选 **Host** 或 **HCI**，也可以全部留空直接 **连接**。显示选择只影响屏幕。
+4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Database** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。按需勾选 **Host** 或 **HCI** 实时显示（仅 UART 默认勾选 **Console**；显示选择只影响屏幕），然后点击 **连接**。
 5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了 Database 时，工具会在录制结束后复制 Database。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
 
 SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
@@ -112,10 +120,11 @@ Windows 源码安装需要 Visual Studio Build Tools 的 **使用 C++ 的桌面�
 
 不带参数运行时会打开交互界面，可在界面中选择传输模式、端口、波特率和日志保存目录。
 
-也可以直接通过命令行参数启动指定模式：
+也可以直接通过命令行参数启动指定模式（`usb` 为 USB OTG，`usj` 为 USB Serial/JTAG）：
 
 ```bat
 .\run.bat --mode usb --port COM5
+.\run.bat --mode usj --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -145,6 +154,7 @@ chmod +x ./install.sh ./run.sh
 
 ```bash
 ./run.sh --mode usb --port /dev/ttyACM0
+./run.sh --mode usj --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -170,6 +180,7 @@ python console.py
 
 ```bash
 python console.py --mode usb --port /dev/ttyACM0
+python console.py --mode usj --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
@@ -180,25 +191,25 @@ python console.py --mode spi --port <PORT>
 
 ## 命令行参考
 
-&emsp;本节补充说明工具包的命令行用法。常用命令如下：
+本节补充说明工具包的命令行用法。常用命令如下：
 
 | 操作 | Linux | Windows |
 | --- | --- | --- |
-| 查看帮助 | `./ble_log_console_ubuntu_v1.1.0 --help` | `ble_log_console_windows_v1.1.0.exe --help` |
-| 列出端口 | `./ble_log_console_ubuntu_v1.1.0 ports` | `ble_log_console_windows_v1.1.0.exe ports` |
-| 启动交互模式 | `./ble_log_console_ubuntu_v1.1.0` | `ble_log_console_windows_v1.1.0.exe` |
-| 启动 USB OTG 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usb --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usb --port COM5` |
-| 启动 USJ 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.0.exe --mode usj --port COM5` |
-| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.0.exe --mode uart --port COM3` |
-| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.1.0 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.0.exe --mode spi --port <PORT>` |
-| 查看已保存日志 | `./ble_log_console_ubuntu_v1.1.0 ls` | `ble_log_console_windows_v1.1.0.exe ls` |
+| 查看帮助 | `./ble_log_console_ubuntu_v1.1.1 --help` | `ble_log_console_windows_v1.1.1.exe --help` |
+| 列出端口 | `./ble_log_console_ubuntu_v1.1.1 ports` | `ble_log_console_windows_v1.1.1.exe ports` |
+| 启动交互模式 | `./ble_log_console_ubuntu_v1.1.1` | `ble_log_console_windows_v1.1.1.exe` |
+| 启动 USB OTG 模式 | `./ble_log_console_ubuntu_v1.1.1 --mode usb --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.1.exe --mode usb --port COM5` |
+| 启动 USJ 模式 | `./ble_log_console_ubuntu_v1.1.1 --mode usj --port /dev/ttyACM0` | `ble_log_console_windows_v1.1.1.exe --mode usj --port COM5` |
+| 启动 UART 模式 | `./ble_log_console_ubuntu_v1.1.1 --mode uart --port /dev/ttyUSB0` | `ble_log_console_windows_v1.1.1.exe --mode uart --port COM3` |
+| 启动 SPI Bridge 模式 | `./ble_log_console_ubuntu_v1.1.1 --mode spi --port <PORT>` | `ble_log_console_windows_v1.1.1.exe --mode spi --port <PORT>` |
+| 查看已保存日志 | `./ble_log_console_ubuntu_v1.1.1 ls` | `ble_log_console_windows_v1.1.1.exe ls` |
 
 ### 命令行参数
 
 | 参数 | 缩写 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi`、`usb`（USB Output）或 `usj`（USB Serial/JTAG） |
-| `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
+| `--mode` | `-m` | `uart` | 传输模式：`uart`、`spi`、`usb`（USB OTG）或 `usj`（USB Serial/JTAG） |
+| `--port` | `-p` | 可选 | 串口、SPI Bridge、USB OTG 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | 上次使用的目录，无记录时为 `./logs` | 录制文件保存目录；显式指定时优先于记住的目录 |
 | `--log-database` | 无 | 记忆值或自动查找 | 包含 `BLE_HOST_logs.json` 的固件 Database 目录 |
@@ -209,7 +220,7 @@ python console.py --mode spi --port <PORT>
 
 | 命令 | 说明 |
 | --- | --- |
-| `ports` | 列出 UART、SPI Bridge、USB Output 和 USJ 端口，并显示 CDC 端口的权限问题；可用 `--mode` 过滤 |
+| `ports` | 列出 UART、SPI Bridge、USB OTG 和 USJ 端口，并显示 CDC 端口的权限问题；可用 `--mode` 过滤 |
 | `ls` | 列出指定目录中的 `ble_log_*.bin` 录制文件 |
 
 `--output/-o` 仍保留为兼容旧版本的隐藏选项；推荐使用 `--log-dir`。
@@ -220,9 +231,9 @@ USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接�
 
 在这个端口上，DTR 和 RTS 线控制芯片的复位和启动模式。BLE Log Console 打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，因此 `r` 快捷键不会复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认打开端口是否会复位开发板。
 
-**Database**在录制文件创建成功后会记住所选目录，包括主动清空。即使随后端口连接失败，选择仍会保留；显式 `--log-database` 优先。目录失效时回退到自动发现，源码与二进制版本共用当前用户的应用设置。
+**Database** 在录制文件创建成功后会记住所选目录，包括主动清空。即使随后端口连接失败，选择仍会保留；显式 `--log-database` 优先。目录失效时回退到自动发现，源码与二进制版本共用当前用户的应用设置。
 
-### 开录积压与分析文件
+### 开录积压识别与评估范围
 
 所有传输模式都会在正常解析过程中观察开录快照；实时转录和原始文件保留完整数据。仅在接收开始后的前 5 秒、最多 2 MiB 内，v8 快照显示设备时间大幅前跳、快照计数前进，且随后恢复两个稳定间隔，才会确认旧积压边界。当 ESP 微秒时钟回绕或间隔较长时，Console 使用同一对快照中的 OS 毫秒时钟核对经过时间。当新旧快照分别位于两段连续序号中时，后一段最先收到的帧就是新数据起点，即使 24 位序号已经绕回也可以定位。对于短时积压，即使旧日志自身有断档，只要首次读取包含缺口两侧的数据、帧时间戳也在此处前跳，且新序号一直连续到确认快照，Console 同样可以定位起点。证据不明确、元数据不支持或设备复位时，报告评估完整录制；后续缺口不会重新归为开录积压。
 
@@ -241,7 +252,7 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 - **纯文本：** 状态栏显示 `PLAIN TEXT`，并立即出现警告，文本持续时每 10 秒再提示一次。录制不会中断。出现纯文本通常说明固件没有把 BLE Log 输出到这个端口。
 - **BLE Log：** 收到一条固件身份记录，或三个来自已知 BLE Log 来源的有效帧后，状态栏显示 `BLE LOG`。在此之前出现启动信息等文本属于正常情况。端口变安静或之后再输出文本，识别结果都不会改回去。
 
-质量报告会写明识别出的内容，以及有多少数据不属于 BLE Log 帧。录制停止时被截断的最后一帧属于正常情况：这些字节记入“结尾未完成数据字节数”，不会附加该警告。不属于 BLE Log 帧的字节写入 `.bin` 文件而不是 `_console.log`，后者最多只包含其中可打印的文本；写入失败时这些字节可能不在文件中，质量报告会说明原始录制是否已确认完整。仅仅识别出 BLE Log 并不代表录制可用于分析：只有身份记录的录制仍会提示检查配置。SPI Bridge 和 USB Output 模式不显示未解码数据，也不做内容识别。
+质量报告会写明识别出的内容，以及有多少数据不属于 BLE Log 帧。录制停止时被截断的最后一帧属于正常情况：这些字节记入“结尾未完成数据字节数”，不会附加该警告。不属于 BLE Log 帧的字节写入 `.bin` 文件而不是 `_console.log`，后者最多只包含其中可打印的文本；写入失败时这些字节可能不在文件中，质量报告会说明原始录制是否已确认完整。仅仅识别出 BLE Log 并不代表录制可用于分析：只有身份记录的录制仍会提示检查配置。SPI Bridge 和 USB OTG 模式不显示未解码数据，也不做内容识别。
 
 ## 快捷键
 
@@ -256,7 +267,7 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 | `d` | 查看接收日志统计信息 |
 | `m` | 查看缓冲区利用率 |
 | `h` | 显示快捷键帮助 |
-| `r` | 复位目标设备；SPI Bridge、USB Output 和 USJ 模式下不支持 |
+| `r` | 复位目标设备；SPI Bridge、USB OTG 和 USJ 模式下不支持 |
 
 ## 故障排查
 
@@ -267,4 +278,4 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 Console 使用 BLFD 1.0.0 做完整性检查、统计固件计数并导出有序的 Host/HCI 文件。Console 根据接收时观察到的证据选择录制起点。BLFD 根据帧序号和设备时钟排序，在录制期间准备产物。如果后续帧改变了顺序，停止时会使用完整帧索引完成排序。如果解析队列漏收了字节，导出器会从已保存的录制中补读缺失区间。
 
 有序 Host/HCI 产物从确认的新序号段第一帧开始。报告记录该帧在原始录制中的字节偏移。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配 Database 的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
-Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。
+Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。

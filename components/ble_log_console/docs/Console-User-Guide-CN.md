@@ -1,19 +1,19 @@
 # BLE Log Console 使用指南
-版本：v1.1.0
+版本：v1.1.1
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
 ## 简介
 
-BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 BLE 日志。录制期间可实时观察 Host、HCI 和串口输出；停止录制后，工具会在保存目录生成原始数据（`.bin`）、解码后的日志文件及录制质量报告。
+BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 BLE 日志。录制期间可实时观察 Host、HCI 和串口日志输出；停止录制后，工具会在保存目录生成原始数据（`.bin`）、解码后的日志文件及录制质量报告。
 
 [下载 BLE Log Console (Windows / Linux)](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
 ## 0. 准备工作
 
-### 第一步：选定目标板的日志输出外设
+### 第一步：选定目标设备日志的输出外设
 
-**先确认目标板使用哪个外设发送 BLE Log。** 从下表选定一项后，固件配置、硬件接线及 Console 中的接收方式均以此为准。若板上已烧录固件，请先确认它启用的是哪一项。
+**先确认目标设备使用哪个外设发送 BLE Log。** 从下表选定一项后，固件配置、硬件接线及 Console 中的接收方式均以此为准。若板上已烧录固件，请先确认它启用的是哪一项。
 
 | 目标板上的外设 | 什么时候选 | 配置与接线 |
 | --- | --- | --- |
@@ -24,7 +24,20 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 > **注意：** 不同芯片对 USB OTG 和 USJ 的支持情况不同。选择 USB 直连前，请先查阅[第 2.1 节芯片支持表](#21-选择-usb-otg-还是-usj)。若不确定选哪种外设，可结合[配置指南](Config-Guide-CN.md#快速选择)核对板上接口与资源占用。
 
-### 第二步：录制日志
+<a id="firmware-assistant"></a>
+
+### 第二步：配置并烧录固件（推荐使用配置助手）
+
+- **板上固件已开启对应输出？** 按接线图连好设备后，直接跳到[第三步：录制日志](#step-3-record)。
+- **需要修改工程配置？推荐用 [BLE Log 配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) 一键完成**，省去进 `menuconfig` 逐项查找配置宏：
+  1. 从发布页下载对应系统的配置助手（Linux 首次运行需 `chmod +x`），在工程的 **ESP-IDF 终端**（可直接运行 `idf.py`，且工程已生成 `sdkconfig`）中启动并选择工程目录。
+  2. 选择第一步确定的外设（USB OTG / USJ / SPI Bridge / UART）——助手会确定需要修改的配置项。
+  3. 核对预览变更后点击 **应用配置（Apply configuration）**（原配置会自动备份），然后按原有流程编译、烧录。
+- 若环境不便运行配置助手，可点击第一步表格右侧的“固件配置”链接查看手动配置步骤。
+
+<a id="step-3-record"></a>
+
+### 第三步：录制日志
 
 按所选方案完成固件烧录和硬件接线后，即可进入第 1 章：[启动 Console 并连接端口](#1-首次运行与录制) → [确认数据正常接收后复现问题](#122-确认日志正在正常接收) → [停止录制并检查质量报告](#13-结束录制并检查结果)。
 
@@ -34,8 +47,8 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 从[下载页](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)下载对应系统的工具，启动前先关闭占用目标端口的其他串口监视器。
 
-- **Windows 10 及以上：** 双击 `ble_log_console_windows_v1.1.0.exe`。
-- **Ubuntu 22.04 及以上：** 在工具目录运行 `chmod +x ./ble_log_console_ubuntu_v1.1.0`，然后运行 `./ble_log_console_ubuntu_v1.1.0`。
+- **Windows 10 及以上：** 双击 `ble_log_console_windows_v1.1.1.exe`。
+- **Ubuntu 22.04 及以上：** 在工具目录运行 `chmod +x ./ble_log_console_ubuntu_v1.1.1`，然后运行 `./ble_log_console_ubuntu_v1.1.1`。
 
 ### 1.2 开始录制
 
@@ -46,27 +59,27 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 启动应用后会显示如下界面：
 
 <p align="center">
-  <img src="./figure/interactive-screen.png" alt="启动页：选择 USB 和 USJ 端口，设置保存目录、Database 和实时显示" width="480">
+  <img src="./figure/zh-CN/interactive-screen.png" alt="启动页：选择 USB 和 USJ 端口，设置保存目录、Database 和实时显示" width="480">
 </p>
 
-图中以 USB 直连为例。界面默认使用英文，可在右上角切换中文；已填配置会在下次启动时保留。
+图中是简体中文界面，以 USB 直连为例。首次启动默认显示英文，可在右上角选择 **简体中文**。已填配置会在下次启动时保留。
 
-1. 按实际接线选择 **Transport（接收方式）** 和 **Port（端口）**：
+1. 按实际接线选择 **接收方式（Transport）** 和 **端口（Port）**：
    - [USB 直连](#usb-direct)：选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口（无需设置波特率）。
    - [SPI 转发模式](#3-spi-bridge-模式)：选 **SPI Bridge** 及对应端口。
    - [UART 模式](#4-uart-模式)：选 **UART** 及对应端口，并将波特率设为与固件一致。
-2. 选择可写的 **Save to（保存目录）**。若需解码压缩 Host 日志，在 **Database** 中选择本次固件编译生成的数据库目录（默认位于固件工程的 `build/ble_log/ble_log_database/`，内含 `BLE_HOST_logs.json`）。留空不影响原始数据录制，仅跳过压缩 Host 文本解码。
+2. 选择可写的 **保存目录（Save to）**。若需解码压缩 Host 日志，在 **Database** 中选择本次固件编译生成的数据库目录（默认位于固件工程的 `build/ble_log/ble_log_database/`，内含 `BLE_HOST_logs.json`）。留空不影响原始数据录制，仅跳过压缩 Host 文本解码。
    > 工具会自动记住上次使用的目录；首次启动时若当前工作目录下存在 `ble_log_database/` 或 `BLE_HOST_logs.json`，也会自动填入。
-3. 按需勾选 **Live display（实时显示）**（仅 UART 模式默认勾选 **Console**，**Host** 和 **HCI** 默认关闭；此项仅控制屏幕显示，不影响数据保存），然后点击 **Connect（连接）** 开始录制。
+3. 按需勾选 **实时显示（Live display）**（仅 UART 模式默认勾选 **Console**，**Host** 和 **HCI** 默认关闭；此项仅控制屏幕显示，不影响数据保存），然后点击 **连接（Connect）** 开始录制。
 
-> 确认设备已接好且固件正在运行后，可点击 **Refresh（刷新）** 更新端口列表。若[找不到或打不开端口](#faq-no-port)，按附录排查。部分系统打开 USJ 端口时可能触发设备复位，建议先试连一次，再正式复现问题。
+> 确认设备已接好且固件正在运行后，可点击 **刷新（Refresh）** 更新端口列表。若[找不到或打不开端口](#faq-no-port)，按附录排查。部分系统打开 USJ 端口时可能触发设备复位，建议先试连一次，再正式复现问题。
 
 #### 1.2.2 确认日志正在正常接收
 
 查看录制界面底部的状态栏。下图中已收到 **244 B**，识别出 **4 帧**。
 
 <p align="center">
-  <img src="./figure/log-screen.png" alt="Stop &amp; Review 按钮下方，RX 为 244 B，Frames 为 4" width="760">
+  <img src="./figure/zh-CN/log-screen.png" alt="Stop &amp; Review 按钮下方，RX 为 244 B，Frames 为 4" width="760">
 </p>
 
 观察界面底部的 `RX`（收到的数据量）和 `Frames`（识别出的帧数）：
@@ -97,7 +110,7 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 点击 **Stop & Review（停止并查看报告）**，或按 `q` / `Ctrl+C`。工具保存数据并完成自动检查后，会显示本次质量报告。
 
-在报告页可点击 **Record Again（再次录制）** 按原配置继续录制，或退出程序。
+在报告页可点击 **Record Again（再次录制）** 按原配置继续录制，或点击 **Exit（退出）** 结束。
 
 > 显示 `FINALIZING` 时请等待收尾完成，不要直接关闭终端窗口，否则数据和报告可能保存不完整。
 
@@ -111,7 +124,7 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 > 若设备已运行一段时间后才开始录制，开头可能包含积压的旧日志。工具会自动识别并跳过旧数据，仅评估新接收数据的质量（无法确认边界时则评估完整录制）；实时显示和原始 `.bin` 文件仍完整保留全部数据。
 
 <p align="center">
-  <img src="./figure/report-screen.png" alt="报告顶部显示 READY FOR ANALYSIS，表示可以提交此次录制。" width="760">
+  <img src="./figure/zh-CN/report-screen.png" alt="完整质量报告：顶部显示“结论：可用于分析”，下方列出文件路径，底部有 Record Again 和 Exit 按钮。" width="760">
 </p>
 
 <a id="recording-files"></a>
@@ -120,20 +133,20 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 在 **Save to（保存目录）** 中按录制时间戳找到同一组文件：
 
-**1. 提交给技术支持的文件**
+**1. 提交给技术支持进一步确定问题的文件**
 
 | 文件 | 说明 |
 | --- | --- |
-| `.bin` 和 `_report.txt` | **必交。** 同次录制的原始数据和质量报告；若录制较大自动拆分，请附上全部 `part` 分片。 |
-| `<录制名>_database/` | **选了 Database 时必交。** 停止录制后工具会在后台自动复制 `*_logs.json` 到该目录；**打包前请保持 Console 打开并保留原目录**，待报告底部显示副本路径后再一并打包。 |
-| `_console.log` | **按需提交。** 若问题涉及设备启动信息、崩溃打印或串口输出，请一并附上。 |
+| `.bin` 和 `_report.txt` | **必要。** 同次录制的原始数据和质量报告；若录制较大自动拆分，请附上全部 `part` 分片。 |
+| `<录制名>_database/` | **必要** 停止录制后工具会在后台自动复制 `*_logs.json` 到该目录；**打包前请保持 Console 打开并保留原目录**，待报告底部显示副本路径后再一并打包。 |
+| `_console.log` | **按需提供。** 若问题涉及设备启动信息、崩溃打印或串口输出，请一并附上。 |
 
 **2. 供本地自行查看的解析文件（按实际收到的日志类型自动生成）**
 
 | 文件 | 说明 |
 | --- | --- |
-| `_host.log`、`_DECOMPRESSED_BLE_HOST.log` | 普通 Host 文本、通过 Database 还原的压缩 Host 文本。 |
-| `_hci_btsnoop.log`、`_ll_hci_btsnoop.log` | 主机侧、控制器侧 HCI 抓包文件（使用设备时间，可用 Wireshark 打开；跨多次初始化时可能分文件保存）。 |
+| `_host.log`、`_DECOMPRESSED_BLE_HOST.log` | 按设备时序排列的普通 Host 文本、通过 Database 还原的压缩 Host 文本（确认存在开录旧积压时，自动从新数据起点导出）。 |
+| `_hci_btsnoop.log`、`_ll_hci_btsnoop.log` | 按设备时序排列的主机侧、控制器侧 HCI 抓包文件（可用 Wireshark 打开；确认开录积压时从新数据起点导出，跨多次初始化时可能分文件保存）。 |
 | `_hci.log` | 按电脑接收时间记录的实时 HCI 文本转录。 |
 
 > 文件名带 `.partial` 表示尚未写入完成。提交前请结合报告确认保存结果。
@@ -169,28 +182,44 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 两种模式均无需设置波特率。表中为 USB 理论总线速率，实际日志吞吐能力以业务试录和质量报告为准。
 
-以下是首次配置固件的步骤。**BT Logs** 位于 `idf.py menuconfig` 的 **Component config → Bluetooth → Common Options → BT Logs**，BLE Log 开关为 **Enable BT Log Async Output (Dev Only)**。
+板上固件已启用所选输出时，接好 USB 数据线后即可[选择端口并录制](#select-port)。
 
 <a id="23-usj-固件配置"></a>
 
 ### 2.2 USJ 固件配置
 
-1. 保留默认主控制台 UART0，在 **Component config → ESP-STDIO → Channel for console secondary output** 选择 **No secondary console**。
-2. 在 **BT Logs** 启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB Serial/JTAG as transport**。
+**推荐在 ESP-IDF 终端运行 [BLE Log 配置助手](#firmware-assistant) 自动完成配置**；若手动修改，按以下步骤操作：
 
-若 USJ 不可选，按传输列表中的提示操作。
+- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED=y`，并设置：
+    - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y`（主控制台保留在默认 UART0 等其他通道，不开启 `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`）
+  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
+- 用 USB 数据线将芯片原生 USJ 口连接至电脑。
+- 编译并烧录固件。
+
+> 配置说明：
+> - 若 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 在配置中不可见，请确认当前芯片与 ESP-IDF 支持 USJ，保持 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`，且没有主控制台、`esp_trace` 或 OpenThread RCP 占用该端口（详见[配置指南](Config-Guide-CN.md#usj)）。
+> - 连接电脑后，USJ 端口的 USB ID 为 `303A:1001`。
 
 <a id="22-usb-output-固件配置"></a>
 <a id="22-usb-otg-固件配置"></a>
 
 ### 2.3 USB OTG 固件配置
 
-1. 在工程根目录运行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。已有此依赖的工程可直接执行第 2 步。
-2. 在 `idf.py menuconfig` 的 **BT Logs** 中启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**。CDC 会自动启用，缓冲区沿用默认值。
+**推荐在 ESP-IDF 终端运行 [BLE Log 配置助手](#firmware-assistant) 自动添加依赖并完成配置**；若手动修改，按以下步骤操作：
+
+- 若工程尚未引入 TinyUSB，先在工程根目录执行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。
+- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED=y`，并设置：
+  - `CONFIG_BLE_LOG_PRPH_USB=y`
+- 用 USB 数据线将芯片原生 USB OTG 口连接至电脑。
+- 编译并烧录固件。
+
+> 配置说明：
+> - 开启 `CONFIG_BLE_LOG_PRPH_USB=y` 后会自动启用 TinyUSB CDC 并使用默认缓冲区；若所用旧版 ESP-IDF 单独列出 CDC 缓冲配置，再开启 `CONFIG_TINYUSB_CDC_ENABLED=y` 并按编译提示调整缓冲（详见[配置指南](Config-Guide-CN.md#usb)）。
+> - 固件启动 BLE Log 后，电脑端会出现对应的 USB OTG 端口（USB ID 为 `303A:10B1`）。
 
 ### 2.4 在 PC 端启动应用
 
-固件已启用对应输出时，可直接接线。首次配置后，编译并烧录固件，用数据线连接对应的原生 USB 口，在 Console 中选 **USB → USJ** 或 **USB → USB OTG**，即可[开始录制](#select-port)。
+用数据线连接对应的原生 USB 口，在 Console 中选 **USB → USJ** 或 **USB → USB OTG**。[返回「选择模式和端口」，继续录制](#select-port)。
 
 ## 3. SPI Bridge 模式
 
@@ -215,19 +244,19 @@ SPI Bridge 用于将目标设备输出的 SPI 日志转发到电脑，目前使�
 
 ### 3.1 固件配置
 
-- 在目标设备工程中开启 `CONFIG_BLE_LOG_ENABLED=y` 和 `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`。
-- 按实际电路配置目标板的 SPI 引脚：
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM`
-- 将目标板引脚连接至 SPI Bridge：
-  - `MOSI` → `Bridge IO 4`
-  - `SCLK` → `Bridge IO 5`
-  - `CS` → `Bridge IO 6`
-  - 两块板的 `GND` 互连共地
-- 编译并烧录目标板固件。
+**推荐在 ESP-IDF 终端运行 [BLE Log 配置助手](#firmware-assistant) 填写引脚并自动校验冲突**；若手动修改，按以下步骤操作：
 
-> 注意：固件配置的 GPIO 编号必须与实际接线一致，且两块板必须可靠共地（GND 互连），否则会导致接收异常。
+- 在现有工程中开启 `CONFIG_BLE_LOG_ENABLED=y`，并设置：
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM=<目标板 MOSI GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM=<目标板 SCLK GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM=<目标板 CS GPIO>`
+- 将目标板引脚连接至 SPI Bridge（`MOSI` → `Bridge IO 4`，`SCLK` → `Bridge IO 5`，`CS` → `Bridge IO 6`，两块板 `GND` 互连共地）。
+- 编译并烧录固件。
+
+> 配置说明：
+> - 固件配置的 GPIO 编号必须与实际接线一致，且两块板必须可靠共地（GND 互连），否则会导致接收异常。
+> - 当前实现使用 SPI Controller 2，请确认与工程内已有 SPI 外设无冲突（详见[配置指南](Config-Guide-CN.md#spi)）。
 
 ### 3.2 在 PC 端启动应用
 
@@ -245,6 +274,8 @@ SPI Bridge 用于将目标设备输出的 SPI 日志转发到电脑，目前使�
 
 ### 4.1 固件配置
 
+**推荐在 ESP-IDF 终端运行 [BLE Log 配置助手](#firmware-assistant) 自动开启精简日志并配置串口**；若手动修改，按以下步骤操作：
+
 - 在现有工程中开启 `CONFIG_BT_LOG_CRITICAL_ONLY=y`（启用精简日志模式以适配 UART 带宽，同时自动开启 `CONFIG_BLE_LOG_ENABLED`），并设置：
   - `CONFIG_BLE_LOG_PRPH_UART_DMA=y`
   - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT=0`
@@ -255,7 +286,7 @@ SPI Bridge 用于将目标设备输出的 SPI 日志转发到电脑，目前使�
 
 > 配置说明：
 > - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` 与 `TX_IO_NUM` 请按实际硬件串口调整。若复用 UART0，普通串口打印也会一并由工具接收，详见[查看实时日志](#console-log-files)；若 UART0 已用于业务通信（如指令收发），请改用其他空闲串口。
-> - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` 推荐使用较高波特率（如 `3000000`）。请确认转串口芯片支持该速率，且 Console 中填写的波特率与固件完全一致。
+> - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` 推荐使用较高波特率（如 `3000000`）。请确认转串口芯片支持该速率，且 Console 中填写的波特率与固件完全一致（详见[配置指南](Config-Guide-CN.md#uart)）。
 
 ### 4.2 在 PC 端启动应用
 
@@ -289,10 +320,11 @@ cd <ble_log_console 源码目录>
 .\run.bat
 ```
 
-也可以通过参数直接选择录制方式：
+也可以通过参数直接选择录制方式（`usb` 为 USB OTG，`usj` 为 USB Serial/JTAG）：
 
 ```bat
 .\run.bat --mode usb --port COM5
+.\run.bat --mode usj --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -316,6 +348,7 @@ chmod +x ./install.sh ./run.sh
 
 ```bash
 ./run.sh --mode usb --port /dev/ttyACM0
+./run.sh --mode usj --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -332,6 +365,7 @@ python console.py
 
 ```bash
 python console.py --mode usb --port /dev/ttyACM0
+python console.py --mode usj --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```

@@ -2,9 +2,9 @@
 
 [中文](Config-Guide-CN.md) | [English](Config-Guide-EN.md)
 
-> **优先 USB 直连。** 确认目标板有对应的 USB 插座，或能通过引出的 D+、D− 和 GND 接入 USB，且固件支持所选的 USB Output 或 USJ 输出。直连条件不具备时，再选择 SPI Bridge 或 UART。
+> **优先 USB 直连。** 确认目标板有对应的 USB 插座，或能通过引出的 D+、D− 和 GND 接入 USB，且固件支持所选的 USB OTG 或 USJ 输出。直连条件不具备时，再选择 SPI Bridge 或 UART。
 
-工具下载：[BLE Log Console 稳定版发布页][ble-log-console]。电脑端操作参照 [Console 使用指南](Console-User-Guide-CN.md)。
+工具下载：[BLE Log Console 稳定版发布页][ble-log-console] · [BLE Log 配置助手稳定版发布页][ble-log-config-assistant]。电脑端录制操作参照 [Console 使用指南](Console-User-Guide-CN.md)。
 
 本文用于根据实际硬件和资源占用，确定一套可用的 BLE Log sdkconfig 及配套接线。以现有工程的 sdkconfig 为基础，逐项确定传输方式、端口、GPIO 和速率，再通过试录验证。配置项是否可用取决于目标芯片和 SDK 版本。
 
@@ -20,29 +20,66 @@
 | 2. SPI Bridge | 目标板有空闲 SPI，可接出 MOSI、SCLK、CS 和 GND，手边有独立 Bridge。 | 按 [SPI 配置](#spi) 连接两块板。 |
 | 3. UART | 有可用的板载 USB 转串口，或能引出 UART TX 和 GND 接外置适配器。 | 按 [UART 配置](#uart) 核对 TX 和双方波特率。 |
 
+### 简化配置：使用 BLE Log 配置助手（推荐）
+
+选定外设后，可在工程的 **ESP-IDF 终端**中运行交互式向导，代替手动逐项修改 Kconfig：
+
+1. 从 [BLE Log 配置助手发布页][ble-log-config-assistant] 下载对应系统的可执行文件（Linux 首次运行需先执行 `chmod +x`）。
+2. 打开**可直接运行 `idf.py` 的 ESP-IDF 终端**（尚未生成过配置的工程请先运行一次 `idf.py reconfigure`），启动配置助手并选择固件工程目录。
+3. 在向导中选择所用的外设接口（USB OTG / USJ / SPI Bridge / UART），核对变更预览后点击 **应用配置（Apply configuration）**：
+   - 工具会自动处理联动配置（如 UART 启用精简日志、USJ 关闭第二控制台、SPI 检查重复引脚、USB OTG 提示添加 TinyUSB 依赖）。
+   - 保存前自动将原配置备份为 `sdkconfig.bak.*`，并保留工程其余配置与注释。
+4. 按原有流程编译并烧录固件，完成硬件接线后进入 [采集验证](#verification)。
+
+> 若不便运行该工具，或需确认硬件接线要求与具体配置宏说明，请继续阅读下方对应章节。
+
 ## 1. USB 直连配置（推荐）
 
-以下是首次配置固件的步骤。**BT Logs** 位于 `idf.py menuconfig` 的 **Component config → Bluetooth → Common Options → BT Logs**，BLE Log 开关为 **Enable BT Log Async Output (Dev Only)**。
+目标芯片原生支持 USB 直连且板卡引出了对应接口时，一根 USB 数据线即可高速输出完整 BLE Log，无需外接 Bridge，也不受串口波特率限制。板上同时引出两种接口时，优先选择 **USJ**。芯片支持表与接线示意参见 [Console 使用指南](Console-User-Guide-CN.md#usb-direct)。
+
+### 1.1 接入条件
+
+| 确认项 | 条件与说明 | 处理建议 |
+| --- | --- | --- |
+| 原生 USB 接口 | **板卡引出了所选外设的原生 USB 插座，或可接出 D+、D− 和 GND。**<br>接在板载 USB 转串口芯片上的插座属于 UART，不能用于 USB 直连。 | 板上引出 USJ 时优先选 USJ；均未引出时改用 [SPI](#spi) 或 [UART](#uart)。 |
+| 芯片与 SDK 支持 | **目标芯片具备对应外设，且当前 ESP-IDF 支持对应输出项。**<br>USJ 对应 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`，USB OTG 对应 `CONFIG_BLE_LOG_PRPH_USB`。 | 当前 SDK 不支持时改用 [SPI](#spi) 或 [UART](#uart)。 |
+| 端口独占（选 USJ 时） | **USJ 端口未被主/次控制台、`esp_trace` 或 OpenThread RCP 占用，且保持 `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`。**<br>被占用时 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 不会显示。 | 在不影响问题复现的前提下释放 USJ 端口；否则改用其他方式。 |
+| 组件与外设（选 USB OTG 时） | **工程可引入 `espressif/esp_tinyusb` 组件，且未与其他自定义 USB OTG 业务冲突。**<br>仅烧录固件但业务未初始化 BLE Log 时，电脑不会枚举出该 CDC 端口。 | 执行 `idf.py add-dependency` 添加依赖；若冲突则改用其他方式。 |
+
+满足上述条件后，按所选外设在现有 `sdkconfig` 中完成配置。
+
+### 1.2 配置和接线
 
 <a id="usj"></a>
 
-### 1.1 USB Serial/JTAG (USJ)
+#### USB Serial/JTAG（USJ）
 
-1. 保留默认主控制台 UART0，在 **Component config → ESP-STDIO → Channel for console secondary output** 选择 **No secondary console**。
-2. 在 **BT Logs** 启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB Serial/JTAG as transport**。
-
-若 USJ 不可选，按传输列表中的提示释放端口或启用 USJ 模块。
+| 配置项／连接 | 设置值 | 对应接线／说明 |
+| --- | --- | --- |
+| `CONFIG_BLE_LOG_ENABLED` | `y` | 启用 BLE Log。 |
+| `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG` | 不启用 | 主控制台保留在默认 UART0 等其他通道。 |
+| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | 关闭第二控制台以释放 USJ 端口。 |
+| `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` | `y` | 选择 USJ 输出（端口空闲且 SDK 支持时可选）。 |
+| USB | 无配置项 | 芯片原生 USJ 口 → 电脑（USB 数据线，USB ID `303A:1001`）。 |
 
 <a id="usb"></a>
 
-### 1.2 USB OTG
+#### USB OTG
 
-1. 在工程根目录运行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。已有此依赖的工程可直接执行第 2 步。
-2. 在 `idf.py menuconfig` 的 **BT Logs** 中启用 BLE Log，在 **BLE Log peripheral choice** 选择 **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**。CDC 会自动启用，缓冲区沿用默认值。
+| 配置项／连接 | 设置值 | 对应接线／说明 |
+| --- | --- | --- |
+| TinyUSB 组件依赖 | `espressif/esp_tinyusb^2.0.0` | 未引入时在工程根目录执行 `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`。 |
+| `CONFIG_BLE_LOG_ENABLED` | `y` | 启用 BLE Log。 |
+| `CONFIG_BLE_LOG_PRPH_USB` | `y` | 选择 USB OTG 输出（自动启用 TinyUSB CDC 并使用默认缓冲区）。 |
+| USB | 无配置项 | 芯片原生 USB OTG 口 → 电脑（USB 数据线，USB ID `303A:10B1`）。 |
 
-编译并烧录固件，用数据线连接对应的原生 USB 口，在 Console 中选 **USB → USJ** 或 **USB → USB OTG**，然后[试录](#verification)。
+若所用旧版 ESP-IDF 未自动启用 CDC 或单独列出了 BLE Log CDC 缓冲配置，请同时开启 `CONFIG_TINYUSB_CDC_ENABLED=y` 并按编译提示调整缓冲区大小。
 
-旧版 ESP-IDF 若仍单列 BLE Log CDC 缓冲配置，请在 TinyUSB 中启用 CDC，并按该版本的构建提示设置缓冲区。
+### 1.3 连接工具
+
+编译、烧录后，用数据线连接对应原生 USB 口，在 BLE Log Console 中选择 **USB**，再选标有 **USJ** 或 **USB OTG** 的端口。
+
+**下一步：[采集验证](#verification)。**
 
 <a id="spi"></a>
 
@@ -92,11 +129,11 @@ SPI 带宽更充足，适合采集较大量的日志，便于快速定位问题�
 
 > **仅用于普通日志打印的串口也可复用。** 当前 UART0 路径会将普通串口日志与 BLE Log 一起发送到 BLE Log Console，支持显示和保存。其他 UART 不会自动转发 UART0 的普通日志。
 
-日志文件说明见 [Console 使用指南](Console-User-Guide-CN.md)中的“查看 Console Log”和“找到并提交录制文件”。
+日志文件说明见 Console 使用指南中的[查看实时日志](Console-User-Guide-CN.md#console-log-files)和[找到并提交录制文件](Console-User-Guide-CN.md#recording-files)。
 
 ### 3.1 接入条件
 
-| 确认项 | 说明 | 处理建议 |
+| 确认项 | 条件与说明 | 处理建议 |
 | --- | --- | --- |
 | 板载 USB 转串口 | 部分板卡已将 UART 接到 USB 转串口芯片，插 USB 即可连接电脑；核对实际连接的 UART 和 TX GPIO。芯片原生 USB 接口不等同于 USB 转串口；芯片内置 USB Serial/JTAG 端口见 [USJ Log](#usj)。 | 有可用板载连接时优先复用。 |
 | 串口用途 | 仅打印普通日志时可考虑复用；同时用于命令输入、外设或工装通信时，需确认是否冲突。 | 日志专用串口可使用本工具；有业务通信时优先选其他串口。 |
@@ -239,3 +276,4 @@ Buffer 配置用于缓冲待发送的日志、应对短时突发，帮助减少�
 切换 USB OTG / USJ / SPI / UART 不会自动恢复已有日志级别。日志范围应覆盖待定位的问题，调整后的传输质量通过试录确认。
 
 [ble-log-console]: https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable
+[ble-log-config-assistant]: https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable

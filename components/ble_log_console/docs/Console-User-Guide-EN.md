@@ -1,5 +1,5 @@
 # BLE Log Console User Guide
-Version: v1.1.0
+Version: v1.1.1
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
@@ -24,7 +24,20 @@ BLE Log Console receives, displays, and saves BLE logs from an ESP device on you
 
 > **Note:** Support for USB OTG and USJ varies by chip. Before choosing direct USB, check your chip model in the [support table in Section 2.1](#21-choose-usb-otg-or-usj). If you are unsure which peripheral to use, check connector and resource availability in the [Configuration Guide](Config-Guide-EN.md#quick-selection).
 
-### Step 2. Record the logs
+<a id="firmware-assistant"></a>
+
+### Step 2. Configure and flash the firmware (Configuration Assistant recommended)
+
+- **Already enabled in the flashed firmware?** Wire the board as shown and jump straight to [Step 3. Record the logs](#step-3-record).
+- **Need to update project settings? Use the [BLE Log Configuration Assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) to simplify setup** instead of hunting through `menuconfig` options manually:
+  1. Download the assistant from the release page (`chmod +x` on Linux on first use), open your project’s **ESP-IDF terminal** (where `idf.py` is available; run `idf.py reconfigure` once first for an unconfigured project), launch the assistant, and select your project directory.
+  2. Choose the peripheral from Step 1 (USB OTG / USJ / SPI Bridge / UART). The assistant identifies the settings to change.
+  3. Review the previewed diff and click **Apply configuration** (the original file is backed up automatically as `sdkconfig.bak.*`), then build, flash, and wire the board.
+- If running the assistant is inconvenient, click the firmware setup link in Step 1 for manual setup instructions.
+
+<a id="step-3-record"></a>
+
+### Step 3. Record the logs
 
 Once the firmware is flashed and the board is wired, proceed to Section 1: [start Console and connect to the port](#1-first-run-and-recording) → [verify reception before triggering the issue](#122-confirm-that-logs-are-being-received) → [stop recording and check the quality report](#13-stop-the-recording-and-check-the-result).
 
@@ -34,8 +47,8 @@ Once the firmware is flashed and the board is wired, proceed to Section 1: [star
 
 Download the package for your operating system from the [stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable). Before starting, close any serial monitor occupying the target port.
 
-- **Windows 10 or later:** Double-click `ble_log_console_windows_v1.1.0.exe`.
-- **Ubuntu 22.04 or later:** In the tool directory, run `chmod +x ./ble_log_console_ubuntu_v1.1.0`, then run `./ble_log_console_ubuntu_v1.1.0`.
+- **Windows 10 or later:** Double-click `ble_log_console_windows_v1.1.1.exe`.
+- **Ubuntu 22.04 or later:** In the tool directory, run `chmod +x ./ble_log_console_ubuntu_v1.1.1`, then run `./ble_log_console_ubuntu_v1.1.1`.
 
 ### 1.2 Start a Recording
 
@@ -132,8 +145,8 @@ In the **Save to** directory, find the group of files sharing the same recording
 
 | File | Description |
 | --- | --- |
-| `_host.log`, `_DECOMPRESSED_BLE_HOST.log` | Plain Host text and Database-decoded compressed Host text. |
-| `_hci_btsnoop.log`, `_ll_hci_btsnoop.log` | Host-side and controller-side HCI captures in device time (openable in Wireshark; recordings spanning multiple initializations may split into separate files). |
+| `_host.log`, `_DECOMPRESSED_BLE_HOST.log` | Ordered plain Host text and Database-decoded compressed Host text (when opening backlog is confirmed, exported starting from the fresh interval). |
+| `_hci_btsnoop.log`, `_ll_hci_btsnoop.log` | Ordered host-side and controller-side HCI captures in device time (openable in Wireshark; starts from the fresh interval when opening backlog is confirmed, and may split across multiple initializations). |
 | `_hci.log` | Live HCI text transcript in computer receive time. |
 
 > A `.partial` suffix indicates an unfinished file. Check the save status in the report before submitting.
@@ -169,28 +182,44 @@ Start with USJ if the board exposes it. The table lists the outputs supported by
 
 Neither mode requires a baud rate. The table shows USB bus rates; verify actual log throughput with a trial recording and quality report.
 
-For initial firmware setup, open **Component config → Bluetooth → Common Options → BT Logs** in `idf.py menuconfig` to find **Enable BT Log Async Output (Dev Only)** and the transport choices.
+If the firmware on the board already uses the selected output, connect the USB data cable and go to [port selection](#select-port).
 
 <a id="23-usj-firmware-configuration"></a>
 
 ### 2.2 USJ Firmware Configuration
 
-1. Keep the primary console on UART0. Under **Component config → ESP-STDIO → Channel for console secondary output**, select **No secondary console**.
-2. Enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB Serial/JTAG as transport**.
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to configure USJ automatically**; to configure manually:
 
-If USJ is unavailable, follow the message in the transport list.
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
+  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
+  - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y` (keep the primary console on UART0 or another non-USJ channel, and do not enable `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`)
+- Connect the chip’s native USJ port to your PC with a USB data cable.
+- Build and flash the firmware.
+
+> Configuration notes:
+> - If `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is hidden, confirm that your chip and ESP-IDF support USJ, keep `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`, and verify that no primary console, `esp_trace`, or OpenThread RCP occupies the port (see the [Configuration Guide](Config-Guide-EN.md#usj)).
+> - Once connected, the USJ port enumerates on the PC with USB ID `303A:1001`.
 
 <a id="22-usb-output-firmware-configuration"></a>
 <a id="22-usb-otg-firmware-configuration"></a>
 
 ### 2.3 USB OTG Firmware Configuration
 
-1. From the project root, run `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"`. If the project already includes this dependency, go to step 2.
-2. In `idf.py menuconfig`, enable BLE Log under **BT Logs**. In **BLE Log peripheral choice**, select **Utilize USB OTG device as transport (TinyUSB CDC-ACM)**. This enables CDC with the default buffer settings.
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to add the TinyUSB dependency and configure USB OTG automatically**; to configure manually:
+
+- If your project does not yet include TinyUSB, run `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"` from the project root.
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
+  - `CONFIG_BLE_LOG_PRPH_USB=y`
+- Connect the chip’s native USB OTG port to your PC with a USB data cable.
+- Build and flash the firmware.
+
+> Configuration notes:
+> - Enabling `CONFIG_BLE_LOG_PRPH_USB=y` automatically enables TinyUSB CDC with default buffer sizes. On older ESP-IDF versions that expose separate CDC buffer options, enable `CONFIG_TINYUSB_CDC_ENABLED=y` and adjust buffer sizes per build messages (see the [Configuration Guide](Config-Guide-EN.md#usb)).
+> - Once BLE Log starts on the device, the USB OTG port enumerates on the PC with USB ID `303A:10B1`.
 
 ### 2.4 Start the Application on the PC
 
-If the board already runs configured firmware, connect it directly. After first-time setup, build and flash the firmware. Connect the matching native USB port with a data cable, select **USB → USJ** or **USB → USB OTG** in Console, and [start recording](#select-port).
+Connect the matching native USB port with a data cable and select **USB → USJ** or **USB → USB OTG** in Console. [Return to port selection and continue recording](#select-port).
 
 ## 3. SPI Bridge Mode
 
@@ -215,19 +244,19 @@ The SPI Bridge forwards SPI logs from the target board to your PC using a separa
 
 ### 3.1 Firmware Configuration
 
-- In the target device project, enable `CONFIG_BLE_LOG_ENABLED=y` and `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`.
-- Set the target board’s SPI GPIOs according to your hardware:
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM`
-- Wire the target board to the SPI Bridge:
-  - `MOSI` → `Bridge IO 4`
-  - `SCLK` → `Bridge IO 5`
-  - `CS` → `Bridge IO 6`
-  - Connect `GND` between both boards
-- Build and flash the target firmware.
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to set SPI pins and check for duplicate GPIOs automatically**; to configure manually:
 
-> Note: Configured GPIO numbers must match the physical wiring, and both boards must share a solid GND connection to avoid reception errors.
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM=<target MOSI GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM=<target SCLK GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM=<target CS GPIO>`
+- Wire the target board to the SPI Bridge (`MOSI` → `Bridge IO 4`, `SCLK` → `Bridge IO 5`, `CS` → `Bridge IO 6`, and shared `GND` between both boards).
+- Build and flash the firmware.
+
+> Configuration notes:
+> - Configured GPIO numbers must match the physical wiring, and both boards must share a solid GND connection to avoid reception errors.
+> - The current implementation uses SPI Controller 2; verify that no existing SPI peripheral in your project conflicts with it (see the [Configuration Guide](Config-Guide-EN.md#spi)).
 
 ### 3.2 Start the Application on the PC
 
@@ -245,6 +274,8 @@ Device connection diagram:
 
 ### 4.1 Firmware Configuration
 
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to enable critical-only logging and UART settings automatically**; to configure manually:
+
 - Enable `CONFIG_BT_LOG_CRITICAL_ONLY=y` in your project (enables reduced-volume logging suited to UART bandwidth and automatically turns on `CONFIG_BLE_LOG_ENABLED`), and configure:
   - `CONFIG_BLE_LOG_PRPH_UART_DMA=y`
   - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT=0`
@@ -255,7 +286,7 @@ Device connection diagram:
 
 > Configuration notes:
 > - Adjust `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` and `TX_IO_NUM` to match your hardware. Reusing UART0 forwards regular serial console output to Console as well (see [Follow Live Logs](#console-log-files)); if UART0 is used for application commands or communication, choose another free UART.
-> - Use a high baud rate such as `3000000` when supported by your USB-to-UART adapter, and set the exact same baud rate in Console.
+> - Use a high baud rate such as `3000000` when supported by your USB-to-UART adapter, and set the exact same baud rate in Console (see the [Configuration Guide](Config-Guide-EN.md#uart)).
 
 ### 4.2 Start the Application on the PC
 
@@ -289,10 +320,11 @@ After installation, start the tool with:
 .\run.bat
 ```
 
-You can also select a recording mode directly with command-line arguments:
+You can also select a recording mode directly with command-line arguments (`usb` for USB OTG, `usj` for USB Serial/JTAG):
 
 ```bat
 .\run.bat --mode usb --port COM5
+.\run.bat --mode usj --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -316,6 +348,7 @@ You can also select a recording mode directly with command-line arguments:
 
 ```bash
 ./run.sh --mode usb --port /dev/ttyACM0
+./run.sh --mode usj --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -332,6 +365,7 @@ Common commands include:
 
 ```bash
 python console.py --mode usb --port /dev/ttyACM0
+python console.py --mode usj --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
