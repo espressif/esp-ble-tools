@@ -60,14 +60,22 @@ def test_cli_rejects_directory_without_host_dictionary(tmp_path, monkeypatch) ->
     assert "BLE_HOST_logs.json" in result.output
 
 
-def test_cli_defaults_to_no_live_logs_and_accepts_multiple_categories(monkeypatch) -> None:
-    from unittest.mock import MagicMock
+def test_cli_live_log_defaults_and_explicit_selections(monkeypatch) -> None:
+    from src.app import BLELogApp
 
-    app = MagicMock()
-    monkeypatch.setattr("src.app.BLELogApp", app)
-    for arguments, expected in [([], frozenset()), (["--show-log", "host", "--show-log", "hci"], {"host", "hci"})]:
+    selections = []
+    monkeypatch.setattr(BLELogApp, "run", lambda app: selections.append(app._show_logs))
+    for arguments, expected in [
+        ([], {"console"}),
+        (["--mode", "usb", "--port", "test"], frozenset()),
+        (["--mode", "usj", "--port", "test", "--show-log", "console"], {"console"}),
+        (["--show-log", "none"], frozenset()),
+        (["--show-log", "host", "--show-log", "hci"], {"host", "hci"}),
+    ]:
         result = CliRunner().invoke(cli, arguments)
         assert result.exit_code == 0, result.output
-        assert app.call_args.kwargs["show_logs"] == expected
+        assert selections[-1] == expected
+    mixed = CliRunner().invoke(cli, ["--show-log", "none", "--show-log", "console"])
+    assert mixed.exit_code == 2
     invalid = CliRunner().invoke(cli, ["--show-log", "unknown"])
     assert invalid.exit_code == 2

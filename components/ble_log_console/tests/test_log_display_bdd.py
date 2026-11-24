@@ -70,7 +70,7 @@ def select_and_record(world, categories):
             async with app.run_test(size=(100, 55)) as pilot:
                 for category in TEXT:
                     checkbox = app.screen.query_one(f"#show-{category}", Checkbox)
-                    assert not checkbox.value
+                    assert checkbox.value == (category == "console")
                     checkbox.value = category in world.selected
                 app.screen.query_one("#port-select", Select).value = "test"
                 button = app.screen.query_one("#connect-btn")
@@ -127,8 +127,10 @@ def change_mode(world, mode):
         with patch.object(app, "_start_capture"):
             async with app.run_test(size=(100, 55)) as pilot:
                 screen = app.screen
-                screen.query_one("#show-console", Checkbox).value = True
+                assert screen.query_one("#show-console", Checkbox).value
                 screen.query_one("#show-host", Checkbox).value = True
+                screen.query_one("#mode-select", Select).value = "usb"
+                await pilot.pause()
                 screen.query_one("#mode-select", Select).value = mode
                 await pilot.pause()
                 world.console_visible = screen.query_one("#show-console", Checkbox).display
@@ -177,8 +179,9 @@ def use_compact_setup(world, monkeypatch, width, height, language, mode):
                     assert screen.query_one("#launch-container").max_scroll_y == 0
 
                 checkbox = screen.query_one("#show-host", Checkbox)
-                checkbox.scroll_visible(animate=False)
+                checkbox.scroll_visible(animate=False, top=True, immediate=True)
                 await pilot.pause()
+                assert checkbox.region in screen.region
                 assert await pilot.click(checkbox, offset=(1, 0))
                 world.padding_click_selected = checkbox.value
                 await pilot.press("space")
@@ -191,6 +194,7 @@ def use_compact_setup(world, monkeypatch, width, height, language, mode):
                 world.started = start.call_count
                 world.show_logs = app._show_logs
 
+    world.mode = mode
     asyncio.run(operate())
 
 
@@ -207,7 +211,7 @@ def aligned_compact_fields(world):
 def compact_setup_operable(world):
     assert world.padding_click_selected
     assert world.started == 1
-    assert world.show_logs == {"host"}
+    assert world.show_logs == ({"host", "console"} if world.mode == "uart" else {"host"})
 
 
 @when(parsers.parse("填写 {mode} 设置后通过语言菜单来回切换中英文"))

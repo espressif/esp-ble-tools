@@ -252,17 +252,17 @@ def host_report_status(world, verdict, status):
         for render in (format_capture_summary, format_capture_report):
             text = render(report, "zh_CN")
             assert "已导出 1 条" in text and "2 帧" in text and "BLE_HOST_logs.json" in text
-            assert "Frames without a usable dictionary entry: 2." in render(report, "en")
+            assert "Frames without a usable database entry: 2." in render(report, "en")
     if status in ("部分解码", "已生成文本文件"):
         assert len(files) == 1 and "hello compressed" in files[0].read_text(encoding="utf-8")
     else:
         assert not files
-    if status in ("未生成可读文本", "未选择字典", "部分解码"):
+    if status in ("未生成可读文本", "未选择 Database", "部分解码"):
         for render in (format_capture_summary, format_capture_report):
             for lang in ("zh_CN", "en"):
                 text = render(report, lang)
                 assert "Log Parser" not in text
-                assert ("BLE_HOST_logs.json" in text) == (status != "未选择字典")
+                assert ("BLE_HOST_logs.json" in text) == (status != "未选择 Database")
             if status != "部分解码":
                 assert "已收到压缩 Host 帧" in render(report, "zh_CN")
                 assert "Compressed Host frames received" in render(report, "en")
@@ -312,7 +312,7 @@ def stop_with_slow_copy(world, action):
                     while not isinstance(app.screen, CaptureReportScreen) or not app.screen.query("#report-summary"):
                         await pilot.pause()
                 assert session.finished
-                assert "Dictionary copy pending" in str(app.screen.query_one("#report-summary", Static).content)
+                assert "Database copy pending" in str(app.screen.query_one("#report-summary", Static).content)
                 world.report_path = app.saved_report_path
                 world.initial_text = world.report_path.read_text(encoding="utf-8")
                 if action == "再次录制":
@@ -341,8 +341,8 @@ def stop_with_slow_copy(world, action):
 
 @then("报告先保存，副本完成后只更新所属录制")
 def report_before_copy(world):
-    assert "Dictionary copy pending" in world.initial_text
+    assert "Database copy pending" in world.initial_text
     final_text = world.report_path.read_text(encoding="utf-8")
-    assert "Dictionary copy pending" not in final_text
+    assert "Database copy pending" not in final_text
     assert str(world.copy) in final_text
     assert (world.copy / "BLE_HOST_logs.json").is_file()

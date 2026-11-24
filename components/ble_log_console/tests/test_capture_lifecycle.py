@@ -142,8 +142,8 @@ def test_failed_dictionary_copy_preserves_recording_and_is_reported(tmp_path: Pa
         assert pipeline.call_args.kwargs["log_database"] == database
     assert session.report.raw_complete
     assert session.report.database_copy is None
-    assert "字典副本未保存：disk full" in format_capture_summary(session.report, "zh_CN")
-    assert "Dictionary copy not saved: disk full" in session.report.report_path.read_text()
+    assert "Database 副本未保存：disk full" in format_capture_summary(session.report, "zh_CN")
+    assert "Database copy not saved: disk full" in session.report.report_path.read_text()
     assert not (tmp_path / "recording_database").exists()
     assert not list(tmp_path.glob(".ble-database-*"))
 
@@ -175,7 +175,7 @@ def test_failed_report_update_preserves_the_first_report(tmp_path: Path) -> None
     assert session.report.report_write_error is None
     assert "Could not update the saved report: report is open" in format_capture_summary(session.report)
     assert session.report.database_copy.is_dir()
-    assert "Dictionary copy pending" in report_path.read_text()
+    assert "Database copy pending" in report_path.read_text()
 
 
 def test_session_stop_is_idempotent(tmp_path: Path) -> None:

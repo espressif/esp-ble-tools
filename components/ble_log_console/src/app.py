@@ -22,6 +22,7 @@ from textual.message import Message
 from textual.widgets import Button
 
 from src.backend.models import (
+    DEFAULT_UART_SHOW_LOGS,
     BackendStopped,
     BleLogVersionInfo,
     BufUtilEntry,
@@ -189,10 +190,13 @@ class BLELogApp(App):
         log_dir: Path | None = None,
         debug: bool = False,
         log_database: Path | None = None,
-        show_logs: frozenset[str] = frozenset(),
+        show_logs: frozenset[str] | None = None,
     ) -> None:
         super().__init__()
         self._debug = debug
+        if show_logs is None:
+            # Without a port, the setup screen starts in UART mode.
+            show_logs = DEFAULT_UART_SHOW_LOGS if port is None or mode is TransportMode.UART else frozenset()
         self._show_logs = show_logs
         self._log_database = (
             log_database if log_database is not None else load_log_database(default=find_log_database())

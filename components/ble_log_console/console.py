@@ -101,9 +101,9 @@ def _echo_paths(label: str, paths: list[Path]) -> None:
 @click.option("--debug", is_flag=True, help="Show internal traffic and firmware state events in the log view.")
 @click.option(
     "--show-log",
-    type=click.Choice(LOG_DISPLAY_CATEGORIES),
+    type=click.Choice((*LOG_DISPLAY_CATEGORIES, "none")),
     multiple=True,
-    help=tr("Show a live log category; repeat to select more. Default: none. Saved logs are unaffected."),
+    help=tr("Select live logs. Repeat for multiple categories, or use none. Default: console on UART only."),
 )
 @click.option(
     "--log-dir",
@@ -168,6 +168,12 @@ def cli(
 
     from src.app import BLELogApp
 
+    selected_logs = frozenset(show_log) if show_log else None
+    if selected_logs is not None and "none" in selected_logs:
+        if len(selected_logs) > 1:
+            raise click.BadParameter("none cannot be combined with other categories", param_hint="--show-log")
+        selected_logs = frozenset()
+
     app = BLELogApp(
         mode=transport_mode,
         port=port,
@@ -175,7 +181,7 @@ def cli(
         log_dir=resolved_log_dir,
         log_database=log_database.resolve() if log_database else None,
         debug=debug,
-        show_logs=frozenset(show_log),
+        show_logs=selected_logs,
     )
     app.run()
     _echo_paths("Recording file", app.saved_capture_paths)

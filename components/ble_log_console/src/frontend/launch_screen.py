@@ -19,7 +19,13 @@ from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Input, Label, Select
 from textual_fspicker import SelectDirectory
 
-from src.backend.models import LOG_DISPLAY_CATEGORIES, LaunchConfig, TransportConfig, TransportMode
+from src.backend.models import (
+    DEFAULT_UART_SHOW_LOGS,
+    LOG_DISPLAY_CATEGORIES,
+    LaunchConfig,
+    TransportConfig,
+    TransportMode,
+)
 from src.backend.support.transport import PortIssue, list_transport_modes, list_transport_port_scan
 from src.frontend.port_diagnostics import describe_port_issues
 from src.frontend.rendering import (
@@ -199,7 +205,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
         *,
         default_transport_config: TransportConfig | None = None,
         log_database: Path | None = None,
-        show_logs: frozenset[str] = frozenset(),
+        show_logs: frozenset[str] = DEFAULT_UART_SHOW_LOGS,
         start_error: str | None = None,
     ) -> None:
         super().__init__()
@@ -281,7 +287,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
                 yield Button(tr("Browse"), id="browse-btn")
 
             with Horizontal(classes="field-row"):
-                yield Label(tr("Host dictionary"), classes="field-label", id="database-label")
+                yield Label(tr("Database"), classes="field-label", id="database-label")
                 yield Input(
                     str(self._log_database) if self._log_database else "",
                     id="database-input",
@@ -325,7 +331,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             ("#port-label", "Port"),
             ("#baud-label", "Baud rate"),
             ("#dir-label", "Save to"),
-            ("#database-label", "Host dictionary"),
+            ("#database-label", "Database"),
             ("#display-label", "Live display"),
             ("#display-note", "Display only"),
         ):
@@ -368,10 +374,7 @@ class LaunchScreen(Screen[LaunchConfig | None]):
             self.query_one("#baud-row").display = show_baud
             self.query_one("#baud-label", Label).display = show_baud
             self.query_one("#baud-select", Select).display = show_baud
-            console = self.query_one("#show-console", Checkbox)
-            console.display = show_baud
-            if not show_baud:
-                console.value = False
+            self.query_one("#show-console", Checkbox).display = show_baud
         except NoMatches:
             return
 

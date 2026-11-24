@@ -396,7 +396,7 @@ def _host_text_summary(report: CaptureReport, language: str, separator: str) -> 
     ):
         lines.append(
             tr(
-                "Text entries written: {entries:,}. Frames without a usable dictionary entry: {frames:,}.",
+                "Text entries written: {entries:,}. Frames without a usable database entry: {frames:,}.",
                 language=language,
                 entries=report.host_text_entries,
                 frames=report.host_missing_id_frames,
@@ -411,15 +411,15 @@ def _database_copy_lines(report: CaptureReport, language: str) -> list[str]:
     if report.pending_database is not None:
         return [
             tr(
-                "Dictionary copy pending. Keep Console open to finish copying from {path}.",
+                "Database copy pending. Keep Console open to finish copying from {path}.",
                 language=language,
                 path=report.pending_database,
             )
         ]
     if report.database_copy_error is not None:
-        return [tr("Dictionary copy not saved: {error}", language=language, error=report.database_copy_error)]
+        return [tr("Database copy not saved: {error}", language=language, error=report.database_copy_error)]
     if report.database_copy is not None:
-        return [tr("Dictionary copy: {path}", language=language, path=report.database_copy)]
+        return [tr("Database copy: {path}", language=language, path=report.database_copy)]
     return []
 
 

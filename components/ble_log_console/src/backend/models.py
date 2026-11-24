@@ -383,8 +383,8 @@ class FirmwareLossSummary:
 class CompressedHostStatus(str, Enum):
     SAVED = "Text file generated"
     PARTIAL = "Partially decoded"
-    NO_TEXT = "Compressed Host frames received. No readable text was generated with the selected dictionary."
-    SKIPPED = "Compressed Host frames received. Decoding skipped because no dictionary was selected."
+    NO_TEXT = "Compressed Host frames received. No readable text was generated with the selected database."
+    SKIPPED = "Compressed Host frames received. Decoding skipped because no database was selected."
     NO_INPUT = "No compressed Host frames observed in the export range"
     UNVERIFIED = "Unable to verify"
 
@@ -484,6 +484,7 @@ def resolve_lbm_name(pool: int, index: int) -> str:
 # --- UI/control contract ---
 
 LOG_DISPLAY_CATEGORIES = ("host", "hci", "console")
+DEFAULT_UART_SHOW_LOGS = frozenset({"console"})
 
 
 @dataclass(slots=True)
