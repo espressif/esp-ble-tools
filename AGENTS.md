@@ -14,6 +14,7 @@ belongs in them.
 | Component | Path | Purpose |
 | --- | --- | --- |
 | BLE Log Console | `components/ble_log_console/` | Python/Textual terminal UI that receives, displays, and saves ESP BLE log data over UART, SPI Bridge, or USB Output. |
+| BLE Log Configuration Assistant | `components/ble_log_config_assistant/` | Bilingual terminal wizard for configuring BLE Log transports in an existing ESP-IDF project. |
 
 Add a new tool as its own `components/<tool>/` directory with its own
 `pyproject.toml`, docs, tests, and packaging.
