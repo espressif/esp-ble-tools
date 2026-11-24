@@ -54,8 +54,8 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
 3. For direct USB, set **Transport** to **USB** and select the **USB OTG** or **USJ** port matching the firmware. The interface starts in English. Use the language selector at the top right to switch.
-4. Choose **Save to**. For compressed Host text, set **Host dictionary** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages, or leave the boxes clear and click **Connect**. These choices affect the screen only.
-5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If you selected a dictionary, Console copies it after recording ends. When the report lists `<recording-name>_database/`, include that folder with the logs.
+4. Choose **Save to**. For compressed Host text, set **Database** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages, or leave the boxes clear and click **Connect**. These choices affect the screen only.
+5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If you selected a database, Console copies it after recording ends. When the report lists `<recording-name>_database/`, include that folder with the logs.
 
 SPI Bridge, USB OTG and USJ use CDC serial reception on every platform. If no Bridge CDC port is found, reconnect the device and refresh the port list; the tool does not switch to direct USB Bulk.
 
@@ -205,9 +205,9 @@ This section provides additional command-line usage for the tool package. Common
 | `--port` | `-p` | optional | Serial, SPI Bridge, USB Output, or USJ port. Omit to open the interactive interface |
 | `--baudrate` | `-b` | `3000000` | UART baud rate, which must match the firmware configuration |
 | `--log-dir` | `-d` | Last used directory, or `./logs` | Recording file save directory; an explicit value overrides the remembered directory |
-| `--log-database` | None | Remembered or auto-discovered | Firmware dictionary directory containing `BLE_HOST_logs.json` |
+| `--log-database` | None | Remembered or auto-discovered | Firmware database directory containing `BLE_HOST_logs.json` |
 | `--debug` | none | off | Show extra debugging information |
-| `--show-log` | none | none | Display `host`, `hci`, or `console`; repeat to select multiple categories, e.g. `--show-log host --show-log hci`. Does not change saved logs |
+| `--show-log` | none | `console` for UART only | Display `host`, `hci`, or `console`; repeat to select multiple categories, e.g. `--show-log host --show-log hci`. Use `--show-log none` to turn off all live logs. Saved logs are unaffected |
 
 Subcommands:
 
@@ -224,7 +224,7 @@ USJ mode receives BLE Log through the chip's built-in USB Serial/JTAG port (USB 
 
 On this port, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, BLE Log Console releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released and never changes them afterwards, so the `r` shortcut does not reset the target. The operating system or its USB driver can still change these lines while opening the device. Check on your own host whether opening the port resets the board.
 
-The **Host dictionary** directory is remembered when the recording file is reserved, even if the port later fails to open, including an explicitly cleared field. `--log-database` overrides the remembered choice. A missing dictionary falls back to automatic discovery. Source and standalone launches use the same per-user application settings.
+The **Database** directory is remembered when the recording file is reserved, even if the port later fails to open, including an explicitly cleared field. `--log-database` overrides the remembered choice. A missing database falls back to automatic discovery. Source and standalone launches use the same per-user application settings.
 
 ### Opening Backlog and Analysis Files
 
@@ -270,5 +270,5 @@ For connection issues, log display, quality check limitations, source environmen
 
 Console uses BLFD 1.0.0 for integrity checks, firmware statistics and ordered Host/HCI export. Console selects the recording start offset from receive-time evidence. BLFD uses frame sequence numbers and device clocks to order the selected records. It prepares output during recording and uses the full frame index at Stop when later frames affect the order. If the analysis queue misses bytes, the exporter reads the missing range from the saved recording.
 
-Ordered Host/HCI products start at the first confirmed fresh frame. The report gives the byte offset of that frame in the complete raw recording. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and decoded dictionary messages to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
+Ordered Host/HCI products start at the first confirmed fresh frame. The report gives the byte offset of that frame in the complete raw recording. With ambiguous opening evidence the offset is zero. Plain Host text is saved to `_host.log` and messages decoded with the database to `_DECOMPRESSED_BLE_HOST.log`. Host-side and controller HCI use `_hci_btsnoop.log` and `_ll_hci_btsnoop.log` in device time. Multiple v8 lifecycles can produce separate epoch files. The live transcripts in `_console.log` and `_hci.log` include receive timestamps. Display selection affects only the screen.
 Linux x86_64 / CPython 3.11 uses the supplied wheel; Windows and other targets build the supplied source package from the same revision. See [vendor/README.md](vendor/README.md) for compiler requirements. Windows build and hardware validation remain pending.

@@ -2,7 +2,7 @@
 
 [中文](Config-Guide-CN.md) | [English](Config-Guide-EN.md)
 
-> **优先 USB 直连。** 确认目标板引出了原生 USB 口，且固件提供 USB Output 或 USJ 输出。直连条件不具备时，再选择 SPI Bridge 或 UART。
+> **优先 USB 直连。** 确认目标板有对应的 USB 插座，或能通过引出的 D+、D− 和 GND 接入 USB，且固件支持所选的 USB Output 或 USJ 输出。直连条件不具备时，再选择 SPI Bridge 或 UART。
 
 工具下载：[BLE Log Console 稳定版发布页][ble-log-console]。电脑端操作参照 [Console 使用指南](Console-User-Guide-CN.md)。
 
@@ -27,14 +27,14 @@
 ### 1.1 USB Output（USB OTG）
 
 1. 在目标工程中启用 `CONFIG_BLE_LOG_ENABLED=y` 和 `CONFIG_BLE_LOG_PRPH_USB=y`。在 `main/idf_component.yml` 加入 `espressif/esp_tinyusb` 依赖，执行 `idf.py reconfigure` 后启用 `CONFIG_TINYUSB_CDC_ENABLED=y`。
-2. 核对 CDC 缓冲区设置，编译并烧录。依赖版本、缓冲配置和接线图见[使用指南的 USB 章节](Console-User-Guide-CN.md#usb-direct)。
+2. 编译并烧录固件。若构建提示 CDC 缓冲区配置错误，按报错调整：TinyUSB 的 TX、EP 大小分别与 BLE Log 的对应值相等，TinyUSB 的 RX 大小至少为 EP 大小。板上已运行配置好的固件时，直接执行第 3 步。
 3. 用数据线连接板上的 USB OTG 口与电脑，在 Console 中选 **USB → USB OTG**（`303A:10B1`），无需设置波特率。选好保存目录后开始[试录验证](#verification)。
 
 <a id="usj"></a>
 
 ### 1.2 USB Serial/JTAG (USJ)
 
-USJ 通过芯片内置的 USB Serial/JTAG 端口发送 BLE Log，该端口通常也是烧录用的 USB 口。USJ 无需额外接线，也没有波特率设置。
+USJ 通过芯片内置的 USB Serial/JTAG 端口发送 BLE Log，该端口通常也是烧录用的 USB 口。有对应 USB 插座时用数据线直连；只有引脚时，参照[USB 直连接线说明](Console-User-Guide-CN.md#usb-direct)。USJ 无需设置波特率。
 
 > **USJ 需要固件支持。** 只有构建固件所用的 ESP-IDF 在 BLE Log 外设选项中提供 `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` 时，才能使用 USJ。没有该选项时，这个固件不能使用 USJ，请改用 [SPI](#spi) 或 [UART](#uart)。
 
@@ -197,7 +197,7 @@ BLE Log 建议优先使用 `3000000` 波特率，以便传输更多日志。这�
 | 产物（所有模式） | 何时提供 |
 | --- | --- |
 | 原始 `.bin` 和同次录制的 `_report.txt` | 每次提交；较大录制需附全部 `part` 分片。 |
-| `<录制名>_database/` | 录制时选择了字典，就将该副本与同名录制一起打包。 |
+| `<录制名>_database/` | 录制时选择了 Database，就将该副本与同名录制一起打包。 |
 | `sdkconfig` 与[配置记录](#records) | 提供本次构建配置、接线和复现信息。 |
 | 已生成的日志文件 | 按问题附 Host 文本、HCI btsnoop 或实时转录。UART 和 USJ 的启动或崩溃文本可在 `_console.log` 中查看。 |
 
@@ -207,7 +207,7 @@ BLE Log 建议优先使用 `3000000` 波特率，以便传输更多日志。这�
 
 ### 5.3 Log database 位置与版本
 
-> **Log database 必须来自实际烧录固件的同一次构建。** 原件由固件构建生成。Console 会将选定的模块字典随当次录制保存一份。
+> **Database 必须来自实际烧录固件的同一次构建。** Console 会将所选目录下的模块文件（`*_logs.json`）随当次录制保存一份。
 
 | 构建方式 | 数据库位置 |
 | --- | --- |

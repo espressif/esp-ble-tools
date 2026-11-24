@@ -2,7 +2,7 @@
 
 [中文](Config-Guide-CN.md) | [English](Config-Guide-EN.md)
 
-> **Prefer direct USB** when the target board exposes native USB and the firmware supports USB Output or USJ. Otherwise, use SPI Bridge or UART.
+> **Prefer direct USB** when the board has a connector for the selected USB peripheral or exposes its D+, D−, and GND for a USB connection, and the firmware supports USB Output or USJ. Otherwise, use SPI Bridge or UART.
 
 Download: [BLE Log Console stable release][ble-log-console]. For PC-side operation, see the [Console User Guide](Console-User-Guide-EN.md).
 
@@ -27,14 +27,14 @@ This guide helps determine a usable BLE Log sdkconfig and wiring setup based on 
 ### 1.1 USB Output (USB OTG)
 
 1. Enable `CONFIG_BLE_LOG_ENABLED=y` and `CONFIG_BLE_LOG_PRPH_USB=y` in the target project. Add the `espressif/esp_tinyusb` dependency to `main/idf_component.yml`, run `idf.py reconfigure`, and enable `CONFIG_TINYUSB_CDC_ENABLED=y`.
-2. Check the CDC buffer settings, build, and flash. See the [USB section of the User Guide](Console-User-Guide-EN.md#usb-direct) for the dependency version, buffer settings, and wiring diagram.
+2. Build and flash the firmware. If the build reports a CDC buffer error, match the TinyUSB TX and EP sizes to their BLE Log counterparts and set the TinyUSB RX size to at least the EP size. If the board already runs firmware configured for USB Output, go to step 3.
 3. Connect the board’s USB OTG port to the computer with a data cable. Select **USB → USB OTG** (`303A:10B1`) in Console. There is no baud rate to set. Choose a save directory and make a [trial recording](#verification).
 
 <a id="usj"></a>
 
 ### 1.2 USB Serial/JTAG (USJ)
 
-USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. It needs no extra wiring and no baud rate.
+USJ sends BLE Log through the chip's built-in USB Serial/JTAG port, which is often the same USB port used for flashing. Use a data cable if the board has a USJ connector. For exposed pins, see [direct USB wiring](Console-User-Guide-EN.md#usb-direct). USJ requires no baud-rate setting.
 
 > **USJ requires firmware support.** Use USJ only when the ESP-IDF used to build the firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` in the BLE Log peripheral choice. If the option is absent, USJ is not available for that firmware; use [SPI](#spi) or [UART](#uart) instead.
 
@@ -197,7 +197,7 @@ A complete delivery includes the recording files, the log database matching the 
 | Deliverable (all modes) | When to include it |
 | --- | --- |
 | Raw `.bin` and matching `_report.txt` | Submit for every recording. Include every `part` of a split recording. |
-| `<recording-name>_database/` | If a dictionary was selected, include the copy alongside the matching recording. |
+| `<recording-name>_database/` | If a database was selected, include the copy alongside the matching recording. |
 | `sdkconfig` and [configuration record](#records) | Include the build configuration, wiring, and reproduction details. |
 | Generated log files | Include Host text, HCI btsnoop files, or live transcripts relevant to the issue. On UART and USJ, `_console.log` can include boot or panic text. |
 
@@ -207,7 +207,7 @@ Files are written to **Save to** on the setup screen. It defaults to `logs/` und
 
 ### 5.3 Log Database Location and Version
 
-> **The log database must come from the same build as the firmware flashed onto the target.** The firmware build generates the originals. Console saves a copy of the selected module dictionaries alongside each recording.
+> **The log database must come from the same build as the firmware flashed onto the target.** The firmware build generates the originals. Console saves a copy of the selected database files alongside each recording.
 
 | Build setup | Database location |
 | --- | --- |

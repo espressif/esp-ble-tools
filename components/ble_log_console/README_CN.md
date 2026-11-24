@@ -48,8 +48,8 @@ chmod +x ./ble_log_console_ubuntu_v1.1.0
 ```
 
 3. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
-4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Host 字典** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。想看实时消息时勾选 **Host** 或 **HCI**，也可以全部留空直接 **连接**。显示选择只影响屏幕。
-5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了字典时，工具会在录制结束后复制字典。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
+4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Database** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。想看实时消息时勾选 **Host** 或 **HCI**，也可以全部留空直接 **连接**。显示选择只影响屏幕。
+5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了 Database 时，工具会在录制结束后复制 Database。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
 
 SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
 
@@ -201,9 +201,9 @@ python console.py --mode spi --port <PORT>
 | `--port` | `-p` | 可选 | 串口、SPI Bridge、USB Output 或 USJ 端口。省略时打开交互界面 |
 | `--baudrate` | `-b` | `3000000` | UART 波特率，必须与固件配置一致 |
 | `--log-dir` | `-d` | 上次使用的目录，无记录时为 `./logs` | 录制文件保存目录；显式指定时优先于记住的目录 |
-| `--log-database` | 无 | 记忆值或自动查找 | 包含 `BLE_HOST_logs.json` 的固件字典目录 |
+| `--log-database` | 无 | 记忆值或自动查找 | 包含 `BLE_HOST_logs.json` 的固件 Database 目录 |
 | `--debug` | 无 | 关闭 | 显示额外的调试信息 |
-| `--show-log` | 无 | 全部关闭 | 显示 `host`、`hci` 或 `console`；可重复指定，如 `--show-log host --show-log hci`，不影响日志文件保存 |
+| `--show-log` | 无 | UART 仅开 `console`，其他模式全部关闭 | 显示 `host`、`hci` 或 `console`；可重复指定，如 `--show-log host --show-log hci`，使用 `--show-log none` 关闭全部实时日志。该选项只影响屏幕显示 |
 
 子命令：
 
@@ -220,7 +220,7 @@ USJ 模式通过芯片内置的 USB Serial/JTAG 口（USB ID `303A:1001`）接�
 
 在这个端口上，DTR 和 RTS 线控制芯片的复位和启动模式。BLE Log Console 打开端口时先释放 RTS、再释放 DTR（与 ESP-IDF Monitor 避免复位的次序相同），之后两条线保持释放状态、不再改动，因此 `r` 快捷键不会复位目标设备。操作系统或其 USB 驱动在打开设备时仍可能改变这两条线，请在自己的电脑上确认打开端口是否会复位开发板。
 
-**Host 字典**在录制文件创建成功后会记住所选目录，包括主动清空。即使随后端口连接失败，选择仍会保留；显式 `--log-database` 优先。目录失效时回退到自动发现，源码与二进制版本共用当前用户的应用设置。
+**Database**在录制文件创建成功后会记住所选目录，包括主动清空。即使随后端口连接失败，选择仍会保留；显式 `--log-database` 优先。目录失效时回退到自动发现，源码与二进制版本共用当前用户的应用设置。
 
 ### 开录积压与分析文件
 
@@ -266,5 +266,5 @@ UART 和 USJ 端口上还可能出现普通控制台文本，例如 ROM 启动�
 
 Console 使用 BLFD 1.0.0 做完整性检查、统计固件计数并导出有序的 Host/HCI 文件。Console 根据接收时观察到的证据选择录制起点。BLFD 根据帧序号和设备时钟排序，在录制期间准备产物。如果后续帧改变了顺序，停止时会使用完整帧索引完成排序。如果解析队列漏收了字节，导出器会从已保存的录制中补读缺失区间。
 
-有序 Host/HCI 产物从确认的新序号段第一帧开始。报告记录该帧在原始录制中的字节偏移。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配字典的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
+有序 Host/HCI 产物从确认的新序号段第一帧开始。报告记录该帧在原始录制中的字节偏移。证据不足时偏移为零。普通 Host 文本保存为 `_host.log`，匹配 Database 的压缩 Host 日志保存为 `_DECOMPRESSED_BLE_HOST.log`。主机侧 HCI 和控制器 HCI 分别保存为 `_hci_btsnoop.log` 和 `_ll_hci_btsnoop.log`，使用设备时间。v8 录制跨越多次初始化时可按 epoch 分文件。实时转录 `_console.log` 和 `_hci.log` 带电脑接收时间。启动页的显示选项只影响屏幕。
 Linux x86_64 / CPython 3.11 使用随附 wheel；Windows 等平台使用同一版本的源码包在本机编译，编译工具要求见 [vendor/README.md](vendor/README.md)。Windows 构建和真机验证尚待完成。
