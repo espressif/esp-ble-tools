@@ -26,7 +26,7 @@ Use the [BLE Log Configuration Guide](../ble_log_console/docs/Config-Guide-EN.md
    .\ble_log_config_assistant_windows_v0.1.0.exe
    ```
 
-3. Select English or 中文 at the top of the wizard. A configured project opens on the transport page. For a new project, run `idf.py reconfigure` first.
+3. Select English or 中文 at the top of the wizard. A configured project opens on the transport page with its current BLE Log transport selected when available. For a new project, run `idf.py reconfigure` first.
 4. Select the board interface, review the changes, and choose **Apply configuration**. UART enables critical-only logging to reduce traffic. USJ disables the secondary console to free the port for BLE Log. For SPI, enter the board's pin assignments. USB OTG uses TinyUSB CDC. The preview lists the dependency command if the component is missing.
 5. Build and flash using the project's usual workflow, then select the corresponding port in BLE Log Console.
 

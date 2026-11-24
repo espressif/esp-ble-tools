@@ -26,7 +26,7 @@
    .\ble_log_config_assistant_windows_v0.1.0.exe
    ```
 
-3. 在窗口顶部选择中文或 English。已配置过的工程会直接进入外设选择；首次配置的工程请先运行 `idf.py reconfigure`。
+3. 在窗口顶部选择中文或 English。已配置过的工程会直接进入外设选择，并预选 `sdkconfig` 中已启用的 BLE Log 外设；首次配置的工程请先运行 `idf.py reconfigure`。
 4. 选择目标板使用的接口，查看配置预览，再点击 **应用配置**。UART 会启用“仅关键日志”以降低串口流量。USJ 会关闭第二控制台，将该端口留给 BLE Log。SPI 按板上接线填写引脚。USB OTG 使用 TinyUSB CDC，缺少组件时预览会列出要添加的依赖。
 5. 按工程原有流程编译、烧录，然后在 BLE Log Console 中选择对应端口录制。
 

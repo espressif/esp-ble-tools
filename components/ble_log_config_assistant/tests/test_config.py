@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from ble_log_config_assistant.app import load_language, save_language
-from ble_log_config_assistant.config import ConfigPlan, apply_prepared, build_settings, prepare_change
+from ble_log_config_assistant.config import ConfigPlan, apply_prepared, build_settings, configured_mode, prepare_change
 
 
 class FakeConfServer:
@@ -156,3 +156,17 @@ def test_existing_tinyusb_is_reused(tmp_path):
     prepared = prepare_change(tmp_path, plan, server_factory=lambda p: FakeConfServer(p, effective))
     assert not prepared.add_tinyusb
     assert build_settings(ConfigPlan("usj"))["ESP_CONSOLE_SECONDARY_NONE"]
+
+
+@pytest.mark.parametrize(
+    ("contents", "mode"),
+    [
+        ("CONFIG_BLE_LOG_ENABLED=y\nCONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y", "usj"),
+        ("CONFIG_BLE_LOG_ENABLED=y\r\nCONFIG_BLE_LOG_PRPH_USB=y", "otg"),
+        ("# CONFIG_BLE_LOG_ENABLED is not set\nCONFIG_BLE_LOG_PRPH_USB=y", None),
+        ("CONFIG_BLE_LOG_ENABLED=y\nCONFIG_BLE_LOG_PRPH_SPI_MASTER_HD=y", None),
+    ],
+)
+def test_configured_mode_reads_enabled_transport(tmp_path, contents, mode):
+    (tmp_path / "sdkconfig").write_bytes(contents.encode())
+    assert configured_mode(tmp_path) == mode

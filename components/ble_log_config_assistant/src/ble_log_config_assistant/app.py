@@ -19,7 +19,15 @@ from textual.widgets import Button, ContentSwitcher, Input, Label, LoadingIndica
 from textual_fspicker import SelectDirectory
 
 from . import __version__
-from .config import ConfigError, ConfigPlan, PreparedChange, apply_prepared, build_settings, prepare_change
+from .config import (
+    ConfigError,
+    ConfigPlan,
+    PreparedChange,
+    apply_prepared,
+    build_settings,
+    configured_mode,
+    prepare_change,
+)
 
 TEXT = {
     "zh": {
@@ -30,6 +38,7 @@ TEXT = {
         "browse": "浏览…",
         "transport": "选择传输方式",
         "transport_help": "选择目标板用于输出 BLE 日志的接口。",
+        "configured_mode": "工程当前配置：{mode}",
         "usj": "USB Serial/JTAG (USJ)",
         "otg": "USB OTG",
         "spi": "SPI 桥接器（SPI Bridge）",
@@ -79,6 +88,7 @@ TEXT = {
         "browse": "Browse…",
         "transport": "Choose transport",
         "transport_help": "Select the interface your board will use for BLE logs.",
+        "configured_mode": "Currently configured in this project: {mode}",
         "usj": "USB Serial/JTAG (USJ)",
         "otg": "USB OTG",
         "spi": "SPI Bridge",
@@ -183,6 +193,7 @@ class ConfigurationAssistant(App[None]):
         self.project = Path(project).expanduser().resolve()
         self.language_path = language_path
         self.language = load_language(language_path)
+        self.configured_mode: str | None = None
         self.page = 0
         self.prepared: PreparedChange | None = None
         self.applied = False
@@ -275,7 +286,6 @@ class ConfigurationAssistant(App[None]):
             "#project-title": "project",
             "#project-help": "project_help",
             "#transport-title": "transport",
-            "#transport-help": "transport_help",
             "#parameters-title": "parameters",
             "#uart-port-label": "uart_port",
             "#baudrate-label": "baudrate",
@@ -308,6 +318,10 @@ class ConfigurationAssistant(App[None]):
 
     def _sync_parameters(self) -> None:
         mode = self.query_one("#transport-select", Select).value
+        help_text = self.text("transport_help")
+        if self.configured_mode:
+            help_text = self.text("configured_mode").format(mode=self.text(self.configured_mode))
+        self.query_one("#transport-help", Static).update(help_text)
         self.query_one("#mode-hint", Static).update(self.text("summary_" + str(mode)))
         self.query_one("#uart-fields").display = mode == "uart"
         self.query_one("#spi-fields").display = mode == "spi"
@@ -326,6 +340,11 @@ class ConfigurationAssistant(App[None]):
             self.query_one(selector, Button).label = self.text(key)
 
     def _show_page(self, page: int) -> None:
+        if page == 2 and self.page < 2:
+            project = Path(self.query_one("#project-input", Input).value).expanduser()
+            self.configured_mode = configured_mode(project)
+            self.query_one("#transport-select", Select).value = self.configured_mode or "usj"
+            self._sync_parameters()
         self.page = page
         self.query_one(ContentSwitcher).current = PAGE_IDS[page]
         self._sync_navigation()
