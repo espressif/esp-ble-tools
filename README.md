@@ -1,5 +1,7 @@
 # ESP BLE Tools
 
+[English](./README.md) | [中文](./README_CN.md)
+
 ESP BLE Tools is a collection of host-side utilities that support ESP BLE development, debugging, validation, and log capture. Tools in this repository are organized under `components/` so each tool can keep its own source code, documentation, tests, and packaging scripts.
 
 ## Tools
