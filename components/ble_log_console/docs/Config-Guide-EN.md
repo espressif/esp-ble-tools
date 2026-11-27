@@ -24,12 +24,12 @@ This guide helps determine a usable BLE Log sdkconfig and wiring setup based on 
 
 Once you choose a peripheral, you can run an interactive wizard in your project’s **ESP-IDF terminal** instead of editing Kconfig options manually:
 
-1. Download the executable for your OS from the [BLE Log Configuration Assistant release page][ble-log-config-assistant] (on Linux, run `chmod +x` on first use).
-2. Open an **ESP-IDF terminal where `idf.py` is available** (for an unconfigured project, run `idf.py reconfigure` once first), launch the assistant, and select your firmware project directory.
+1. On Windows x64 or Ubuntu x86-64, open an ESP-IDF terminal in the root of your Bluetooth-enabled project. For an unconfigured project, run `idf.py reconfigure` first to generate `sdkconfig`.
+2. Run `idf.py ble-log-config-assistant` to open the current project. If your ESP-IDF checkout lacks the command, download the assistant from the [stable release][ble-log-config-assistant], launch it from the same terminal, and select the project directory (on Linux, run `chmod +x` first).
 3. Choose your target peripheral (USB OTG / USJ / SPI Bridge / UART), review the previewed diff, and click **Apply configuration**:
    - The wizard handles dependent settings automatically (enabling critical-only logs for UART, disabling the secondary console for USJ, checking duplicate SPI pins, and prompting for the TinyUSB dependency on USB OTG).
    - Before saving, it backs up the original file as `sdkconfig.bak.*` while preserving unrelated settings and comments.
-4. Build and flash the firmware as usual, complete the physical wiring, and proceed to [Capture verification](#verification).
+4. Build and flash the firmware as usual, connect the board, and run `idf.py ble-log-console` or open the downloaded Console executable. Continue with [Capture verification](#verification).
 
 > If running the assistant is inconvenient, or if you need wiring details and exact macro references, continue to the matching section below.
 

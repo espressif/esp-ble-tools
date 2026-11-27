@@ -12,19 +12,22 @@ BLE Log Console is a PC tool for receiving, displaying, and saving ESP BLE logs 
 | SPI Bridge | Connect the target’s SPI signals to a separate Bridge. Select **SPI Bridge** and its port. |
 | UART | Select **UART**, the adapter port, and the baud rate configured in firmware. |
 
-> **Simplify firmware setup:** Once you choose the output peripheral, you can run the [BLE Log Configuration Assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) wizard in your project’s **ESP-IDF terminal** to validate and apply the matching `sdkconfig` settings automatically (with backup), then build, flash, and record with **BLE Log Console**.
-
 ## Supported Platforms
 
 - Windows (`x86_64`)
 - Linux (`x86_64`)
 - macOS (`x86_64`, `arm64`, run from source)
 
-## Download
+## Launch from ESP-IDF
 
-Download the latest stable tool package from GitHub Release:
+On Windows x64 or Ubuntu x86-64, open an ESP-IDF terminal in the root of a Bluetooth-enabled project. Run the command for your task.
 
-[BLE Log Console stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+| Task | Command |
+| --- | --- |
+| Configure BLE Log output in the firmware | `idf.py ble-log-config-assistant` |
+| Record logs from a flashed device | `idf.py ble-log-console` |
+
+Each command checks the stable release online, downloads it to the project root if needed, and starts the tool. If your ESP-IDF checkout lacks these commands, download the [Configuration Assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) or [Console](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable) directly.
 
 ## Guides
 
@@ -43,21 +46,10 @@ The [BLE Log intake skill](./docs/skills/ble-log-intake/SKILL.md) provides a que
 
 ## Quick Start
 
-1. Download the tool package for your operating system from the stable release page.
-2. Start the tool:
-
-```bash
-# Windows
-ble_log_console_windows_v1.1.1.exe
-
-# Linux
-chmod +x ./ble_log_console_ubuntu_v1.1.1
-./ble_log_console_ubuntu_v1.1.1
-```
-
-3. For direct USB, set **Transport** to **USB** and select the **USB OTG** or **USJ** port matching the firmware. The interface starts in English. Use the language selector at the top right to switch.
-4. Choose **Save to**. For compressed Host text, set **Database** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages as needed (**Console** is checked by default for UART only; display choices affect the screen only), then click **Connect**.
-5. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If you selected a database, Console copies it after recording ends. When the report lists `<recording-name>_database/`, include that folder with the logs.
+1. After flashing the configured firmware, run `idf.py ble-log-console` or open the downloaded Console executable.
+2. For direct USB, set **Transport** to **USB** and select the **USB OTG** or **USJ** port matching the firmware. The interface starts in English. Use the language selector at the top right to switch.
+3. Choose **Save to**. For compressed Host text, set **Database** to the directory containing `BLE_HOST_logs.json` from the flashed build. Select **Host** or **HCI** for live messages as needed (**Console** is checked by default for UART only; display choices affect the screen only), then click **Connect**.
+4. Wait for **RX** and **Frames** to increase before reproducing the issue. Click **Stop & Review** and check **Compressed Host text** if you need that output. If you selected a database, Console copies it after recording ends. When the report lists `<recording-name>_database/`, include that folder with the logs.
 
 SPI Bridge, USB OTG and USJ use CDC serial reception on every platform. If no Bridge CDC port is found, reconnect the device and refresh the port list; the tool does not switch to direct USB Bulk.
 

@@ -24,12 +24,12 @@
 
 选定外设后，可在工程的 **ESP-IDF 终端**中运行交互式向导，代替手动逐项修改 Kconfig：
 
-1. 从 [BLE Log 配置助手发布页][ble-log-config-assistant] 下载对应系统的可执行文件（Linux 首次运行需先执行 `chmod +x`）。
-2. 打开**可直接运行 `idf.py` 的 ESP-IDF 终端**（尚未生成过配置的工程请先运行一次 `idf.py reconfigure`），启动配置助手并选择固件工程目录。
+1. 在 Windows x64 或 Ubuntu x86-64 的 ESP-IDF 终端中，进入已启用蓝牙的工程根目录。首次配置工程时，先运行 `idf.py reconfigure` 生成 `sdkconfig`。
+2. 运行 `idf.py ble-log-config-assistant`，助手会打开当前工程。如果 ESP-IDF 没有这条命令，可从[稳定版发布页][ble-log-config-assistant]下载助手，在同一终端启动并选择工程目录（Linux 首次运行需先执行 `chmod +x`）。
 3. 在向导中选择所用的外设接口（USB OTG / USJ / SPI Bridge / UART），核对变更预览后点击 **应用配置（Apply configuration）**：
    - 工具会自动处理联动配置（如 UART 启用精简日志、USJ 关闭第二控制台、SPI 检查重复引脚、USB OTG 提示添加 TinyUSB 依赖）。
    - 保存前自动将原配置备份为 `sdkconfig.bak.*`，并保留工程其余配置与注释。
-4. 按原有流程编译并烧录固件，完成硬件接线后进入 [采集验证](#verification)。
+4. 按原有流程编译并烧录固件，接好设备后运行 `idf.py ble-log-console` 或打开已下载的 Console，进入 [采集验证](#verification)。
 
 > 若不便运行该工具，或需确认硬件接线要求与具体配置宏说明，请继续阅读下方对应章节。
 

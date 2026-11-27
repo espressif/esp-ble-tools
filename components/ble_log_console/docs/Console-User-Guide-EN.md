@@ -29,8 +29,8 @@ BLE Log Console receives, displays, and saves BLE logs from an ESP device on you
 ### Step 2. Configure and flash the firmware (Configuration Assistant recommended)
 
 - **Already enabled in the flashed firmware?** Wire the board as shown and jump straight to [Step 3. Record the logs](#step-3-record).
-- **Need to update project settings? Use the [BLE Log Configuration Assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) to simplify setup** instead of hunting through `menuconfig` options manually:
-  1. Download the assistant from the release page (`chmod +x` on Linux on first use), open your project’s **ESP-IDF terminal** (where `idf.py` is available; run `idf.py reconfigure` once first for an unconfigured project), launch the assistant, and select your project directory.
+- **Need to change the firmware settings?** Use the BLE Log Configuration Assistant.
+  1. On Windows x64 or Ubuntu x86-64, open an ESP-IDF terminal in the root of your Bluetooth-enabled project and run `idf.py ble-log-config-assistant`. The assistant opens the current project. If your ESP-IDF checkout lacks the command, [download the assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable), launch it from the same terminal, and select the project directory.
   2. Choose the peripheral from Step 1 (USB OTG / USJ / SPI Bridge / UART). The assistant identifies the settings to change.
   3. Review the previewed diff and click **Apply configuration** (the original file is backed up automatically as `sdkconfig.bak.*`), then build, flash, and wire the board.
 - If running the assistant is inconvenient, click the firmware setup link in Step 1 for manual setup instructions.
@@ -43,9 +43,15 @@ Once the firmware is flashed and the board is wired, proceed to Section 1: [star
 
 ## 1. First Run and Recording
 
-### 1.1 Download and Start Console
+### 1.1 Start Console
 
-Download the package for your operating system from the [stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable). Before starting, close any serial monitor occupying the target port.
+Close any serial monitor using the target port. On Windows x64 or Ubuntu x86-64, run this command in an ESP-IDF terminal from the root of your Bluetooth-enabled project:
+
+```bash
+idf.py ble-log-console
+```
+
+The command checks the stable release online, downloads it to the project root if needed, and starts Console. If you only have the flashed board or your ESP-IDF checkout lacks the command, download the executable from the [stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable) and run it directly:
 
 - **Windows 10 or later:** Double-click `ble_log_console_windows_v1.1.1.exe`.
 - **Ubuntu 22.04 or later:** In the tool directory, run `chmod +x ./ble_log_console_ubuntu_v1.1.1`, then run `./ble_log_console_ubuntu_v1.1.1`.

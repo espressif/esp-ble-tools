@@ -29,8 +29,8 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 ### 第二步：配置并烧录固件（推荐使用配置助手）
 
 - **板上固件已开启对应输出？** 按接线图连好设备后，直接跳到[第三步：录制日志](#step-3-record)。
-- **需要修改工程配置？推荐用 [BLE Log 配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) 一键完成**，省去进 `menuconfig` 逐项查找配置宏：
-  1. 从发布页下载对应系统的配置助手（Linux 首次运行需 `chmod +x`），在工程的 **ESP-IDF 终端**（可直接运行 `idf.py`，且工程已生成 `sdkconfig`）中启动并选择工程目录。
+- **需要修改工程配置？** 使用 BLE Log 配置助手。
+  1. 在 Windows x64 或 Ubuntu x86-64 的 ESP-IDF 终端中，进入已启用蓝牙的工程根目录，运行 `idf.py ble-log-config-assistant`。助手会打开当前工程。如果 ESP-IDF 没有这个命令，可[下载配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable)，在同一终端启动并选择工程目录。
   2. 选择第一步确定的外设（USB OTG / USJ / SPI Bridge / UART）——助手会确定需要修改的配置项。
   3. 核对预览变更后点击 **应用配置（Apply configuration）**（原配置会自动备份），然后按原有流程编译、烧录。
 - 若环境不便运行配置助手，可点击第一步表格右侧的“固件配置”链接查看手动配置步骤。
@@ -43,9 +43,15 @@ BLE Log Console 用于在电脑端实时接收、查看并保存 ESP 设备的 B
 
 ## 1. 首次运行与录制
 
-### 1.1 下载并启动 Console
+### 1.1 启动 Console
 
-从[下载页](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)下载对应系统的工具，启动前先关闭占用目标端口的其他串口监视器。
+先关闭占用目标端口的串口监视器。在 Windows x64 或 Ubuntu x86-64 的 ESP-IDF 终端中，进入已启用蓝牙的工程根目录，运行：
+
+```bash
+idf.py ble-log-console
+```
+
+命令会联网检查稳定版，按需下载到工程根目录，然后启动 Console。如果手边只有已烧录的板子，或所用 ESP-IDF 没有这条命令，可从[稳定版发布页](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)下载后直接运行：
 
 - **Windows 10 及以上：** 双击 `ble_log_console_windows_v1.1.1.exe`。
 - **Ubuntu 22.04 及以上：** 在工具目录运行 `chmod +x ./ble_log_console_ubuntu_v1.1.1`，然后运行 `./ble_log_console_ubuntu_v1.1.1`。

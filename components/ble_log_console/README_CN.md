@@ -12,19 +12,22 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 | SPI Bridge | 目标板 SPI 接独立 Bridge，选 **SPI Bridge** 和 Bridge 端口。 |
 | UART | 选 **UART**、转串口端口和固件使用的波特率。 |
 
-> **简化固件配置：** 选定输出外设后，可在工程的 **ESP-IDF 终端**中运行 [BLE Log 配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) 向导，一键校验并写入对应的 `sdkconfig` 配置（自动备份原文件），编译烧录后再用 **BLE Log Console** 录制日志。
-
 ## 支持平台
 
 - Windows（`x86_64`）
 - Linux（`x86_64`）
 - macOS（`x86_64`、`arm64`，通过源码运行）
 
-## 工具下载
+## 从 ESP-IDF 启动
 
-请从 GitHub Release 下载最新稳定版工具包：
+在 Windows x64 或 Ubuntu x86-64 上，打开 ESP-IDF 终端，进入已启用蓝牙的工程根目录，按当前任务运行一条命令。
 
-[BLE Log Console 工具下载](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+| 要做什么 | 命令 |
+| --- | --- |
+| 配置固件的 BLE Log 输出 | `idf.py ble-log-config-assistant` |
+| 从已烧录的设备录制日志 | `idf.py ble-log-console` |
+
+每次启动会联网检查稳定版，按需下载到工程根目录并启动。如果所用 ESP-IDF 没有这些命令，可手动下载[配置助手](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable)或 [Console](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)。
 
 ## 使用文档
 
@@ -43,21 +46,10 @@ BLE Log Console 是一个用于实时接收、显示和保存 ESP BLE 日志的�
 
 ## 快速使用
 
-1. 从稳定版 Release 页面下载对应操作系统的工具包。
-2. 启动工具：
-
-```bash
-# Windows
-ble_log_console_windows_v1.1.1.exe
-
-# Linux
-chmod +x ./ble_log_console_ubuntu_v1.1.1
-./ble_log_console_ubuntu_v1.1.1
-```
-
-3. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
-4. 选择 **保存目录**。需要压缩 Host 文本时，在 **Database** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。按需勾选 **Host** 或 **HCI** 实时显示（仅 UART 默认勾选 **Console**；显示选择只影响屏幕），然后点击 **连接**。
-5. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了 Database 时，工具会在录制结束后复制 Database。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
+1. 配置并烧录固件后，运行 `idf.py ble-log-console`，或打开已下载的 Console。
+2. USB 直连时，在 **接收方式** 选 **USB**，再选与固件一致的 **USB OTG** 或 **USJ** 端口。界面默认英文，可在右上角切换中文。
+3. 选择 **保存目录**。需要压缩 Host 文本时，在 **Database** 选择本次固件构建中包含 `BLE_HOST_logs.json` 的目录。按需勾选 **Host** 或 **HCI** 实时显示（仅 UART 默认勾选 **Console**；显示选择只影响屏幕），然后点击 **连接**。
+4. 确认 **RX** 和 **Frames** 持续增加后再触发问题。点击 **Stop & Review** 查看报告。需要 Host 文本时，查看「压缩 Host 文本」一项。选了 Database 时，工具会在录制结束后复制 Database。报告列出 `<录制名>_database/` 后，就可以把它和日志一起打包。
 
 SPI Bridge、USB OTG、USJ 在各平台统一使用 CDC 串口接收。没有 Bridge CDC 端口时，请重新连接设备并刷新端口列表；工具不再切换到直接 USB Bulk。
 
