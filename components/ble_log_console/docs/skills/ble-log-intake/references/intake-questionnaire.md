@@ -6,7 +6,7 @@ Use this questionnaire to determine the log transport, sdkconfig, and wiring, an
 
 | Current situation | Details |
 | --- | --- |
-| Transport | Undecided / SPI / UART / USJ |
+| Transport | Undecided / USB OTG / USJ / SPI Bridge / UART |
 | Status | Information incomplete / Configured, pending trial / Verified |
 | Information still needed this round | To be filled in |
 
@@ -23,17 +23,20 @@ Reuse information available in the project or previous communication.
 
 ## 2. Transport Selection
 
-Prefer SPI. When SPI cannot be implemented, assess an onboard UART first, then USJ if the firmware offers it, then an external USB-to-UART adapter.
+Use the [configuration guide’s selection table](../../../Config-Guide-EN.md#quick-selection). Check direct USB first, then SPI Bridge, then UART. Fill in the section for the selected connection.
+
+## 3. Direct USB Information (USB OTG or USJ)
 
 | Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
-| SPI wiring access | Three signal wires and GND are needed. If impractical, state whether connectors are inaccessible, soldering or disassembly is needed, disassembly is prohibited, or connection points are unknown. | To be filled in |
-| Bridge availability | Existing SPI USB Bridge, available separate ESP32P4 development board, equipment that can be prepared, or unavailable; used to assess receiver readiness. | To be filled in |
-| Reason for UART or USJ (UART or USJ only) | For example, extra wiring is impossible, SPI resources conflict, or no Bridge is available; records the selection rationale. | To be filled in |
+| Board and PC ports | Identify the board’s native USB connector and the matching PC port. Console lists it under **USB** as **USB OTG** (`303A:10B1`) or **USJ** (`303A:1001`). | To be filled in |
+| Firmware support | Check the project configuration for the selected peripheral. USB OTG uses `CONFIG_BLE_LOG_PRPH_USB` with TinyUSB CDC. USJ uses `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`. | To be filled in |
+| Port usage (USJ only) | Check whether the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG and whether it can release the port while the issue remains reproducible. | To be filled in |
+| Connection behavior (USJ only) | During the trial, record whether opening the port resets the board on this PC. | After capture |
 
-## 3. SPI Information (SPI Only)
+## 4. SPI Information (SPI Bridge Only)
 
-Use one wiring record for all three GPIOs. Mark this section “Not applicable” when SPI is not selected.
+Confirm that a separate Bridge is available and the three signals and GND are accessible.
 
 | Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
@@ -46,9 +49,9 @@ Use one wiring record for all three GPIOs. Mark this section “Not applicable�
 | GPIO availability evidence | Schematic, hardware confirmation, or wiring documentation showing both availability and physical access. sdkconfig values alone do not confirm wiring. | To be filled in |
 | Bridge status | Board model, matching firmware version, and whether it has been flashed; confirms pin definitions and receiver readiness. | To be filled in |
 
-## 4. UART Information (UART Only)
+## 5. UART Information (UART Only)
 
-Prefer an onboard USB-to-UART converter. Either model documentation or probe results can support baud rate selection. Mark this section “Not applicable” when UART is not selected.
+Prefer an onboard USB-to-UART converter. Either model documentation or probe results can support baud rate selection.
 
 | Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
@@ -62,18 +65,6 @@ Prefer an onboard USB-to-UART converter. Either model documentation or probe res
 | UART changes (if conflicting) | Whether its existing role can be paused without affecting reproduction. A conflicting UART that cannot be freed cannot simply be switched to logging. | To be filled in |
 
 > `ACCEPTED` from the probe only means the driver accepted the request. It proves neither stable transfer nor that the highest rate should be chosen. Verify the final rate with a trial recording.
-
-## 5. USJ Information (USJ Only)
-
-USJ requires firmware that offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG`. Mark this section “Not applicable” when USJ is not selected, or when the firmware does not offer the option.
-
-| Item | Instructions and purpose | Response/material |
-| --- | --- | --- |
-| Firmware option | Whether the ESP-IDF branch used for this firmware offers `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` for this chip; technical support checks this from the SDK version. If it is absent, USJ is unavailable. | To be filled in |
-| USB Serial/JTAG users | Whether the primary or secondary console, esp_trace, or OpenThread RCP uses USB Serial/JTAG, and whether moving them off the port keeps the problem reproducible. | To be filled in |
-| PC connection | Whether the PC connects to the chip's built-in USB port, the PC port name such as COM5 or `/dev/ttyACM0`, and its USB ID (`303A:1001`). A USB connector behind a USB-to-UART converter is UART. | To be filled in |
-| Reset on connection | Whether opening the port on this PC resets the board; connect only when the application can be interrupted. | After capture |
-| Capture PC operating system | Windows/Linux and version; used to investigate driver or port issues. | To be filled in |
 
 ## 6. Special Scenarios (As Needed)
 
@@ -90,7 +81,7 @@ Use this section when technical support needs to assess buffers, log levels, or 
 | Item | Instructions and purpose | Response/material |
 | --- | --- | --- |
 | Effective configuration | sdkconfig and firmware version used for this build; confirms that the intended configuration was applied and flashed. | After capture |
-| Tool settings | BLE Log Console version, SPI/UART/USJ mode, receiver port, and UART baud rate where applicable; checks that both ends agree. | After capture |
+| Tool settings | BLE Log Console version, selected transport, receiver port, and UART baud rate where applicable; checks that both ends agree. | After capture |
 | Reception | Whether RX and Frames keep increasing; distinguishes no input from parsing failure. | After capture |
 | Application and reproduction | Whether normal operation continues, whether the problem occurred, its time, and actions taken; assesses whether logging changed the conditions. | After capture |
 | Quality report | Complete `_report.txt` and matching recording files; assesses capture quality beyond visible incoming data. | After capture |
@@ -101,10 +92,10 @@ Locations below are search hints, not confirmation that files exist. Record the 
 
 | File/information | Required when | Likely location / how to find it | Actual path/filename and status |
 | --- | --- | --- | --- |
-| Raw `ble_log_*.bin` | UART, USJ, and SPI; include every part of the same recording. | Save directory selected at recording start; defaults to `<tool-start-directory>/logs/`. The tool prints actual paths on exit. | After capture |
-| `ble_log_*_report.txt` | UART, USJ, and SPI; must match the `.bin`. | Same recording directory as the `.bin`. | After capture |
-| `ble_log_*_console.log` | Include if generated; currently absent for SPI, and generated for UART and USJ only when ordinary text is received: redirected ordinary logs or text outside BLE Log frames. | Same recording directory as the `.bin`; it may legitimately be absent. | After capture |
-| Entire `ble_log_database/` directory | Required for compressed logs. | Usually `<firmware-project>/build/ble_log/ble_log_database/`; for a custom build directory, `<build-directory>/ble_log/ble_log_database/`. If customized, read `log_config.db_path` in `<build-directory>/ble_log/module_info.yml` and resolve it relative to the build directory. This is a firmware build artifact, not a recording-directory output. | After capture |
+| Raw `ble_log_*.bin` | Every recording. Include every part of a split recording. | Save directory selected at recording start; defaults to `<tool-start-directory>/logs/`. The tool prints actual paths on exit. | After capture |
+| `ble_log_*_report.txt` | Every recording. Include the report matching the `.bin`. | Same recording directory as the `.bin`. | After capture |
+| `ble_log_*_console.log` | Include when relevant to the issue. On UART and USJ, this file can also contain device console text. | Same recording directory as the `.bin`. | After capture |
+| Log database files (`*_logs.json`) | Required for compressed logs. | Use the `<recording-name>_database/` path in the report. If the copy is unavailable, collect the database files from the flashed build, usually `<firmware-project>/build/ble_log/ble_log_database/`; for a custom build directory, `<build-directory>/ble_log/ble_log_database/`. If customized, read `log_config.db_path` in `<build-directory>/ble_log/module_info.yml` and resolve it relative to the build directory. | After capture |
 | Database/firmware match | Database must come from the same build as the flashed firmware. | Record the original build or archived artifact location and firmware identity. A directory name alone cannot establish a match; a rebuild after source/configuration changes is not a substitute. | After capture |
 | sdkconfig | Actual configuration of the captured firmware. | Usually `<firmware-project>/sdkconfig`; if the build overrides `SDKCONFIG`, use that path from the build invocation or `<build-directory>/CMakeCache.txt`. Defaults files alone do not establish the effective configuration. | After capture |
 | Wiring and version record | Actual target wiring and SDK/tool/Bridge versions where applicable. | Reuse this questionnaire and existing project/support records. No automatically generated directory is assumed; state where the completed record is saved. | After capture |

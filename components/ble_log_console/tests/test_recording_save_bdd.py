@@ -16,7 +16,7 @@ from src.backend.models import BleLogSource, CaptureVerdict, TransportConfig, Tr
 from src.backend.pipeline import run_capture_pipeline_inprocess
 from src.frontend.capture_report import build_capture_report
 
-from tests.helpers import BytesReader, build_frame, xor_checksum
+from tests.helpers import BytesReader, build_frame, version_info_payload, xor_checksum
 
 scenarios("features/recording_save.feature")
 
@@ -24,6 +24,7 @@ scenarios("features/recording_save.feature")
 @given("Console 收到三个连续的 BLE Log 帧", target_fixture="recording")
 def recording(tmp_path: Path) -> SimpleNamespace:
     frames = [build_frame(b"log", int(BleLogSource.LL_TASK), sn, xor_checksum) for sn in range(3)]
+    frames[0] = build_frame(version_info_payload(0, version=6), 0, 0, xor_checksum)
     return SimpleNamespace(frames=frames, tmp_path=tmp_path, opened=[], report=None)
 
 

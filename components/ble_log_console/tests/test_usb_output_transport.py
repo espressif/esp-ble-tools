@@ -195,7 +195,9 @@ class TestOpenErrors:
             (serial.SerialException(errno.ENOENT, "No such file or directory"), "Re-plug"),
         ],
     )
-    def test_open_error_names_an_action(self, error: serial.SerialException, expected: str) -> None:
+    def test_open_error_names_an_action(
+        self, error: serial.SerialException, expected: str, linux_serial_platform
+    ) -> None:
         raised = UsbOutputTransport("/dev/ttyACM0", 3_000_000)._open_error(error)
 
         assert isinstance(raised, RuntimeError)

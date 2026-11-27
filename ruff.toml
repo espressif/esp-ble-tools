@@ -29,7 +29,7 @@ ignore = [
 # not guaranteed; the isinstance guards raise RuntimeError on purpose
 # (the device is absent or misconfigured, not the argument type), and
 # enumeration skips unreadable devices.
-"components/ble_log_console/src/backend/support/transport/spi_usb_bridge_transport.py" = ["S112", "TRY004"]
+"components/ble_log_console/tools/spi_bulk_transport.py" = ["S112", "TRY004"]
 # Test doubles deliberately keep class-level mutable state, nest `with`
 # blocks for setup/act phases, and assert broad failures.
 "**/tests/**" = ["B017", "RUF012", "SIM117"]

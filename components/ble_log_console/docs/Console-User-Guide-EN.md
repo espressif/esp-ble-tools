@@ -1,55 +1,225 @@
 # BLE Log Console User Guide
-Version: v1.1.0
+Version: v1.1.1
 
 [中文](Console-User-Guide-CN.md) | [English](Console-User-Guide-EN.md)
 
-> If the transport, sdkconfig, or wiring has not been determined, start with the [BLE Log Configuration Guide](Config-Guide-EN.md).
-
 ## Introduction
 
-BLE Log Console is a terminal tool for receiving, displaying, and saving ESP BLE logs in real time. It supports the UART, SPI Bridge, USJ (the chip's built-in USB Serial/JTAG port), and USB Output transport modes. This guide walks through UART and SPI Bridge. [4.2.1](#421-select-the-mode-and-port) explains how to select USJ, and the [Configuration Guide](Config-Guide-EN.md#usj) covers its firmware setup.
+BLE Log Console receives, displays, and saves BLE logs from an ESP device on your computer. You can observe live Host, HCI, and serial output during recording; after you stop, the tool saves the raw data (`.bin`), decoded log files, and a quality report in the selected directory.
 
-**Before first use, download the latest stable BLE Log Console tool package:**
+[Download the stable release of BLE Log Console (Windows / Linux)](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
 
-> [Download BLE Log Console](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable)
+## Preparation
 
-## 1. Preparation
+### Step 1. Choose the board’s log output peripheral
 
-Before starting, confirm the following three items: BLE Log is enabled in the firmware, the hardware is wired correctly, and the PC-side tool can run.
+**First confirm which peripheral on your board will send BLE Log data.** Pick one option below—this determines the firmware configuration, wiring, and transport you select in Console. If the board is already flashed, verify which output its firmware enables.
 
-Jump directly to the transport mode you want to use:
+| Peripheral on the board | When to choose it | Setup instructions |
+| --- | --- | --- |
+| **USB Serial/JTAG (USJ)** | The board has a USJ connector or exposes its D+ and D− signals. The firmware supports log output over USJ. | [USJ firmware setup](#22-usj-firmware-configuration) · [Direct USB wiring](#usb-direct) |
+| **USB OTG** | The board has a USB OTG connector or exposes its D+ and D− signals. The firmware supports log output over TinyUSB CDC. | [USB OTG firmware setup](#23-usb-otg-firmware-configuration) · [Direct USB wiring](#usb-direct) |
+| **SPI** | The target has a free SPI peripheral, you can reach MOSI, SCLK, CS, and GND, and you have a separate SPI Bridge. | [SPI firmware setup](#31-firmware-configuration) · [Bridge setup and wiring](#3-spi-bridge-mode) |
+| **UART** | The board has an available USB-to-UART adapter, or you can wire UART TX and GND to an external adapter. | [UART pins and baud rate](#41-firmware-configuration) · [UART wiring](#4-uart-mode) |
 
-* [UART Mode](#2-uart-mode)
-* [SPI Bridge Mode](#3-spi-bridge-mode)
+> **Note:** Support for USB OTG and USJ varies by chip. Before choosing direct USB, check your chip model in the [support table in Section 2.1](#21-choose-usb-otg-or-usj). If you are unsure which peripheral to use, check connector and resource availability in the [Configuration Guide](Config-Guide-EN.md#quick-selection).
 
-## 2. UART Mode
+<a id="firmware-assistant"></a>
+
+### Step 2. Configure and flash the firmware (Configuration Assistant recommended)
+
+- **Already enabled in the flashed firmware?** Wire the board as shown and jump straight to [Step 3. Record the logs](#step-3-record).
+- **Need to update project settings? Use the [BLE Log Configuration Assistant](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_config_assistant_stable) to simplify setup** instead of hunting through `menuconfig` options manually:
+  1. Download the assistant from the release page (`chmod +x` on Linux on first use), open your project’s **ESP-IDF terminal** (where `idf.py` is available; run `idf.py reconfigure` once first for an unconfigured project), launch the assistant, and select your project directory.
+  2. Choose the peripheral from Step 1 (USB OTG / USJ / SPI Bridge / UART). The assistant identifies the settings to change.
+  3. Review the previewed diff and click **Apply configuration** (the original file is backed up automatically as `sdkconfig.bak.*`), then build, flash, and wire the board.
+- If running the assistant is inconvenient, click the firmware setup link in Step 1 for manual setup instructions.
+
+<a id="step-3-record"></a>
+
+### Step 3. Record the logs
+
+Once the firmware is flashed and the board is wired, proceed to Section 1: [start Console and connect to the port](#1-first-run-and-recording) → [verify reception before triggering the issue](#122-confirm-that-logs-are-being-received) → [stop recording and check the quality report](#13-stop-the-recording-and-check-the-result).
+
+## 1. First Run and Recording
+
+### 1.1 Download and Start Console
+
+Download the package for your operating system from the [stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable). Before starting, close any serial monitor occupying the target port.
+
+- **Windows 10 or later:** Double-click `ble_log_console_windows_v1.1.1.exe`.
+- **Ubuntu 22.04 or later:** In the tool directory, run `chmod +x ./ble_log_console_ubuntu_v1.1.1`, then run `./ble_log_console_ubuntu_v1.1.1`.
+
+### 1.2 Start a Recording
+
+<a id="select-port"></a>
+
+#### 1.2.1 Select the Mode and Port
+
+The setup screen appears when the application starts:
+
+<p align="center">
+  <img src="./figure/interactive-screen.png" alt="USB setup showing a USJ port, save directory, Database, and live display options" width="480">
+</p>
+
+The example shows a direct USB connection. Use the selector at the top right to switch languages; your settings are saved for future runs.
+
+1. Choose **Transport** and **Port** to match your wiring:
+   - [Direct USB](#usb-direct): Select **USB**, then choose the **USB OTG** or **USJ** port matching the firmware (no baud rate needed).
+   - [SPI bridge](#3-spi-bridge-mode): Select **SPI Bridge** and the Bridge port.
+   - [UART](#4-uart-mode): Select **UART** and the adapter port, then set the baud rate to match the firmware.
+2. Choose a writable directory under **Save to**. To decode compressed Host logs, set **Database** to the database folder generated by the flashed firmware build (by default `build/ble_log/ble_log_database/`, containing `BLE_HOST_logs.json`). Leave it empty to record raw data without decoding compressed Host text.
+   > Console remembers your previous directory; on first launch, it auto-fills `ble_log_database/` or `BLE_HOST_logs.json` if present in the working directory.
+3. Adjust **Live display** if needed (**Console** is checked by default for UART only, while **Host** and **HCI** start unchecked; this affects screen display only, not saved files), then click **Connect** to start recording.
+
+> With the board connected and the firmware running, click **Refresh** to update the port list. If [the port is missing or will not open](#faq-no-port), see Troubleshooting. On some systems, opening a USJ port may reset the board—test connecting once before reproducing the issue.
+
+#### 1.2.2 Confirm That Logs Are Being Received
+
+Check the status bar at the bottom of the recording screen. In this example, Console has received **244 B** and recognized **4 frames**.
+
+<p align="center">
+  <img src="./figure/log-screen.png" alt="Stop &amp; Review button above the status bar showing RX at 244 B and Frames at 4" width="760">
+</p>
+
+Watch `RX` (received bytes) and `Frames` (recognized frames) at the bottom of the screen:
+
+- **Both keep increasing:** Reception is working. Confirm there are no warnings before triggering the issue.
+- **RX stays at 0:** Check the selected port, cable, and firmware logging configuration.
+- **RX increases, but Frames does not:** Check that the transport mode and UART baud rate match the firmware.
+- **Repeated `PLAIN TEXT` or no-regular-log-frame warnings:** Check that BLE Log is enabled in firmware and routed to the selected port.
+
+> `Frames` includes firmware status frames, so an increasing count alone does not guarantee application logs were captured—always check the quality report before submitting. If a save error appears, resolve the storage issue and record again.
+
+<a id="console-log-files"></a>
+
+#### 1.2.3 Follow Live Logs
+
+| Selected before recording | What appears during recording |
+| --- | --- |
+| All boxes clear | Status, receive counters, and warnings only. Use RX and Frames to confirm reception. |
+| Host | BLE Host messages (including compressed Host text decoded live with the selected Database). Select Host alone to focus on stack activity. |
+| HCI | Live HCI traffic. Messages may scroll rapidly under heavy BLE load. |
+| Console (UART, checked by default) | Plain serial text printed by the device (such as boot logs). Clearing this box still saves the text to `_console.log` for review after recording. |
+
+Live logs use the computer’s receive time. Press `s` to pause/resume auto-scroll, `d` for statistics, or `h` for shortcuts. For HCI in device time or ordered Host logs, open the [recording files](#recording-files) after stopping. **Record Again** keeps your current display choices.
+
+### 1.3 Stop the Recording and Check the Result
+
+#### 1.3.1 Stop & Review
+
+Click **Stop & Review**, or press `q` / `Ctrl+C`. Console saves the data, runs the quality check, and displays the report.
+
+From the report screen, click **Record Again** to start another recording with the same settings, or exit the application.
+
+> Wait while `FINALIZING` is shown—closing the terminal window early may leave the data and report incomplete.
+
+#### 1.3.2 Check the Quality Report
+
+Check the **Verdict** at the top of the report:
+
+- **Ready to submit:** For **READY FOR ANALYSIS** or **SAVED WITH WARNINGS**, submit the `.bin` raw data together with the matching `_report.txt`.
+- **Record again:** For **CHECK CONFIGURATION**, verify the port and firmware settings first; for **RECORD AGAIN RECOMMENDED**, resolve the reported issue and record again.
+
+> If the device was already running before you connected, the start of the stream may contain buffered old logs. Console automatically detects and skips confirmed opening backlog when evaluating quality (or evaluates the full recording if the boundary cannot be confirmed), while keeping all received data in live display and in the raw `.bin` file.
+
+<p align="center">
+  <img src="./figure/report-screen.png" alt="A READY FOR ANALYSIS verdict at the top of the report means the recording can be submitted." width="760">
+</p>
+
+<a id="recording-files"></a>
+
+#### 1.3.3 Find and Submit Recording Files
+
+In the **Save to** directory, find the group of files sharing the same recording timestamp:
+
+**1. Files to submit to technical support**
+
+| File | Description |
+| --- | --- |
+| `.bin` and `_report.txt` | **Required.** Raw data and quality report from the same recording. Include every `part` file if the recording was split. |
+| `<recording-name>_database/` | **Required when Database is used.** Console copies `*_logs.json` into this folder in the background after stopping; **keep Console open and keep the source folder available** until the report lists the copy path, then include it in your package. |
+| `_console.log` | **As needed.** Include this file if the issue involves boot messages, crash dumps, or serial text. |
+
+**2. Decoded files for local review (generated automatically based on received log types)**
+
+| File | Description |
+| --- | --- |
+| `_host.log`, `_DECOMPRESSED_BLE_HOST.log` | Ordered plain Host text and Database-decoded compressed Host text (when opening backlog is confirmed, exported starting from the fresh interval). |
+| `_hci_btsnoop.log`, `_ll_hci_btsnoop.log` | Ordered host-side and controller-side HCI captures in device time (openable in Wireshark; starts from the fresh interval when opening backlog is confirmed, and may split across multiple initializations). |
+| `_hci.log` | Live HCI text transcript in computer receive time. |
+
+> A `.partial` suffix indicates an unfinished file. Check the save status in the report before submitting.
+
+<a id="usb-direct"></a>
+
+## 2. Direct USB (Recommended): USB OTG and USJ
 
 Device connection diagram:
 
 <p align="center">
-  <img src="./figure/uart-connection.png" alt="BLE UART device connection" style="width: 70%; max-width: 900px;">
+  <img src="./figure/usb-direct-connection.png" alt="USB OTG and USJ: PC connected directly to the device's native USB port" width="640">
 </p>
 
-### 2.1 Firmware Configuration
+**Connect to Native USB and leave UART empty.** The diagram shows a dual-port board. Check your board’s silkscreen and schematic to locate the connector wired to the chip’s native USB peripheral.
 
-- Enable `CONFIG_BT_LOG_CRITICAL_ONLY` in the existing project, and configure the related options as follows:
-  - `CONFIG_BLE_LOG_PRPH_UART_DMA=y`
-  - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT=0`
-  - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE=3000000`
-  - `CONFIG_BLE_LOG_PRPH_UART_DMA_TX_IO_NUM=0`
-- Confirm that UART TX is connected to the PC-side serial port RX.
+> Notes:
+> - Use a data-capable USB cable for an onboard USB port. If only pins or test pads are exposed, check the schematic for the selected peripheral’s D+ and D− signals and wire D+, D−, and GND accordingly (handle power and VBUS per board design). A USB port wired to an onboard USB-to-UART chip is for UART mode only.
+> - USB OTG and USJ use different chip peripherals. Although they share the wiring diagram above, not every chip supports both modes, and they may not share the same connector on a given board.
+
+<a id="21-choose-usb-output-or-usj"></a>
+
+### 2.1 Choose USB OTG or USJ
+
+Start with USJ if the board exposes it. The table lists the outputs supported by each chip. In Console, select **USB**, then pick the port labeled **USB OTG** or **USJ**.
+
+| Chip | USB OTG (maximum bus rate) | USJ (maximum bus rate) |
+| --- | --- | --- |
+| ESP32-S2 | 12 Mbit/s | Not supported |
+| ESP32-S3, ESP32-H4 | 12 Mbit/s | 12 Mbit/s |
+| ESP32-P4, ESP32-S31 | 480 Mbit/s | 12 Mbit/s |
+| ESP32-C3, ESP32-C5, ESP32-C6, ESP32-C61, ESP32-H2 | Not supported | 12 Mbit/s |
+
+Neither mode requires a baud rate. The table shows USB bus rates; verify actual log throughput with a trial recording and quality report.
+
+If the firmware on the board already uses the selected output, connect the USB data cable and go to [port selection](#select-port).
+
+<a id="23-usj-firmware-configuration"></a>
+
+### 2.2 USJ Firmware Configuration
+
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to configure USJ automatically**; to configure manually:
+
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
+  - `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG=y`
+  - `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y` (keep the primary console on UART0 or another non-USJ channel, and do not enable `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`)
+- Connect the chip’s native USJ port to your PC with a USB data cable.
 - Build and flash the firmware.
 
 > Configuration notes:
-> - `CONFIG_BLE_LOG_PRPH_UART_DMA_TX_IO_NUM` sets the GPIO corresponding to the **UART TX signal**. The default value is `0`.
-> - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` selects the UART used for BLE Log output. If serial-log forwarding is enabled in the firmware, regular console logs are also received by the tool. See [Viewing Console Logs](#console-log-files).
-> - If UART0 is already occupied by another function, such as command input, adjust `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` according to the actual hardware connection to avoid affecting existing functionality.
-> - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE` is the baud rate used by UART to output BLE Log data. A higher baud rate is recommended. Confirm that the PC-side serial port supports the selected rate, and make sure the baud rate in `ble_log_console` matches this value.
+> - If `CONFIG_BLE_LOG_PRPH_USB_SERIAL_JTAG` is hidden, confirm that your chip and ESP-IDF support USJ, keep `CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y`, and verify that no primary console, `esp_trace`, or OpenThread RCP occupies the port (see the [Configuration Guide](Config-Guide-EN.md#usj)).
+> - Once connected, the USJ port enumerates on the PC with USB ID `303A:1001`.
 
-### 2.2 Start the Application on the PC
+<a id="22-usb-output-firmware-configuration"></a>
+<a id="22-usb-otg-firmware-configuration"></a>
 
-- For Windows instructions, see [Windows System](#411-windows-system).
-- For Linux instructions, see [Linux System](#412-linux-system).
+### 2.3 USB OTG Firmware Configuration
+
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to add the TinyUSB dependency and configure USB OTG automatically**; to configure manually:
+
+- If your project does not yet include TinyUSB, run `idf.py add-dependency "espressif/esp_tinyusb^2.0.0"` from the project root.
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
+  - `CONFIG_BLE_LOG_PRPH_USB=y`
+- Connect the chip’s native USB OTG port to your PC with a USB data cable.
+- Build and flash the firmware.
+
+> Configuration notes:
+> - Enabling `CONFIG_BLE_LOG_PRPH_USB=y` automatically enables TinyUSB CDC with default buffer sizes. On older ESP-IDF versions that expose separate CDC buffer options, enable `CONFIG_TINYUSB_CDC_ENABLED=y` and adjust buffer sizes per build messages (see the [Configuration Guide](Config-Guide-EN.md#usb)).
+> - Once BLE Log starts on the device, the USB OTG port enumerates on the PC with USB ID `303A:10B1`.
+
+### 2.4 Start the Application on the PC
+
+Connect the matching native USB port with a data cable and select **USB → USJ** or **USB → USB OTG** in Console. [Return to port selection and continue recording](#select-port).
 
 ## 3. SPI Bridge Mode
 
@@ -60,170 +230,71 @@ ESP device  ->  BLE Log SPI USB Bridge  ->  PC
 ```
 
 <p align="center">
-  <img src="./figure/spi-bridge-connection.png" alt="BLE SPI Log device connection" style="width: 70%; max-width: 900px;">
+  <img src="./figure/spi-bridge-connection.png" alt="BLE SPI Log device connection" width="640">
 </p>
 
 **How do I get a Bridge device?**
 
-The Bridge device forwards **BLE SPI Log data generated by the target device** to the PC. An `ESP32P4` development board can currently be used for this purpose. You can get a Bridge device in either of the following ways:
+The SPI Bridge forwards SPI logs from the target board to your PC using a separate `ESP32P4` development board:
 
-* Flash it yourself: If you have an `ESP32P4` development board, connect it through a USB serial port and flash the firmware on the [Bridge firmware flashing](https://espressif.github.io/esp-launchpad/?flashConfigURL=https://dl.espressif.com/ble/ble_log/spi_bridge_bin/launchpad.toml&crossDomain=true) page. After flashing, it can be used as a Bridge device.
+* **Flash your own:** Connect a spare `ESP32P4` board via its USB serial port and flash it on the [online Bridge flashing page](https://espressif.github.io/esp-launchpad/?flashConfigURL=https://dl.espressif.com/ble/ble_log/spi_bridge_bin/launchpad.toml&crossDomain=true) (or [download the binary manually](https://github.com/espressif/esp-ble-tools/releases/download/ble_log_bridge_stable/ble_log_bridge_esp32p4.bin) if web flashing is unavailable).
+* **Purchase or request one:** If you do not have a spare `ESP32P4` board, purchase one through official channels or contact technical support for a loaner unit.
 
-* Purchase or request one: If you do not have an `ESP32P4` device that can be used as a Bridge, you can purchase one through official channels or request a trial device from technical support.
-
-> Notes:
-> * The Bridge device is an additional adapter device. It cannot be the same device that generates BLE Log data.
-> * If you cannot flash the board using the page above, download the firmware from [Bridge firmware manual download](https://github.com/espressif/esp-ble-tools/releases/download/ble_log_bridge_stable/ble_log_bridge_esp32p4.bin) and flash it manually.
+> Note: The Bridge must be a separate adapter board—it cannot be the target device under test.
 
 ### 3.1 Firmware Configuration
 
-- Enable `CONFIG_BLE_LOG_ENABLED` in the target device project that generates BLE Log, and also enable the following related option:
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to set SPI pins and check for duplicate GPIOs automatically**; to configure manually:
+
+- Enable `CONFIG_BLE_LOG_ENABLED=y` in your project, and configure:
   - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA=y`
-- Configure the following GPIO numbers according to the actual circuit:
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM`
-  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM`
-- Connect the corresponding GPIOs to the SPI Bridge:
-  - `MOSI_IO_NUM` to `Bridge IO 4`
-  - `SCLK_IO_NUM` to `Bridge IO 5`
-  - `DMA_CS_IO_NUM` to `Bridge IO 6`
-  - Connect the GND pins of both devices
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_MOSI_IO_NUM=<target MOSI GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_SCLK_IO_NUM=<target SCLK GPIO>`
+  - `CONFIG_BLE_LOG_PRPH_SPI_MASTER_DMA_CS_IO_NUM=<target CS GPIO>`
+- Wire the target board to the SPI Bridge (`MOSI` → `Bridge IO 4`, `SCLK` → `Bridge IO 5`, `CS` → `Bridge IO 6`, and shared `GND` between both boards).
 - Build and flash the firmware.
 
-> Notes:
-> - **The GPIO configuration above must match the actual wiring**.
-> - If the GND pins of the two devices are not connected correctly, data reception may be abnormal.
-> - `CONFIG_BLE_LOG_ENABLED` is the global BLE Log switch. If it is not enabled, the PC side will not receive BLE log data.
+> Configuration notes:
+> - Configured GPIO numbers must match the physical wiring, and both boards must share a solid GND connection to avoid reception errors.
+> - The current implementation uses SPI Controller 2; verify that no existing SPI peripheral in your project conflicts with it (see the [Configuration Guide](Config-Guide-EN.md#spi)).
 
 ### 3.2 Start the Application on the PC
 
-- For Windows instructions, see [Windows System](#411-windows-system).
-- For Linux instructions, see [Linux System](#412-linux-system).
+[Return to port selection and continue recording](#select-port).
 
-## 4. First Run and Recording
+## 4. UART Mode
 
-### 4.1 Get the Tool
-
-The tool package provides applications for different operating systems. Download the latest tool package from the [BLE Log Console stable release](https://github.com/espressif/esp-ble-tools/releases/tag/ble_log_console_stable) page.
-
-#### 4.1.1 Windows System
-
-On Windows, use `ble_log_console_windows_v1.1.0.exe`. The recommended way to start it is to double-click the icon.
-
-> Note: This tool package currently supports `Windows 10` and later.
-
-#### 4.1.2 Linux System
-
-On Linux, use `ble_log_console_ubuntu_v1.1.0`. If the file does not have execute permission, enter the corresponding directory first and run:
-
-```bash
-chmod +x ./ble_log_console_ubuntu_v1.1.0
-```
-
-If you plan to use SPI Bridge on Linux, run the following command before the first use:
-
-```bash
-sudo ./ble_log_console_ubuntu_v1.1.0
-```
-
-This command installs the USB access permission rules required by SPI Bridge. After the command finishes, unplug and reconnect the SPI Bridge device once. After that, `sudo` is no longer required for normal use.
-
-Then run the following command to start the program:
-
-```bash
-./ble_log_console_ubuntu_v1.1.0
-```
-
-> Note: This tool package currently supports `Ubuntu 22.04` and later.
-
-### 4.2 Start a Recording
-
-#### 4.2.1 Select the Mode and Port
-
-After startup, the application displays the following screen:
+Device connection diagram:
 
 <p align="center">
-  <img src="./figure/interactive-screen.png" alt="BLE Log Console interactive interface" style="width: 60%; max-width: 900px;">
+  <img src="./figure/uart-connection.png" alt="BLE UART device connection" width="640">
 </p>
 
-First, choose the display language for long messages such as warnings and quality reports, then select the transport mode. Select UART to receive logs through a serial port, or SPI Bridge to receive logs through an SPI Bridge device. Select USJ when the firmware sends BLE Log through the chip's built-in USB Serial/JTAG port; only ports with USB ID `303A:1001` are listed, and the baud rate does not apply. After the mode is selected, the application automatically scans the available ports.
+**Connect to UART and leave Native USB empty.** The diagram shows an onboard USB-to-UART port; check your board’s silkscreen and schematic for the connector location.
 
-> In USJ mode, the DTR and RTS lines control the chip's reset and boot mode. While opening the port, the tool releases RTS before DTR, the same order ESP-IDF Monitor uses to avoid a reset, then leaves both lines released, never changes them afterwards, and cannot reset the target with `r`. The operating system or its USB driver can still change these lines while opening the device, so check on your PC whether connecting resets the board.
+### 4.1 Firmware Configuration
 
-Then select the port. In UART mode, you also need to select the baud rate, which must match the firmware configuration. Next, specify the log save path. By default, logs are saved to the `logs` directory under the current directory; if this directory does not exist, the application creates it automatically. Finally, click **Connect** to start receiving logs.
+**We recommend running the [BLE Log Configuration Assistant](#firmware-assistant) in your ESP-IDF terminal to enable critical-only logging and UART settings automatically**; to configure manually:
 
-If the tool cannot create the log directory or reserve a recording file, it returns to setup without starting a recording. The screen keeps the attempted mode, port, UART baud rate, and directory, and displays the storage error. Choose another log directory or resolve the storage error, then click **Connect** again. You can also press `q` to exit. This recovery also applies when you start with a port specified on the command line.
+- Enable `CONFIG_BT_LOG_CRITICAL_ONLY=y` in your project (enables reduced-volume logging suited to UART bandwidth and automatically turns on `CONFIG_BLE_LOG_ENABLED`), and configure:
+  - `CONFIG_BLE_LOG_PRPH_UART_DMA=y`
+  - `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT=0`
+  - `CONFIG_BLE_LOG_PRPH_UART_DMA_BAUD_RATE=3000000`
+  - `CONFIG_BLE_LOG_PRPH_UART_DMA_TX_IO_NUM=0`
+- Confirm that target UART TX is wired to PC-side serial RX (with shared GND when using an external adapter).
+- Build and flash the firmware.
 
-#### 4.2.2 Confirm That Logs Are Being Received
+> Configuration notes:
+> - Adjust `CONFIG_BLE_LOG_PRPH_UART_DMA_PORT` and `TX_IO_NUM` to match your hardware. Reusing UART0 forwards regular serial console output to Console as well (see [Follow Live Logs](#console-log-files)); if UART0 is used for application commands or communication, choose another free UART.
+> - Use a high baud rate such as `3000000` when supported by your USB-to-UART adapter, and set the exact same baud rate in Console (see the [Configuration Guide](Config-Guide-EN.md#uart)).
 
-The recording screen is shown below:
+### 4.2 Start the Application on the PC
 
-<p align="center">
-  <img src="./figure/log-screen.png" alt="BLE Log Console log interface" style="width: 70%; max-width: 900px;">
-</p>
+[Return to port selection and continue recording](#select-port).
 
-During recording, first check `RX` and `Frames` at the bottom of the screen. `RX` is the amount of data received by the PC. `Frames` is the number of valid frames recognized by the tool, including the firmware's periodic status records (INTERNAL frames) as well as regular log frames.
+## 5. Optional: Run Console from Source
 
-- **Normal:** Both `RX` and `Frames` keep increasing, which means the tool is receiving and recognizing logs normally.
-- **No data received:** `RX` remains 0. The tool shows a warning every 10 seconds. Check the port, cable, and firmware logging configuration.
-- **Received data cannot be decoded:** `RX` increases, but no regular log frames are decoded for 10 seconds; `Frames` usually remains 0 or stops increasing. The tool shows a warning every 10 seconds. Stop the recording and check the transport mode, UART baud rate, firmware configuration, and wiring instead of continuing an unusable recording.
-- **Plain text instead of BLE Log (UART and USJ):** The status bar shows `PLAIN TEXT`, and a warning appears at once, then every 10 seconds while the text continues. The text is shown, and recording continues. Plain text usually means that the firmware does not send BLE Log to this port. Text at startup, such as boot messages, is expected; the status changes to `BLE LOG` when BLE Log data arrives.
-- **BLE Log identified without regular frames (UART and USJ):** The status bar shows `BLE LOG`, and `Frames` can keep increasing because the firmware's periodic status records are counted too. The warning that no regular log frames were decoded, and the final quality report, show that the recording has no log data to analyze. Check the firmware log configuration instead of the transport.
-
-> During high traffic, the screen may update more slowly, but the tool still gives priority to saving data. If saving fails, the screen shows an explicit error.
-
-<a id="console-log-files"></a>
-
-#### 4.2.3 View Console Logs
-
-When serial-log forwarding is enabled in the firmware, regular console logs that would normally appear on UART0 in a serial monitor are sent to BLE Log Console together with BLE Log data. The tool displays them in the log area and automatically saves them in the selected log directory. The `_console.log` file is created only when the tool actually receives console-log content.
-
-The first line of each group of console log messages includes the PC receive time, for example `[15:14:54.367]`. When saving the file, the tool removes color and other terminal-control characters and normalizes line endings without modifying the original `.bin` file. If `_console.log` cannot be written or synchronized to storage, the tool warns once and stops writing that file. The log area continues displaying text. This error does not itself stop raw recording. The quality report states that the console log is incomplete and separately reports any raw recording failure. If writing or synchronizing fails and closing the file also fails, the warning and report retain the first error.
-
-In UART and USJ modes, data that is not part of any BLE Log frame, such as ROM boot messages or a panic dump, is also shown and saved to `_console.log` between `Undecoded data` and `End of undecoded data` markers. Only printable text is kept. A text line appears on screen when it ends, when BLE Log data follows it, or when it reaches 16 KiB, so a screen refresh does not split it. A partial frame that may still complete is not shown early; the remaining undecoded tail is shown once when recording stops. This text does not count as log frames.
-
-### 4.3 Stop the Recording and Check the Result
-
-#### 4.3.1 Stop & Review
-
-To end a recording, click **Stop & Review**, or press `q` / `Ctrl+C`. The tool first stops reception and saves the remaining data, then waits up to 20 seconds for the quality check before displaying the report. It does not exit immediately. From the report, you can record again with the same configuration or exit.
-
-If **Record Again** cannot reserve the next recording file, setup displays the storage error and lets you change the directory before retrying. The previous recording files, saved paths, report, and log display remain unchanged until a new file is reserved successfully. A refused start does not create a new quality report.
-
-> Note: While `FINALIZING` is displayed, wait for the tool to finish saving. Closing the terminal window directly may leave the final data and quality report incomplete.
-
-#### 4.3.2 Check the Quality Report
-
-**Always check the recording quality report before sending logs.** The tool shows one of four conclusions:
-
-- `READY FOR ANALYSIS`: The data was saved successfully and can be decoded. It is ready to submit for analysis.
-- `SAVED WITH WARNINGS`: The data was saved, but the recording may contain an interruption, missing data, or a condition that could not be verified. The files can still be submitted to our technical support.
-- `CHECK CONFIGURATION`: No valid log frames were recorded. **Do not submit these files.** Check the transport mode, port, UART baud rate, wiring, and firmware logging configuration, then record again.
-- `RECORD AGAIN RECOMMENDED`: Valid log frames were recorded, but the data could not be saved correctly or the detected loss rate was high. **Do not submit these files directly.** Resolve the save or transport problem and record again. If this happens repeatedly, contact technical support for assessment.
-
-Only files marked `READY FOR ANALYSIS` or `SAVED WITH WARNINGS` should be submitted directly. If either of the other conclusions appears repeatedly, contact technical support first and provide the matching `report.txt` and `.bin` files when requested for troubleshooting.
-
-In UART and USJ modes, the report also states the identified stream content: plain console text, BLE Log, or unrecognized data, together with how much parsed data was outside BLE Log frames. Identification describes only the data that the quality check parsed. Plain text and data received after BLE Log was identified add a warning to any conclusion. A frame that is cut off when recording stops is normal: its bytes are listed as trailing carried bytes and do not add this warning. Bytes outside BLE Log frames are written to the `.bin` file rather than to the console log, which holds at most their printable text; a write failure can leave them out of the file, and the quality report states whether the raw recording was confirmed complete. Identifying BLE Log alone does not make a recording ready: without regular log frames, the conclusion is still `CHECK CONFIGURATION`, and the recommendation asks you to check the firmware log configuration. For plain text, the recommendation asks you to check that the firmware sends BLE Log to this port. The recommendation mentions the baud rate only in UART mode.
-
-#### 4.3.3 Find and Submit Recording Files
-
-Recording files are saved to the log directory selected at startup. If the save path is not changed, they are saved to the `logs` directory under the current directory. File names are generated from the start time:
-
-```text
-ble_log_YYYYMMDD_HHMMSS.bin
-ble_log_YYYYMMDD_HHMMSS_console.log
-ble_log_YYYYMMDD_HHMMSS_report.txt
-```
-
-- `.bin` contains the raw BLE Log data and is the primary file used for subsequent analysis.
-- `_report.txt` states whether the recording is valid.
-- `_console.log` is a human-readable copy of regular serial logs. It is created only when such logs are received and does not replace the `.bin` file.
-
-When reporting an issue, provide the matching `.bin` and `_report.txt` files. If a `_console.log` file was generated, include it as well. After the program exits, it prints the actual save paths in the terminal. Large recordings are automatically split into multiple `part` files. If another recording starts within the same second, a numeric suffix is added so existing files are not overwritten.
-
-## 5. Run from Source
-
-Run BLE Log Console from source when you need local debugging, temporary modifications, or feature verification. For normal use, the packaged executable is still recommended.
+**If you use the packaged tool to record logs, you can skip this chapter.** Follow [First Run and Recording](#1-first-run-and-recording) to start the tool. Use the steps below to set up a development environment for debugging Console, changing its code, or testing features from source.
 
 ### 5.1 Prepare the Source
 
@@ -249,9 +320,11 @@ After installation, start the tool with:
 .\run.bat
 ```
 
-You can also select a recording mode directly with command-line arguments:
+You can also select a recording mode directly with command-line arguments (`usb` for USB OTG, `usj` for USB Serial/JTAG):
 
 ```bat
+.\run.bat --mode usb --port COM5
+.\run.bat --mode usj --port COM5
 .\run.bat --mode uart --port COM3 --baudrate 3000000
 .\run.bat --mode spi --port <PORT>
 ```
@@ -274,6 +347,8 @@ After installation, start the tool with:
 You can also select a recording mode directly with command-line arguments:
 
 ```bash
+./run.sh --mode usb --port /dev/ttyACM0
+./run.sh --mode usj --port /dev/ttyACM0
 ./run.sh --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 ./run.sh --mode spi --port <PORT>
 ```
@@ -289,6 +364,8 @@ python console.py
 Common commands include:
 
 ```bash
+python console.py --mode usb --port /dev/ttyACM0
+python console.py --mode usj --port /dev/ttyACM0
 python console.py --mode uart --port /dev/ttyUSB0 --baudrate 3000000
 python console.py --mode spi --port <PORT>
 ```
@@ -304,7 +381,7 @@ Press `h` for more shortcuts. For the complete command-line reference, see the [
 Quick links:
 
 * [Configuration or wiring is unclear](#faq-configuration)
-* [Device not shown in the port list](#faq-no-port)
+* [Port missing or will not open](#faq-no-port)
 * [Program starts but no logs appear](#faq-no-logs)
 * [Serial-monitor log display and saving](#faq-console-log)
 * [Source environment setup fails](#faq-source-setup)
@@ -319,83 +396,80 @@ Start with the [BLE Log Configuration Guide](Config-Guide-EN.md) to check the co
 
 <a id="faq-no-port"></a>
 
-### I plugged in the device, but I still cannot see it in the port list.
+### What if the port is missing or will not open?
 
-Please check:
+Check the following in order:
 
-- Whether the device is wired correctly, including whether GND is properly shared in SPI mode.
-- Whether the device is powered on.
-- Whether the correct firmware is running on the device.
-- Whether the port is already occupied by another program.
-- On Linux, whether you have run `sudo ./ble_log_console_ubuntu_v1.1.0` once and unplugged/reconnected the device after running it.
+- Wiring is secure (including shared GND between both boards in SPI mode).
+- The device is powered on and running firmware with BLE Log enabled.
+- No serial monitor or other application is holding the target port.
+- In USB OTG or USJ mode, a data-capable USB cable connects to the chip's native USB port and the selected port matches the firmware output. The USB OTG port appears only after BLE Log starts in firmware; click **Refresh** after reconnecting.
 
-When a SPI Bridge is plugged in but cannot be opened, the port list also states the reason instead of staying empty:
+<a id="windows-ports"></a>
 
-- `SPI Bridge (bus 1, addr 95): no USB access permission.` means the Linux USB access rule for the bridge is missing on this PC. Run the tool once with `sudo` and no arguments; that installs `/etc/udev/rules.d/99-ble-log-spi-bridge.rules` (see [Linux System](#412-linux-system)). Then unplug and replug the bridge and start the tool normally.
-- `libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0` means the USB library the tool uses to reach the bridge is not installed.
-- `SPI Bridge (bus 1, addr 95) cannot be opened: ...` repeats the USB error the system reported, for example a device that is busy in another program.
+#### Windows: Check the COM port
 
-In USJ mode, a port is listed only when the current user can read and write it. A USJ port that cannot be opened is left out of the list and states the reason instead:
+Windows uses its built-in `usbser.sys` driver for CDC serial ports. In Device Manager, check **Ports (COM & LPT)** for the device’s COM number and select it in Console (COM10 and above are supported, even if the description is blank). If the port is listed but fails to open, close any serial monitor occupying it and click **Connect**.
 
-- `USJ /dev/ttyACM0: no read/write permission.` means the current user is not allowed to use this serial port. On most Linux distributions, add the user to the `dialout` group with `sudo usermod -aG dialout $USER`, then log out and log in again. Then start the tool again.
+<a id="linux-ports"></a>
 
-These lines follow the display language, which comes from the system message locale. To get Chinese, set `LANG=zh_CN.UTF-8` (or `LC_MESSAGES=zh_CN.UTF-8`) before starting the tool, or choose `简体中文` on the setup screen.
+#### Linux: Check serial port permissions
+
+If Console reports `no read/write permission` for a port (such ports are hidden from the selectable list on Linux and macOS), add your user to the serial access group (`dialout` on most Linux distributions):
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+**Log out and log back in**, then start Console as your regular user. If the port still does not appear, close any other program holding the device, reconnect it, and click **Refresh** (Console uses the system CDC driver—no `libusb` setup or Bulk udev rule is required).
+
+[Return to mode and port selection](#select-port).
 
 <a id="faq-no-logs"></a>
 
 ### The program starts, but no logs appear.
 
-Please check:
+Check the bottom status bar first: if `RX` and `Frames` keep increasing while the log window is quiet, data is arriving normally and live display categories were simply left unchecked before recording. If the counters stay still, check:
 
-- Whether the selected connection mode is correct.
-- Whether the selected port is correct.
-- Whether BLE Log is enabled in the ESP device firmware.
-- In UART mode, whether the baud rate selected in the tool matches the firmware configuration.
-- Whether the wiring between the ESP device and the serial port tool or SPI Bridge is correct.
-- In SPI Bridge mode, whether the GPIOs corresponding to MOSI, SCLK, and CS in the ESP device firmware match the actual wiring.
+- Selected transport mode and port match the physical connection.
+- BLE Log is enabled in the ESP device firmware.
+- In UART mode, the baud rate in Console matches the firmware setting.
+- In USB OTG or USJ mode, the firmware enables the matching output; for USJ, also verify that no console or other feature occupies the port (see [USB OTG and USJ](#usb-direct)).
+- In SPI Bridge mode, the MOSI, SCLK, and CS GPIOs in firmware match the physical wiring.
 
 <a id="faq-console-log"></a>
 
 ### Why do serial-monitor logs appear in the tool, and where are they saved?
 
-See [Viewing Console Logs](#console-log-files).
+See [Follow Live Logs](#console-log-files).
 
 <a id="faq-source-setup"></a>
 
 ### Source environment setup fails.
 
-Source startup depends on the local Python environment, package index access, and system PATH settings. The install scripts try to prepare these automatically, but different PC environments may need manual setup. The required items are:
+Running from source depends on a local Python environment, package index access, and `PATH` configuration. If the install script fails, ensure the items below are installed, then run `uv sync --all-extras` in the source directory before running the start script:
 
 - Python 3.11 or later.
-- `uv`, available from `PATH`.
-- Access to the Python package dependencies declared in `pyproject.toml`.
-
-If the script cannot complete the setup, install the required items manually, then run `uv sync --all-extras` in the source directory before using the startup script.
+- `uv`, available on `PATH`.
+- Network access to the Python dependencies declared in `pyproject.toml`.
 
 <a id="faq-esp32p4-version"></a>
 
 ### How do I confirm the firmware version flashed on ESP32P4?
 
-The current ESP32P4 Bridge firmware version is `1.0`. The firmware prints version information in the serial log when it starts. To confirm the version, connect the ESP32P4 to the PC through the USB serial port, then open the serial monitor and check the startup log.
+The current ESP32P4 Bridge firmware version is `1.0`, printed to the serial log on boot. Connect the ESP32P4 USB serial port to your PC and open a serial monitor (press the board’s reset button if you missed the boot output):
 
 ```bash
 idf.py -p <PORT> monitor
 ```
 
-If you missed the startup log, press the reset button on the development board. The version information is printed again after ESP32P4 restarts.
-
-> Note: When checking the version, the ESP32P4 serial port cannot be used by `ble_log_console` in UART mode or another serial tool at the same time.
+> Note: Make sure the serial port is not simultaneously held by `ble_log_console` or another serial tool.
 
 <a id="faq-quality-check"></a>
 
 ### Can I use the files if the quality report is unverified or the check is incomplete?
 
-The report separately states whether the raw data was saved completely and how much data the automated quality check covered. If the check does not finish within 20 seconds, the raw files are still retained. Frame and loss results then cover only the parsed portion, and continuity for the full recording is shown as unverified.
+**Check the raw file save status in the report:**
 
-The detailed report lists received frames, firmware write failures, and sequence checks for each segment, and marks segments with an incomplete start or end. Confirmed loss from both complete and partial segments contributes to the overall quality statistics. An incomplete segment boundary alone does not cause a warning. If continuity cannot be determined, it is shown as unverified.
-
-If file synchronization fails when closing a recording file or rotating to another part, the report cannot confirm that raw data was saved completely and recommends another recording. Existing raw files are retained for troubleshooting, but their survival after a power failure is not guaranteed.
-
-Sequence checks follow the counter model identified by supported firmware records. A standalone VERSION_INFO declaring BLE Log protocol 6 selects separate counters per source, including when recording starts mid-stream. Supported protocol 8 records use a shared counter for regular frames and SNAPSHOT; its standalone VERSION_INFO retains that model.
-
-Keep the original `.bin` files and matching `_report.txt`. If the recording was split, provide all parts so technical support can assess whether another recording is needed.
+- **Raw data was saved normally, and only the check timed out or specific metrics show `UNCERTAIN` / `Unknown`** (for example, a large recording did not finish automated verification within 20 seconds, or the firmware protocol does not report lost bytes): **Yes, the files can be used.** Submit the raw `.bin` files (including all `part` files if split) together with `_report.txt` so technical support can review them.
+- **The report warns that saving failed or storage sync timed out**: **Record again.** Data may not have been completely flushed to storage (existing files are still kept for troubleshooting).

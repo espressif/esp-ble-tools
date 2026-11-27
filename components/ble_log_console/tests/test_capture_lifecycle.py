@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from src.app import BLELogApp, unique_capture_path
 from src.backend.analysis.aggregator import AggregatorSnapshot
+from src.backend.io.writer import WriterEvent
 from src.backend.models import (
     CaptureFinished,
     FrameStats,
@@ -18,9 +19,11 @@ from src.backend.models import (
     TransportMode,
 )
 from src.backend.pipeline.controller import CapturePipelineResult
-from src.frontend.capture_report import CaptureReportScreen, build_capture_report
+from src.frontend.capture_report import CaptureReportScreen, build_capture_report, format_capture_summary
 from src.frontend.capture_session import CaptureSession
 from textual.app import App
+
+from tests.helpers import wait_for_recording_files
 
 
 def _completed_result(path: Path) -> CapturePipelineResult:
@@ -95,6 +98,86 @@ def test_session_finishes_with_saved_report(tmp_path: Path) -> None:
     assert session.report is finished.report
 
 
+def test_repeated_recordings_bundle_the_dictionary_used_for_each_report(tmp_path: Path) -> None:
+    database = tmp_path / "BLE_HOST_logs.json"
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline:
+        pipeline.return_value.io_is_alive.return_value = False
+        pipeline.return_value.analysis_is_alive.return_value = False
+        pipeline.return_value.drain_events.return_value = []
+        for name in ("first", "second"):
+            database.write_text(name)
+            raw = tmp_path / f"{name}.bin"
+            pipeline.return_value.wait_with_events.return_value = ([], _completed_result(raw))
+            session = CaptureSession(TransportConfig(TransportMode.USJ, "USB", "test"), raw, log_database=tmp_path)
+            session.start()
+            copy = tmp_path / f"{name}_database"
+            assert not copy.exists()
+            assert pipeline.call_args.kwargs["log_database"] == tmp_path
+            wait_for_recording_files(session)
+            assert session.report.database_copy == copy
+            assert str(copy) in format_capture_summary(session.report)
+            assert str(copy) in session.report.report_path.read_text()
+            assert list(copy.iterdir()) == [copy / database.name]
+    for name in ("first", "second"):
+        assert (tmp_path / f"{name}_database" / database.name).read_text() == name
+
+
+def test_failed_dictionary_copy_preserves_recording_and_is_reported(tmp_path: Path) -> None:
+    raw = tmp_path / "recording.bin"
+    database = tmp_path / "db"
+    database.mkdir()
+    (database / "BLE_HOST_logs.json").write_text("{}")
+    with (
+        patch("src.frontend.capture_session.CapturePipeline") as pipeline,
+        patch("src.backend.io.database.shutil.copyfile", side_effect=OSError("disk full")),
+    ):
+        pipeline.return_value.io_is_alive.return_value = False
+        pipeline.return_value.analysis_is_alive.return_value = False
+        pipeline.return_value.drain_events.return_value = []
+        pipeline.return_value.wait_with_events.return_value = ([], _completed_result(raw))
+        session = CaptureSession(TransportConfig(TransportMode.USJ, "USB", "test"), raw, log_database=database)
+        session.start()
+        wait_for_recording_files(session)
+        pipeline.return_value.start.assert_called_once()
+        assert pipeline.call_args.kwargs["log_database"] == database
+    assert session.report.raw_complete
+    assert session.report.database_copy is None
+    assert "Database 副本未保存：disk full" in format_capture_summary(session.report, "zh_CN")
+    assert "Database copy not saved: disk full" in session.report.report_path.read_text()
+    assert not (tmp_path / "recording_database").exists()
+    assert not list(tmp_path.glob(".ble-database-*"))
+
+
+def test_failed_report_update_preserves_the_first_report(tmp_path: Path) -> None:
+    raw = tmp_path / "rec.bin"
+    db = tmp_path / "BLE_HOST_logs.json"
+    db.write_text("{}")
+    report_path = tmp_path / "rec_report.txt"
+    publish = Path.replace
+
+    def refuse_second_report(path, target):
+        if target == report_path and target.exists():
+            raise PermissionError("report is open")
+        return publish(path, target)
+
+    with (
+        patch("src.frontend.capture_session.CapturePipeline") as pipeline,
+        patch.object(Path, "replace", refuse_second_report),
+    ):
+        backend = pipeline.return_value
+        backend.io_is_alive.return_value = False
+        backend.analysis_is_alive.return_value = False
+        backend.wait_with_events.return_value = ([], _completed_result(raw))
+        session = CaptureSession(TransportConfig(TransportMode.USJ, "USB", "test"), raw, log_database=tmp_path)
+        session.start()
+        wait_for_recording_files(session)
+
+    assert session.report.report_write_error is None
+    assert "Could not update the saved report: report is open" in format_capture_summary(session.report)
+    assert session.report.database_copy.is_dir()
+    assert "Database copy pending" in report_path.read_text()
+
+
 def test_session_stop_is_idempotent(tmp_path: Path) -> None:
     config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
     with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
@@ -123,6 +206,7 @@ def test_session_stops_partial_analysis_after_twenty_seconds(tmp_path: Path) -> 
         pipeline.drain_events.return_value = []
         pipeline.io_is_alive.return_value = False
         pipeline.analysis_is_alive.return_value = True
+        pipeline.abort_analysis.side_effect = lambda message: setattr(pipeline.analysis_is_alive, "return_value", False)
         pipeline.wait_with_events.return_value = ([], result)
         session = CaptureSession(
             config,
@@ -151,7 +235,7 @@ def test_report_write_failure_keeps_capture_result(tmp_path: Path) -> None:
     config = TransportConfig(TransportMode.UART, "COM3", "COM3", 921600)
     with (
         patch("src.frontend.capture_session.CapturePipeline") as pipeline_type,
-        patch("src.frontend.capture_session.write_capture_report", side_effect=OSError("read only")),
+        patch("src.frontend.recording_files.write_capture_report", side_effect=OSError("read only")),
     ):
         pipeline = pipeline_type.return_value
         pipeline.io_is_alive.return_value = False
@@ -248,3 +332,45 @@ def test_capture_report_screen_mounts_with_actions(tmp_path: Path) -> None:
             assert not pilot.app.screen.query("#capture-report-language")
 
     asyncio.run(run())
+
+
+def test_session_does_not_finish_while_failed_io_termination_remains_live(tmp_path: Path) -> None:
+    config = TransportConfig(TransportMode.USB_OUTPUT, "replay", "replay")
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
+        pipeline = pipeline_type.return_value
+        pipeline.drain_events.return_value = []
+        pipeline.check_io_shutdown.return_value = [WriterEvent("error", message="process termination failed")]
+        pipeline.io_is_alive.return_value = True
+        session = CaptureSession(config, tmp_path / "recording.bin")
+        session.start()
+        session.stop()
+
+        messages = session.poll()
+
+        assert not session.finished
+        assert session.report is None
+        assert not any(isinstance(message, CaptureFinished) for message in messages)
+        pipeline.wait_with_events.assert_not_called()
+
+
+def test_session_keeps_analysis_process_owned_if_termination_fails(tmp_path: Path) -> None:
+    config = TransportConfig(TransportMode.USB_OUTPUT, "replay", "replay")
+    now = [0.0]
+    with patch("src.frontend.capture_session.CapturePipeline") as pipeline_type:
+        pipeline = pipeline_type.return_value
+        pipeline.drain_events.return_value = []
+        pipeline.check_io_shutdown.return_value = []
+        pipeline.io_is_alive.return_value = False
+        pipeline.analysis_is_alive.return_value = True
+        session = CaptureSession(config, tmp_path / "recording.bin", clock=lambda: now[0])
+        session.start()
+        session.poll()
+        now[0] = 20
+
+        messages = session.poll()
+
+        assert not session.finished
+        assert session.report is None
+        assert messages and messages[-1].level == "warning"
+        assert not any(isinstance(message, CaptureFinished) for message in messages)
+        pipeline.wait_with_events.assert_not_called()

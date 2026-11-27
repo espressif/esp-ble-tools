@@ -5,26 +5,38 @@
 
 from __future__ import annotations
 
+import re
 import time
+from pathlib import Path
 
 from ble_log_frame_decoder import (
+    INIT,
     BleLogFrame,
     FrameDecoder,
     FrameFormat,
+    FrameView,
     InternalLogBufferUtil,
     InternalLogEnhancedStat,
     InternalLogFinalStat,
     InternalLogInfo,
     InternalLogTimestamp,
+    ParserSession,
+    Snapshot,
+    is_valid_internal_candidate,
     parse_snapshot,
+    parse_snapshot_version_info,
     parse_version_info_payload,
 )
 
+from src.backend.analysis.hci import hci_event, ll_hci_event
+from src.backend.analysis.opening_quality import OpeningChecker, OpeningQuality
 from src.backend.analysis.parser_events import (
     BleLogEvent,
     EnhStatEvent,
     FinalStatEvent,
     FrameEvent,
+    HciLogEvent,
+    HostLogEvent,
     InternalEvent,
     ParseBatch,
     ParseChunkResult,
@@ -32,6 +44,7 @@ from src.backend.analysis.parser_events import (
     RedirEvent,
     UndecodedEvent,
 )
+from src.backend.analysis.startup import StartupDetector
 from src.backend.analysis.stream_identification import (
     NON_TEXT_BYTES,
     IdentificationRules,
@@ -55,6 +68,8 @@ DEFAULT_CHECKSUM_MODE = ChecksumMode(ChecksumAlgorithm.XOR, ChecksumScope.FULL)
 
 _KNOWN_SOURCES = frozenset(int(source) for source in BleLogSource)
 _TAB_TO_SPACE = bytes.maketrans(b"\t", b" ")
+# Compressed dictionaries retain C line endings; paired backslashes are literal text.
+_HOST_LINE_END = re.compile(r'(?<!\\)((?:\\\\)*)(?:\\r\\n|\\n|\\r)+(?="$|$)')
 
 # INTERNAL payload: [4B os_ts][1B int_src_code][sub-payload]
 _INTERNAL_SUBTYPE_OFFSET = 4
@@ -87,6 +102,40 @@ def _decoder_for_mode(checksum_mode: ChecksumMode | None) -> FrameDecoder:
     return FrameDecoder(format=frame_format, max_frame_size=MAX_DECODER_FRAME_SIZE)
 
 
+class _ConsoleDecoder(FrameDecoder):
+    """Keep displayable unknown frames outside Checker's narrower protocol contract."""
+
+    def __init__(self, decoder: FrameDecoder, unchecked_sink) -> None:
+        super().__init__(decoder.format, max_frame_size=MAX_DECODER_FRAME_SIZE)
+        self._unchecked_sink = unchecked_sink
+        self.unchecked_frames = 0
+
+    def _checked(self, frame: FrameView) -> bool:
+        valid = 0 <= frame.source_code <= 8 and (
+            frame.source_code != 0 or is_valid_internal_candidate(frame.payload_view)
+        )
+        if not valid:
+            self.unchecked_frames += 1
+            self._unchecked_sink(frame)
+        return valid
+
+    def feed_into(self, data, *, sink) -> None:
+        def dispatch(frame):
+            if self._checked(frame):
+                sink(frame)
+
+        super().feed_into(data, sink=dispatch)
+
+    def feed(self, data):
+        frames = []
+        for frame in super().feed(data):
+            with memoryview(frame.payload) as payload:
+                view = FrameView(frame.source_code, frame.sequence_number, frame.offset + 6, len(payload), payload)
+                if self._checked(view):
+                    frames.append(frame)
+        return frames
+
+
 def parse_ble_log_chunk(
     data: bytes,
     checksum_mode: ChecksumMode | None = None,
@@ -117,7 +166,7 @@ class BleLogParser:
     the stream: it mirrors the decoder's unresolved tail so the bytes no frame
     claims can be shown as undecoded text, and it keeps the cumulative evidence
     that identifies what the stream carries. Without rules (transports that
-    never carry console text) it emits frame events only.
+    never carry console text) it still emits decoded Host content alongside frame events.
     """
 
     def __init__(
@@ -125,8 +174,27 @@ class BleLogParser:
         checksum_mode: ChecksumMode | None = None,
         *,
         identification: IdentificationRules | None = None,
+        log_database: Path | None = None,
     ) -> None:
-        self._decoder = _decoder_for_mode(checksum_mode)
+        self._frames: list[BleLogFrame] = []
+        self._decoder = _ConsoleDecoder(_decoder_for_mode(checksum_mode), self._receive_frame)
+        self._session = ParserSession(
+            decoder=self._decoder,
+            check=True,
+            decode=("host", "hci"),
+            database=log_database,
+            ordering="arrival",
+            firmware_stats=True,
+            frame_sink=self._receive_frame,
+        )
+        self._content_records = {}
+        self._chip_name: str | None = None
+        self._host_warnings: set[str] = set()
+        self.startup = StartupDetector()
+        self.last_compressed_host_offset = -1
+        self._opening_history = []
+        self._opening_checker: OpeningChecker | None = None
+        self.opening_quality: OpeningQuality | None = None
         self._rules = identification
         self._pending = b""
         self._text_open = False
@@ -138,21 +206,37 @@ class BleLogParser:
         self._identity_records = 0
         self._window = bytearray()
 
-    def feed(self, chunk: bytes, *, received_at_ms: int | None = None) -> ParseBatch:
+    def feed(
+        self,
+        chunk: bytes,
+        *,
+        received_at_ms: int | None = None,
+        received_monotonic: float | None = None,
+        raw_offset: int | None = None,
+    ) -> ParseBatch:
         """Parse one raw chunk; the decoder buffers any incomplete tail itself."""
 
         received_at_ms = time.time_ns() // 1_000_000 if received_at_ms is None else received_at_ms
         self._last_received_at_ms = received_at_ms
         before = self._decoder.stats
+        self.startup.begin_chunk(len(chunk), raw_offset, received_monotonic)
         buffered_before = before.buffered_bytes
-        frames = self._decoder.feed(chunk)
+        self._frames.clear()
+        content = self._session.feed(chunk)
+        self._content_records = {}
+        for record in content.records:
+            self._content_records.setdefault(record.record_id, []).append(record)
+        frames = self._frames
+        if self._decoder.format is FrameFormat.BLE_LOG_V2_SUM32:
+            # Core consumes owned SUM32 frames after feed returns; merge skipped callbacks by wire offset.
+            frames.sort(key=lambda frame: frame.offset)
         buffered_after = self._decoder.stats.buffered_bytes
         consumed = buffered_before + len(chunk) - buffered_after
         events: list[BleLogEvent] = []
         rules = self._rules
         if rules is None:
             for frame in frames:
-                _append_frame_event(frame, events, received_at_ms)
+                self._append_events(frame, events, received_at_ms)
         else:
             data = self._pending + chunk
             base_offset = before.bytes_received - buffered_before
@@ -162,11 +246,14 @@ class BleLogParser:
                 self._take_gap(rules, data[cursor:start], received_at_ms, events, end=True)
                 cursor = start + frame.size
                 first_frame_event = len(events)
-                _append_frame_event(frame, events, received_at_ms)
+                self._append_events(frame, events, received_at_ms)
                 self._observe_frame(frame, events[first_frame_event:])
             self._take_gap(rules, data[cursor:consumed], received_at_ms, events, end=False)
             # Mirror only the decoder's unresolved tail: a pending frame is never shown as text.
             self._pending = data[consumed:]
+        for records in self._content_records.values():
+            events.extend(self._content_events(records, received_at_ms))
+        self._content_records.clear()
         return ParseBatch(
             raw_bytes=len(chunk),
             parsed_frames=len(frames),
@@ -174,24 +261,118 @@ class BleLogParser:
             carried_bytes=buffered_after,
             events=tuple(events),
             identity=self._identity(),
+            firmware=self._session.snapshot().firmware,
         )
+
+    def _receive_frame(self, frame: FrameView) -> None:
+        # The Core view is borrowed; Console events outlive the synchronous callback.
+        self._frames.append(
+            BleLogFrame(
+                source_code=frame.source_code,
+                sequence_number=frame.raw_sn,
+                payload=bytes(frame.payload_view),
+                offset=frame.payload_offset - 6,
+                size=frame.payload_size + FRAME_OVERHEAD,
+                skipped_bytes_before=0,
+            )
+        )
+
+    def _append_events(self, frame: BleLogFrame, events: list[BleLogEvent], received_at_ms: int) -> None:
+        if frame.source_code == BleLogSource.ENCODE and len(frame.payload) > 4 and frame.payload[4] == 0:
+            self.last_compressed_host_offset = frame.offset
+        first = len(events)
+        _append_frame_event(frame, events, received_at_ms)
+        event = events[first] if first < len(events) else None
+        snapshot = event.decoded if isinstance(event, InternalEvent) and isinstance(event.decoded, Snapshot) else None
+        self.startup.observe(frame, snapshot)
+        candidate = self.startup.candidate
+        offset = candidate.offset_bytes if candidate is not None else 0
+        if self._opening_checker is not None and self._opening_checker.offset != offset:
+            self._opening_checker.close()
+            self._opening_checker = None
+        if offset:
+            if self._opening_checker is None:
+                self._opening_checker = OpeningChecker(offset)
+                for prior_frame, prior_events in self._opening_history:
+                    if prior_frame.offset >= offset:
+                        self._opening_checker.feed(prior_frame, prior_events)
+            self._opening_checker.feed(frame, tuple(events[first:]))
+        if self.startup.decision is None:
+            self._opening_history.append((frame, tuple(events[first:])))
+        elif self._opening_history:
+            self._opening_history.clear()
+        for event in events[first:]:
+            if isinstance(event, InternalEvent):
+                if event.int_src == InternalSource.INIT_DONE:
+                    self._chip_name = None
+                if isinstance(event.decoded, Snapshot):
+                    if event.decoded.reason_flags & INIT:
+                        self._chip_name = None
+                    try:
+                        self._chip_name = parse_snapshot_version_info(event.decoded).chip_name
+                    except ValueError:
+                        pass  # A corrupt optional version block must not stop reception.
+                elif event.int_src == InternalSource.VERSION_INFO:
+                    self._chip_name = event.decoded.chip_name
+        if frame.source_code == BleLogSource.LL_HCI:
+            events.append(ll_hci_event(frame.payload, self._chip_name, received_at_ms))
+        events.extend(self._content_events(self._content_records.pop(frame.offset + 6, ()), received_at_ms))
+
+    def _content_events(self, records, received_at_ms: int) -> list[HostLogEvent | HciLogEvent]:
+        events = []
+        for record in records:
+            if record.source == BleLogSource.HCI:
+                events.append(hci_event(record.raw, record.timestamp_us, received_at_ms))
+            elif record.kind == "host":
+                # Core emits provisional updates; publish once when complete or finally unresolved.
+                if record.incomplete and not record.reason:
+                    continue
+                reason = record.reason if record.incomplete else ""
+                text = record.text.rstrip("\r\n")
+                if record.source == BleLogSource.ENCODE:
+                    text = _HOST_LINE_END.sub(r"\1", text)
+                events.append(HostLogEvent(text + "\n", received_at_ms, reason))
+            elif record.reason and record.reason not in self._host_warnings:
+                self._host_warnings.add(record.reason)
+                events.append(HostLogEvent("", received_at_ms, record.reason))
+        return events
+
+    def close(self) -> None:
+        """Release Checker scratch resources on cancellation or parse failure."""
+        self._session.close()
+        if self._opening_checker is not None:
+            self._opening_checker.close()
 
     def finalize(self) -> ParseSummary:
         """Return final parser totals and resolve the undecoded tail without reparsing raw data."""
 
-        stats = self._decoder.finish()
+        result = self._session.finish()
+        stats = result.scan
+        decision = self.startup.finish()
+        if self._opening_checker is not None:
+            if decision.offset_bytes == self._opening_checker.offset:
+                self.opening_quality = self._opening_checker.finish(stats.bytes_received, stats.trailing_bytes)
+            else:
+                self._opening_checker.close()
+        if result.integrity is not None and self._decoder.unchecked_frames:
+            result.integrity.notes.append(
+                f"Console retained {self._decoder.unchecked_frames} frame(s) outside the Checker protocol contract."
+            )
         events: list[BleLogEvent] = []
         if self._rules is not None:
             # The carry may be a frame the recording cut off, so it is shown and read as text evidence but not
             # counted as data outside frames; the summary reports it as carried bytes.
             self._take_gap(self._rules, self._pending, self._last_received_at_ms, events, end=True, eof_carry=True)
             self._pending = b""
+        events.extend(self._content_events(result.records, self._last_received_at_ms))
         return ParseSummary(
             raw_bytes=stats.bytes_received,
             parsed_frames=stats.frames_decoded,
             carried_bytes=stats.trailing_bytes,
-            events=tuple(event for event in events if isinstance(event, UndecodedEvent)),
+            events=tuple(event for event in events if isinstance(event, (UndecodedEvent, HostLogEvent))),
             identity=self._identity(),
+            firmware=result.firmware,
+            integrity=result.integrity,
         )
 
     def _take_gap(

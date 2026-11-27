@@ -8,6 +8,7 @@ dist/
 *.spec
 logs/
 docs/user-guide-release/pdf/
+docs/Console-User-Guide-*.pdf
 uv.lock
 /ble_log_console_ubuntu*
 /ble_log_console_windows*

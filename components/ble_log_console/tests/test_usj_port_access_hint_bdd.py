@@ -23,7 +23,7 @@ from src.i18n import set_language
 scenarios("features/usj_port_access_hint.feature")
 
 _COMPORTS = "serial.tools.list_ports.comports"
-_CAN_OPEN = "src.backend.support.transport.usj_transport._can_open"
+_CAN_OPEN = "src.backend.support.transport.serial_reader.os.access"
 
 
 def _usj_serial_port(device: str) -> SimpleNamespace:
@@ -39,12 +39,12 @@ def english_output() -> Any:
 
 
 @pytest.fixture
-def world(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def world(monkeypatch: pytest.MonkeyPatch, linux_serial_platform) -> SimpleNamespace:
     namespace = SimpleNamespace(devices=[], can_open=True, output="")
     monkeypatch.setattr(_COMPORTS, lambda: list(namespace.devices))
     # The decision under test is what the scan reports; whether a real tty node
     # is readable is the operating system's answer, not a portable test fixture.
-    monkeypatch.setattr(_CAN_OPEN, lambda _device: namespace.can_open)
+    monkeypatch.setattr(_CAN_OPEN, lambda device, mode: namespace.can_open)
     return namespace
 
 
@@ -85,10 +85,8 @@ def output_lists_endpoint(world: SimpleNamespace, text: str) -> None:
 
 @then("输出说明该端口没有读写权限，并给出把用户加入 dialout 组的办法")
 def output_explains_permission(world: SimpleNamespace) -> None:
-    assert (
-        "  USJ /dev/ttyACM1: no read/write permission. "
-        "Add your user to the dialout group (sudo usermod -aG dialout $USER), then log in again.\n"
-    ) in world.output, world.output
+    assert ("USJ /dev/ttyACM1: no read/write permission.") in world.output, world.output
+    assert "dialout" in world.output
 
 
 @then("输出只字不提读写权限或 dialout")

@@ -99,7 +99,7 @@ def open_will_fail(world: SimpleNamespace, failure: str) -> None:
 
 
 @when("尝试打开该端口")
-def try_open_port(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+def try_open_port(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, linux_serial_platform) -> None:
     def refuse(*args: object, **kwargs: object) -> None:
         raise world.open_error
 

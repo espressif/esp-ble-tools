@@ -5,25 +5,12 @@
 
 from __future__ import annotations
 
-import errno
-import sys
-from dataclasses import dataclass
-
 import serial
 import serial.tools.list_ports
-import usb.core
-import usb.util
 
 from src.backend.models import TransportBitrate, TransportConfig
-from src.backend.support.transport.base import (
-    PortIssue,
-    PortIssueKind,
-    PortScan,
-    TransportMode,
-    TransportProvider,
-    TransportStatus,
-)
-from src.backend.support.transport.serial_reader import SerialReader
+from src.backend.support.transport.base import PortScan, TransportMode, TransportProvider
+from src.backend.support.transport.serial_reader import SerialReader, serial_open_hint, serial_port_issue
 
 VENDOR_ID = 0x303A
 PRODUCT_ID = 0x4001
@@ -33,211 +20,7 @@ SPI_BITS_PER_BYTE = 8
 SPI_USB_RX_BUFFER_SIZE = 20 * 1024
 SPI_WIRE_BPS = 20_000_000
 USB_TIMEOUT_MS = 100
-USB_TIMEOUT_ERRNO = 110
-USB_DISCONNECT_ERRNOS = {
-    errno.ENODEV,
-    errno.EIO,
-    getattr(errno, "ESHUTDOWN", 108),
-    getattr(errno, "ECONNRESET", 104),
-}
 CDC_ENDPOINT_PREFIX = "cdc:"
-
-
-@dataclass(frozen=True)
-class SpiUsbBridgeEndpoint:
-    """Stable USB bulk endpoint identity passed through the frontend Select value."""
-
-    bus: int
-    address: int
-    interface: int
-    endpoint: int
-
-    @property
-    def key(self) -> str:
-        return f"{self.bus}:{self.address}:{self.interface}:{self.endpoint}"
-
-    @property
-    def label(self) -> str:
-        return f"{DEVICE_DESCRIPTION} bus={self.bus} addr={self.address} intf={self.interface} ep=0x{self.endpoint:02x}"
-
-
-@dataclass
-class EndpointAccess:
-    """Opened USB objects needed to read from the bridge bulk IN endpoint."""
-
-    device: usb.core.Device
-    interface: usb.core.Interface
-    ep: usb.core.Endpoint
-
-
-def _endpoint_from_key(key: str) -> SpiUsbBridgeEndpoint:
-    try:
-        bus, address, interface, endpoint = (int(part) for part in key.split(":"))
-    except ValueError as e:
-        raise ValueError(f"Invalid USB-SPI bridge endpoint key: {key}") from e
-    return SpiUsbBridgeEndpoint(bus=bus, address=address, interface=interface, endpoint=endpoint)
-
-
-def _is_usb_timeout(error: usb.core.USBError) -> bool:
-    # libusb raises USBTimeoutError with the platform ETIMEDOUT (60 on macOS) and the message
-    # "Operation timed out"; the other checks cover backends that only set an errno or a message.
-    if isinstance(error, usb.core.USBTimeoutError):
-        return True
-    message = str(error).lower()
-    return error.errno == USB_TIMEOUT_ERRNO or "time out" in message or "timed out" in message or "timeout" in message
-
-
-def _is_usb_disconnect(error: usb.core.USBError) -> bool:
-    message = str(error).lower()
-    return (
-        error.errno in USB_DISCONNECT_ERRNOS
-        or "no such device" in message
-        or "disconnected" in message
-        or "device has been disconnected" in message
-    )
-
-
-def _detach_kernel_driver(target_device: usb.core.Device, target_interface: usb.core.Interface) -> None:
-    interface_num = getattr(target_interface, "bInterfaceNumber", None)
-    if not isinstance(interface_num, int):
-        return
-    try:
-        if target_device.is_kernel_driver_active(interface_num):
-            target_device.detach_kernel_driver(interface_num)
-    except (NotImplementedError, usb.core.USBError):
-        pass
-
-
-def _find_endpoint_access(endpoint: SpiUsbBridgeEndpoint) -> EndpointAccess:
-    target_device = usb.core.find(bus=endpoint.bus, address=endpoint.address)
-    if not isinstance(target_device, usb.core.Device):
-        raise RuntimeError(f"Device on bus {endpoint.bus} with addr {endpoint.address} not found")
-
-    target_config = target_device.get_active_configuration()
-    if not isinstance(target_config, usb.core.Configuration):
-        raise RuntimeError("USB configuration was not found")
-
-    target_interface = None
-    for curr_interface in target_config:
-        if not isinstance(curr_interface, usb.core.Interface):
-            continue
-        interface_num = getattr(curr_interface, "bInterfaceNumber", None)
-        if isinstance(interface_num, int) and interface_num == endpoint.interface:
-            target_interface = curr_interface
-            break
-
-    if target_interface is None:
-        raise RuntimeError(f"USB interface {endpoint.interface} was not found")
-
-    target_ep = None
-    for curr_ep in target_interface:
-        if not isinstance(curr_ep, usb.core.Endpoint):
-            continue
-        ep_addr = getattr(curr_ep, "bEndpointAddress", None)
-        if isinstance(ep_addr, int) and ep_addr == endpoint.endpoint:
-            target_ep = curr_ep
-            break
-
-    if target_ep is None:
-        raise RuntimeError(f"USB endpoint 0x{endpoint.endpoint:02x} was not found")
-
-    _detach_kernel_driver(target_device, target_interface)
-    return EndpointAccess(device=target_device, interface=target_interface, ep=target_ep)
-
-
-def _bridge_issue(bus: int, address: int, error: Exception) -> PortIssue:
-    """Classify a failure raised while one enumerated bridge was opened or read.
-
-    libusb enumerates without permission and only fails when the device is
-    opened, so an ``EACCES`` here means the machine has no USB access rule for
-    the bridge — a different fix from a busy, flaky or misconfigured device.
-    """
-    text = str(error).lower()
-    if getattr(error, "errno", None) == errno.EACCES or "access denied" in text or "permission denied" in text:
-        kind = PortIssueKind.PERMISSION_DENIED
-    else:
-        kind = PortIssueKind.DEVICE_ERROR
-    return PortIssue(kind=kind, bus=bus, address=address, detail=str(error))
-
-
-def _bridge_endpoint_options(target_device: usb.core.Device, bus: int, address: int) -> list[tuple[str, str]]:
-    """The selectable bulk IN endpoints of one enumerated bridge.
-
-    Raises whatever the device layer raises while the configuration and its
-    endpoints are read; the caller turns that into a ``PortIssue``, so a bridge
-    that fails here does not take the rest of the list down with it.
-    """
-    target_config = target_device.get_active_configuration()
-    if not isinstance(target_config, usb.core.Configuration):
-        raise RuntimeError("device has no active USB configuration")
-
-    options: list[tuple[str, str]] = []
-    for target_interface in target_config:
-        if not isinstance(target_interface, usb.core.Interface):
-            continue
-        interface_num = getattr(target_interface, "bInterfaceNumber", None)
-        if not isinstance(interface_num, int):
-            continue
-
-        for target_ep in target_interface:
-            if not isinstance(target_ep, usb.core.Endpoint):
-                continue
-            ep_addr = getattr(target_ep, "bEndpointAddress", None)
-            ep_attributes = getattr(target_ep, "bmAttributes", None)
-            if not isinstance(ep_addr, int) or not isinstance(ep_attributes, int):
-                continue
-            if usb.util.endpoint_direction(ep_addr) != usb.util.ENDPOINT_IN:
-                continue
-            if usb.util.endpoint_type(ep_attributes) != usb.util.ENDPOINT_TYPE_BULK:
-                continue
-            bridge_endpoint = SpiUsbBridgeEndpoint(
-                bus=bus,
-                address=address,
-                interface=interface_num,
-                endpoint=ep_addr,
-            )
-            options.append((bridge_endpoint.label, bridge_endpoint.key))
-    return options
-
-
-def _scan_bulk_endpoint_ports() -> PortScan:
-    """Enumerate bridge bulk IN endpoints, keeping unusable bridges visible.
-
-    A bridge that is present but cannot be opened becomes a ``PortIssue``
-    instead of silently disappearing from the list.
-    """
-    try:
-        target_devices = usb.core.find(find_all=True, idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
-    except usb.core.NoBackendError as e:
-        # pyusb raises this before it can see any device: libusb is not installed.
-        return PortScan(issues=[PortIssue(kind=PortIssueKind.LIBUSB_MISSING, detail=str(e))])
-
-    if target_devices is None:
-        return PortScan()
-    if isinstance(target_devices, usb.core.Device):
-        target_devices = [target_devices]
-
-    scan = PortScan()
-    for target_device in target_devices:
-        if not isinstance(target_device, usb.core.Device):
-            continue
-        bus = int(target_device.bus)
-        address = int(target_device.address)
-        try:
-            # Opening the device and reading its descriptors is exactly where
-            # libusb needs permission and where a flaky bridge reports an error.
-            scan.options.extend(_bridge_endpoint_options(target_device, bus, address))
-        except Exception as e:
-            scan.issues.append(_bridge_issue(bus, address, e))
-            continue
-
-        usb.util.dispose_resources(target_device)
-
-    return scan
-
-
-def _is_windows() -> bool:
-    return sys.platform == "win32"
 
 
 def _is_spi_usb_bridge_port(port: object) -> bool:
@@ -269,19 +52,21 @@ def list_spi_usb_bridge_cdc_options() -> list[tuple[str, str]]:
 
 
 def scan_spi_usb_bridge_ports() -> PortScan:
-    """List selectable bridge ports, with the reason any bridge is unusable."""
-    if _is_windows():
-        cdc_options = list_spi_usb_bridge_cdc_options()
-        if cdc_options:
-            return PortScan(options=cdc_options)
-
-    return _scan_bulk_endpoint_ports()
+    scan = PortScan()
+    for label, key in list_spi_usb_bridge_cdc_options():
+        issue = serial_port_issue(_cdc_port_from_key(key), "SPI Bridge")
+        if issue is None:
+            scan.options.append((label, key))
+        else:
+            scan.issues.append(issue)
+    return scan
 
 
 class SpiUsbBridgeCdcTransport(SerialReader):
     mode = TransportMode.SPI_USB_BRIDGE
     block_size = SPI_USB_RX_BUFFER_SIZE
     timeout = USB_TIMEOUT_MS / 1000
+    open_exclusive = True
     not_open_message = "USB-SPI bridge CDC transport is not open"
 
     @property
@@ -298,110 +83,9 @@ class SpiUsbBridgeCdcTransport(SerialReader):
     def _open_error(self, error: Exception) -> Exception:
         if not isinstance(error, serial.SerialException):
             return error
-        return RuntimeError(f"Failed to connect to the USB-SPI bridge CDC port {self._port}: {error}")
-
-
-class SpiUsbBridgeBulkTransport:
-    def __init__(self, endpoint: SpiUsbBridgeEndpoint) -> None:
-        self._endpoint = endpoint
-        self._epa: EndpointAccess | None = None
-        self._claimed = False
-        self._rx_bytes = 0
-        self._rx_chunks = 0
-        self._last_error: str | None = None
-
-    def open(self) -> None:
-        if self._claimed:
-            return
-        self._epa = _find_endpoint_access(self._endpoint)
-        try:
-            usb.util.claim_interface(self._epa.device, self._epa.interface)
-        except Exception as e:
-            usb.util.dispose_resources(self._epa.device)
-            self._epa = None
-            self._last_error = str(e)
-            raise RuntimeError(
-                f"Failed to connect to the USB-SPI bridge: {e}\n"
-                "Please check the cable connection and make sure the device is not already open "
-                "in another terminal or process."
-            ) from e
-        self._claimed = True
-        self._last_error = None
-
-    @property
-    def display_name(self) -> str:
-        return self._endpoint.label
-
-    @property
-    def block_size(self) -> int:
-        return SPI_USB_RX_BUFFER_SIZE
-
-    @property
-    def bitrate_config(self) -> TransportBitrate:
-        return TransportBitrate(
-            bits_per_payload_byte=SPI_BITS_PER_BYTE,
-            wire_bits_per_sec=float(SPI_WIRE_BPS),
-        )
-
-    def read(self, size: int | None = None) -> bytes:
-        if self._epa is None or not self._claimed:
-            raise RuntimeError("USB-SPI bridge bulk transport is not open")
-        try:
-            rx_data = self._epa.device.read(self._epa.ep, size or self.block_size, USB_TIMEOUT_MS)
-        except usb.core.USBError as e:
-            if _is_usb_timeout(e):
-                return b""
-            if _is_usb_disconnect(e):
-                self._last_error = "USB-SPI bridge disconnected or reset"
-                raise RuntimeError("USB-SPI bridge disconnected or reset") from e
-            self._last_error = str(e)
-            raise RuntimeError(f"USB-SPI bridge read failed: {e}") from e
-        block = rx_data.tobytes() if rx_data else b""
-        if block:
-            self._rx_bytes += len(block)
-            self._rx_chunks += 1
-        return block
-
-    def drain(self, max_rounds: int = 10) -> list[bytes]:
-        blocks: list[bytes] = []
-        for _ in range(max_rounds):
-            block = self.read()
-            if not block:
-                break
-            blocks.append(block)
-        return blocks
-
-    def close(self) -> None:
-        if self._epa is None:
-            return
-        try:
-            if self._claimed:
-                usb.util.release_interface(self._epa.device, self._epa.interface)
-        except usb.core.USBError:
-            pass
-        finally:
-            self._claimed = False
-
-        try:
-            usb.util.dispose_resources(self._epa.device)
-        except usb.core.USBError:
-            pass
-        finally:
-            self._epa = None
-
-    def reset_target(self) -> bool:
-        return False
-
-    def status(self) -> TransportStatus:
-        return TransportStatus(
-            mode=TransportMode.SPI_USB_BRIDGE,
-            display_name=self.display_name,
-            opened=self._claimed,
-            healthy=self._claimed and self._last_error is None,
-            rx_bytes=self._rx_bytes,
-            rx_chunks=self._rx_chunks,
-            last_error=self._last_error,
-        )
+        message = f"Failed to connect to the USB-SPI bridge CDC port {self._port}: {error}"
+        hint = serial_open_hint(error)
+        return RuntimeError(f"{message}\n{hint}" if hint else message)
 
 
 def _cdc_port_from_key(port_key: str) -> str:
@@ -422,10 +106,12 @@ class SpiUsbBridgeTransportProvider:
     def scan_ports(self) -> PortScan:
         return scan_spi_usb_bridge_ports()
 
-    def create_reader(self, config: TransportConfig) -> SpiUsbBridgeCdcTransport | SpiUsbBridgeBulkTransport:
-        if config.port.startswith(CDC_ENDPOINT_PREFIX):
-            return SpiUsbBridgeCdcTransport(_cdc_port_from_key(config.port), config.baudrate)
-        return SpiUsbBridgeBulkTransport(_endpoint_from_key(config.port))
+    def create_reader(self, config: TransportConfig) -> SpiUsbBridgeCdcTransport:
+        port = _cdc_port_from_key(config.port)
+        parts = port.split(":")
+        if not port or (len(parts) == 4 and all(part.isdecimal() for part in parts)):
+            raise ValueError("SPI Bridge requires a CDC serial port, such as cdc:/dev/ttyACM0 or COM7.")
+        return SpiUsbBridgeCdcTransport(port, config.baudrate)
 
 
 PROVIDER: TransportProvider = SpiUsbBridgeTransportProvider()

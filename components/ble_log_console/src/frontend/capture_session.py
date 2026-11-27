@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import time
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -15,9 +14,10 @@ from textual.message import Message
 from src.backend.io import WriterConfig
 from src.backend.models import CaptureFinished, CaptureReport, TransportConfig, UserNotice
 from src.backend.pipeline import CapturePipeline
-from src.backend.pipeline.controller import CapturePipelineResult
+from src.backend.pipeline.controller import IO_SHUTDOWN_TIMEOUT_SEC, CapturePipelineResult
 from src.frontend.capture_events import CaptureEventPresenter
-from src.frontend.capture_report import build_capture_report, report_path_for_capture, write_capture_report
+from src.frontend.capture_report import build_capture_report, report_path_for_capture
+from src.frontend.recording_files import RecordingFiles
 from src.i18n import tr
 
 PIPELINE_JOIN_TIMEOUT_SEC = 2.0
@@ -33,8 +33,11 @@ class CaptureSession:
         output_path: Path,
         *,
         debug: bool = False,
+        log_database: Path | None = None,
+        show_logs: frozenset[str] = frozenset(),
         join_timeout_sec: float = PIPELINE_JOIN_TIMEOUT_SEC,
         analysis_drain_timeout_sec: float = ANALYSIS_DRAIN_TIMEOUT_SEC,
+        io_shutdown_timeout_sec: float = IO_SHUTDOWN_TIMEOUT_SEC,
         clock=time.monotonic,
     ) -> None:
         self._output_path = output_path
@@ -42,25 +45,30 @@ class CaptureSession:
         self._join_timeout_sec = join_timeout_sec
         self._analysis_drain_timeout_sec = analysis_drain_timeout_sec
         self._clock = clock
-        self._event_presenter = CaptureEventPresenter(output_path, debug=debug)
+        self._event_presenter = CaptureEventPresenter(
+            output_path, debug=debug, mode=transport_config.mode, show_logs=show_logs
+        )
+        self._log_database = log_database
+        self._files: RecordingFiles | None = None
         self._pipeline = CapturePipeline(
             transport_config,
             WriterConfig(output_path),
+            log_database=log_database,
+            io_shutdown_timeout_sec=io_shutdown_timeout_sec,
+            clock=clock,
         )
-        self._finished = False
         self._stop_requested = False
         self._analysis_drain_started_at: float | None = None
-        self._report: CaptureReport | None = None
         self._started_at = datetime.now().astimezone()
         self._started_monotonic = self._clock()
 
     @property
     def finished(self) -> bool:
-        return self._finished
+        return self._files is not None
 
     @property
     def is_running(self) -> bool:
-        return not self._finished and self._pipeline is not None
+        return not self.finished
 
     @property
     def saved_capture_path(self) -> Path | None:
@@ -80,13 +88,12 @@ class CaptureSession:
 
     @property
     def report(self) -> CaptureReport | None:
-        return self._report
+        return self._files.report if self._files else None
 
     def start(self) -> tuple[Message, ...]:
         try:
             self._pipeline.start()
         except Exception as e:
-            self._finished = True
             result = CapturePipelineResult(
                 raw_paths=(),
                 reader_error=str(e),
@@ -106,10 +113,12 @@ class CaptureSession:
         return ()
 
     def poll(self) -> tuple[Message, ...]:
-        if self._finished:
+        if self.finished:
             return ()
 
-        messages = self._event_presenter.handle_events(self._pipeline.drain_events())
+        events = self._pipeline.drain_events()
+        events.extend(self._pipeline.check_io_shutdown())
+        messages = self._event_presenter.handle_events(events)
         if self._pipeline.io_is_alive():
             return messages
 
@@ -120,26 +129,32 @@ class CaptureSession:
             if now - self._analysis_drain_started_at < self._analysis_drain_timeout_sec:
                 return messages
             self._pipeline.abort_analysis(
-                f"Live quality check did not finish within {self._analysis_drain_timeout_sec:g} seconds."
+                tr(
+                    "Live quality check did not finish within {seconds:g} seconds.",
+                    seconds=self._analysis_drain_timeout_sec,
+                )
             )
+            if self._pipeline.analysis_is_alive():
+                return messages + (
+                    UserNotice(
+                        tr("Recording processes could not be stopped; completion is still pending."), level="warning"
+                    ),
+                )
 
         return messages + self._finish()
 
     def stop(self) -> None:
-        if not self._finished and not self._stop_requested:
+        if not self.finished and not self._stop_requested:
             self._stop_requested = True
             self._pipeline.stop()
 
     def reset_target(self) -> bool:
-        if self._finished:
+        if self.finished:
             return False
         self._pipeline.reset_target()
         return True
 
     def _finish(self) -> tuple[Message, ...]:
-        if self._finished:
-            return ()
-        self._finished = True
         events, result = self._pipeline.wait_with_events(self._join_timeout_sec)
         return self._event_presenter.handle_events(events) + self._finish_result(result)
 
@@ -156,14 +171,18 @@ class CaptureSession:
             console_log_paths=presenter_state.saved_console_log_paths,
             report_path=report_path_for_capture(self._output_path),
             console_log_error=presenter_state.console_log_error,
+            hci_paths=presenter_state.hci_paths,
+            hci_error=presenter_state.hci_error,
         )
-        try:
-            write_capture_report(report)
-        except OSError as e:
-            report = replace(report, report_write_error=str(e))
+        database = self._log_database if result.raw_bytes and result.raw_paths else None
+        self._files = RecordingFiles(report, self._output_path, database)
+        saved = self._files.report
+        if saved.report_write_error:
             messages.append(
-                UserNotice(tr("Recording report could not be saved: {message}", message=e), level="warning")
+                UserNotice(
+                    tr("Recording report could not be saved: {message}", message=saved.report_write_error),
+                    level="warning",
+                )
             )
-        self._report = report
-        messages.append(CaptureFinished(report))
+        messages.append(CaptureFinished(saved))
         return tuple(messages)

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from queue import Empty, Full
 from typing import Any, Protocol
 
-from src.backend.analysis.parser_events import ReceivedChunk
+from src.backend.analysis.parser_events import ReceivedChunk, ReceivedEnd
 from src.backend.io.writer import Clock, WriterEvent, WriterStatus
 from src.backend.support.transport import TransportReader, TransportStatus
 
@@ -72,9 +72,9 @@ def _put_parse(parse_queue: Any, item: ReceivedChunk | None) -> bool:
     return True
 
 
-def _put_parse_sentinel(parse_queue: Any, timeout: float) -> bool:
+def _put_parse_sentinel(parse_queue: Any, timeout: float, end: ReceivedEnd) -> bool:
     try:
-        parse_queue.put(None, timeout=timeout)
+        parse_queue.put(end, timeout=timeout)
     except Full:
         return False
     return True
@@ -224,7 +224,9 @@ def run_reader_loop(
     opened = False
     parse_backlog_reported = False
     writer_failed = False
+    raw_offset = 0
     parse_dropped_chunks = 0
+    next_recovery_hint = 0.0
     parse_dropped_bytes = 0
     raw_stats = RawStatsBatcher(raw_stats_queue, interval_sec=raw_stats_interval_sec, clock=clock)
 
@@ -251,7 +253,8 @@ def run_reader_loop(
         report_parse_backlog(message)
 
     def handle_block(block: bytes, received_at_ms: int) -> bool:
-        nonlocal writer_failed
+        nonlocal writer_failed, raw_offset, next_recovery_hint
+        received_monotonic = time.monotonic()
         try:
             _write_block(writer, block, ui_queue, timeout=queue_put_timeout)
         except Exception as e:
@@ -260,11 +263,16 @@ def run_reader_loop(
             return False
 
         raw_stats.record(len(block))
-        if not _put_parse(parse_queue, ReceivedChunk(block, received_at_ms)):
+        paths = writer.status().paths if parse_dropped_chunks and received_monotonic >= next_recovery_hint else ()
+        chunk = ReceivedChunk(block, received_at_ms, received_monotonic, raw_offset, paths)
+        raw_offset += len(block)
+        if not _put_parse(parse_queue, chunk):
             record_parse_drop(
                 block,
                 ("Realtime parser fell behind; raw recording continues, live stats may be incomplete."),
             )
+        elif paths:
+            next_recovery_hint = received_monotonic + 1.0
         return True
 
     try:
@@ -293,18 +301,27 @@ def run_reader_loop(
     except Exception as e:
         _put_event(ui_queue, ReaderProcessEvent(kind="error", message=str(e)))
     finally:
+        # Tell the parent that IO shutdown has begun before any close can stall.
+        _put_event(ui_queue, ReaderProcessEvent(kind="stopping"))
         try:
             reader.close()
         except Exception as e:
             _put_event(ui_queue, ReaderProcessEvent(kind="error", message=f"close failed: {e}"))
 
+        raw_stats.flush()
+        _finalize_writer(writer, ui_queue, emit_finalized=not writer_failed)
         raw_stats.close()
-        if not _put_parse_sentinel(parse_queue, queue_put_timeout) and not parse_backlog_reported:
+        saved = writer.status()
+        end = ReceivedEnd(
+            raw_offset,
+            saved.paths,
+            not writer_failed and saved.finalized and not saved.last_error and saved.bytes_written == raw_offset,
+        )
+        if not _put_parse_sentinel(parse_queue, queue_put_timeout, end) and not parse_backlog_reported:
             report_parse_backlog(
                 "Realtime parser queue stayed full during shutdown; "
                 "the raw recording is unaffected, final live stats may be incomplete."
             )
-        _finalize_writer(writer, ui_queue, emit_finalized=not writer_failed)
         if parse_dropped_chunks:
             _put_event(
                 ui_queue,

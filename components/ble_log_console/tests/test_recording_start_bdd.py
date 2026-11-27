@@ -13,8 +13,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-import usb.core
 from pytest_bdd import given, parsers, scenarios, then, when
+from serial import SerialException
 from src.app import BLELogApp, unique_capture_path
 from src.backend.analysis.aggregator import AggregatorUpdate
 from src.backend.analysis.parser_events import RedirEvent
@@ -37,11 +37,12 @@ scenarios("features/recording_start.feature")
 @pytest.fixture
 def start_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
     monkeypatch.setattr("src.i18n._language", "en")
-    monkeypatch.setattr(
-        "src.frontend.launch_screen.list_transport_port_scan", lambda mode: PortScan(options=[("other", "other")])
-    )
     runner = asyncio.Runner()
     world = SimpleNamespace(tmp_path=tmp_path, runner=runner, run=None, app=None)
+    monkeypatch.setattr(
+        "src.frontend.launch_screen.list_transport_port_scan",
+        lambda mode: PortScan(options=[("attempted", "attempted")] if mode is world.config.mode else []),
+    )
     with (
         patch("src.app.CaptureSession", wraps=CaptureSession) as session_type,
         patch("src.frontend.capture_session.CapturePipeline") as pipeline_type,
@@ -95,24 +96,19 @@ def refuse_storage(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
         monkeypatch.setattr(Path, "mkdir", mkdir)
 
 
-@given("SPI 端口枚举时报 USB 错误")
-def failing_usb_enumeration(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A bridge scan that fails for a reason the transport does not classify.
+@given("SPI CDC 串口枚举失败")
+def failed_cdc_discovery(start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_discovery():
+        raise SerialException("CDC discovery failed")
 
-    A missing libusb backend is reported as a PortIssue instead of raised, so the
-    setup screen's own failure path needs an error the scan really propagates.
-    """
-
-    def refuse_find(**kwargs: object) -> None:
-        raise usb.core.USBError("Resource busy")
-
-    monkeypatch.setattr("usb.core.find", refuse_find)
-    monkeypatch.setattr("src.backend.support.transport.spi_usb_bridge_transport._is_windows", lambda: False)
+    monkeypatch.setattr(
+        "src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", fail_discovery
+    )
     monkeypatch.setattr(
         "serial.tools.list_ports.comports", lambda: [SimpleNamespace(device="/dev/ttyACM-stub", vid=0, pid=0)]
     )
     monkeypatch.setattr("src.frontend.launch_screen.list_transport_port_scan", list_transport_port_scan)
-    with pytest.raises(usb.core.USBError, match="Resource busy"):
+    with pytest.raises(SerialException, match="CDC discovery failed"):
         list_transport_port_scan(TransportMode.SPI_USB_BRIDGE)
     config = start_world.config
     start_world.config = TransportConfig(config.mode, "attempted CDC", "cdc:attempted", config.baudrate)
@@ -128,7 +124,7 @@ def _recording_state(app: BLELogApp) -> dict[str, object]:
         "console_path": app.saved_console_log_path,
         "console_paths": app.saved_console_log_paths,
         "report_path": app.saved_report_path,
-        "report": app._capture_report,
+        "report": app.capture_report,
         "session": app._capture_session,
         "finalizing": app._finalizing,
         "log_rows": tuple(row.text for row in app.query_one(LogView).lines),
@@ -172,7 +168,6 @@ def attempt_start(start_world: SimpleNamespace) -> None:
         session._event_presenter.handle_event(
             AggregatorUpdate(console_events=(RedirEvent(20, 8, 0, "previous console text\n", 0),))
         )
-        session._finished = True
         app._publish_view_messages(session._finish_result(_completed_result(output)))
         _pause(world)
         assert isinstance(app.screen, CaptureReportScreen)
@@ -188,6 +183,7 @@ def attempt_start(start_world: SimpleNamespace) -> None:
         screen.query_one("#mode-select", Select).value = {
             TransportMode.SPI_USB_BRIDGE: "spi",
             TransportMode.USB_OUTPUT: "usb",
+            TransportMode.USJ: "usb",
         }.get(config.mode, config.mode.value)
         _pause(world)
         screen.query_one("#port-select", Select).set_options([("attempted", config.port)])
@@ -215,7 +211,7 @@ def setup_retains_attempt(start_world: SimpleNamespace) -> None:
     assert str(world.bad_dir) in text and world.reason in text
     assert "Connect" in text
     assert screen.query_one("#dir-input", Input).value == str(world.bad_dir)
-    select_value = {TransportMode.SPI_USB_BRIDGE: "spi", TransportMode.USB_OUTPUT: "usb"}.get(
+    select_value = {TransportMode.SPI_USB_BRIDGE: "spi", TransportMode.USB_OUTPUT: "usb", TransportMode.USJ: "usb"}.get(
         world.config.mode, world.config.mode.value
     )
     assert screen.query_one("#mode-select", Select).value == select_value
@@ -240,7 +236,7 @@ def recording_untouched(start_world: SimpleNamespace) -> None:
     assert world.refusals
     assert not list(world.bad_dir.glob("ble_log*"))
     if world.initial_count == 0:
-        assert world.app._capture_session is None and world.app._capture_report is None
+        assert world.app._capture_session is None and world.app.capture_report is None
         assert world.app._output_path is None and world.app.saved_report_path is None
 
 
@@ -254,7 +250,11 @@ def retry_refused(start_world: SimpleNamespace) -> None:
 @when("用户改用可写目录并点击 Connect")
 def correct_directory(start_world: SimpleNamespace) -> None:
     start_world.app.screen.query_one("#dir-input", Input).value = str(start_world.good_dir)
-    start_world.runner.run(start_world.pilot.click("#connect-btn"))
+    start_world.app.screen.query_one("#connect-btn", Button).scroll_visible(animate=False)
+    _pause(start_world)
+    button = start_world.app.screen.query_one("#connect-btn", Button)
+    hit = start_world.app.get_widget_at(button.region.x, button.region.y)
+    assert start_world.runner.run(start_world.pilot.click("#connect-btn")), (button.region, hit)
     _pause(start_world)
 
 
@@ -269,7 +269,7 @@ def one_corrected_session(start_world: SimpleNamespace) -> None:
     assert world.app._capture_session is not world.before["session"]
     assert not world.app._capture_session.finished
     assert world.app.saved_capture_paths == world.app.saved_console_log_paths == []
-    assert world.app.saved_report_path is None and world.app._capture_report is None
+    assert world.app.saved_report_path is None and world.app.capture_report is None
     assert world.app.query_one(LogView).lines == []
     assert not isinstance(world.app.screen, LaunchScreen)
 
@@ -322,7 +322,7 @@ def cancel_keeps_recording(start_world: SimpleNamespace) -> None:
 
 @pytest.mark.parametrize(
     ("mode", "select_value"),
-    [("UART", "uart"), ("USJ", "usj"), ("SPI_USB_BRIDGE", "spi"), ("USB_OUTPUT", "usb")],
+    [("UART", "uart"), ("USJ", "usb"), ("SPI_USB_BRIDGE", "spi"), ("USB_OUTPUT", "usb")],
 )
 def test_recovery_setup_preserves_seed_and_refresh_selection_across_modes(
     start_world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, mode: str, select_value: str
@@ -351,10 +351,12 @@ def test_recovery_setup_preserves_seed_and_refresh_selection_across_modes(
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == world.config.mode.value + "-other"
-    next_mode = "usj" if mode == "UART" else "uart"
+    next_mode = "usb" if mode == "UART" else "uart"
     screen.query_one("#mode-select", Select).value = next_mode
     _pause(world)
-    assert screen.query_one("#port-select", Select).value == next_mode + "-other"
+    assert screen.query_one("#port-select", Select).value == (
+        "usb_output-other" if next_mode == "usb" else "uart-other"
+    )
     assert screen.query_one("#baud-select", Select).display is (next_mode == "uart")
     assert screen.query_one("#dir-input", Input).value == str(world.bad_dir)
     assert screen.query_one("#start-error", Label).render().plain == error
@@ -371,18 +373,19 @@ def test_refresh_discovery_failure_preserves_seed_and_storage_error(
     attempt_start(world)
     screen = world.app.screen
     error = screen.query_one("#start-error", Label).render().plain
-    failing_usb_enumeration(world, monkeypatch)
+    failed_cdc_discovery(world, monkeypatch)
     monkeypatch.setattr("src.i18n._language", language)
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == "attempted"
     assert screen.query_one("#start-error", Label).render().plain == error
     messages = [notification.message for notification in world.app._notifications]
-    # The failure reason is carried verbatim; only the prefix is translated.
-    prefix = "Failed to list ports: " if language == "en" else "无法列出端口："
-    assert any(message.startswith(prefix) and "Resource busy" in message for message in messages), messages
+    expected = (
+        "Failed to list ports: CDC discovery failed" if language == "en" else "无法列出端口：CDC discovery failed"
+    )
+    assert expected in messages
     recording_untouched(world)
-    monkeypatch.setattr("usb.core.find", lambda **kwargs: [])
+    monkeypatch.setattr("src.backend.support.transport.spi_usb_bridge_transport.list_spi_usb_bridge_cdc_options", list)
     world.runner.run(world.pilot.click("#refresh-btn"))
     _pause(world)
     assert screen.query_one("#port-select", Select).value == "attempted"

@@ -10,8 +10,6 @@ from src.backend.support.transport.base import PortIssue, PortIssueKind, PortSca
 from src.frontend.launch_screen import BAUD_RATES, DEFAULT_BAUD_RATE, SPI_PORT_LABEL_PREFIX, LaunchScreen
 from src.i18n import get_language, set_language
 
-from tests.helpers import usb_bridge_device, usb_bridge_unreadable_configuration
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -103,9 +101,11 @@ class TestRefreshPorts:
         assert mock_select.value != "/dev/ttyUSB0"
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_refresh_shows_why_a_present_bridge_is_missing(self, mock_scan: MagicMock) -> None:
+    def test_refresh_shows_why_a_present_bridge_is_missing(self, mock_scan: MagicMock, linux_serial_platform) -> None:
         """An unusable bridge must not leave the user with a bare empty list."""
-        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=8)])
+        mock_scan.return_value = PortScan(
+            issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
+        )
         screen = LaunchScreen()
         screen._mode = TransportMode.SPI_USB_BRIDGE
         try:
@@ -119,13 +119,18 @@ class TestRefreshPorts:
 
         assert label.display is True
         assert (
-            label.update.call_args[0][0] == "SPI Bridge (bus 1, addr 8): no USB access permission. "
-            "Run this tool once with sudo (no arguments), then replug the bridge."
+            label.update.call_args[0][0] == "SPI Bridge /dev/ttyACM0: no read/write permission. "
+            "Permission denied. On Linux, add your user to the dialout group "
+            "(or install a udev rule for this device) and open the port again."
         )
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_refresh_shows_the_chinese_hint_when_the_app_language_is_chinese(self, mock_scan: MagicMock) -> None:
-        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=95)])
+    def test_refresh_shows_the_chinese_hint_when_the_app_language_is_chinese(
+        self, mock_scan: MagicMock, linux_serial_platform
+    ) -> None:
+        mock_scan.return_value = PortScan(
+            issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
+        )
         screen = LaunchScreen()
         screen._mode = TransportMode.SPI_USB_BRIDGE
         label = MagicMock()
@@ -138,14 +143,18 @@ class TestRefreshPorts:
 
         assert label.display is True
         assert (
-            label.update.call_args[0][0]
-            == "SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
+            label.update.call_args[0][0] == "SPI Bridge /dev/ttyACM0：没有读写权限。 "
+            "权限不足。Linux 下请将当前用户加入 dialout 组（或为设备安装 udev 规则），然后重新打开端口。"
         )
 
     @patch("src.frontend.launch_screen.list_transport_port_scan")
-    def test_switching_the_app_language_re_renders_the_visible_hint(self, mock_scan: MagicMock) -> None:
+    def test_switching_the_app_language_re_renders_the_visible_hint(
+        self, mock_scan: MagicMock, linux_serial_platform
+    ) -> None:
         """The hint is already on screen when the user picks 简体中文."""
-        mock_scan.return_value = PortScan(issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, bus=1, address=95)])
+        mock_scan.return_value = PortScan(
+            issues=[PortIssue(kind=PortIssueKind.PERMISSION_DENIED, port="/dev/ttyACM0", label="SPI Bridge")]
+        )
         screen = LaunchScreen()
         screen._mode = TransportMode.SPI_USB_BRIDGE
         label = MagicMock()
@@ -161,30 +170,8 @@ class TestRefreshPorts:
             set_language("en")
 
         assert (
-            label.update.call_args[0][0]
-            == "SPI Bridge（bus 1，addr 95）：没有 USB 访问权限。请用 sudo 运行一次本工具（不带参数），然后重新拔插 Bridge。"
-        )
-
-    @patch("src.backend.support.transport.spi_usb_bridge_transport._is_windows", return_value=False)
-    @patch("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find")
-    def test_refresh_shows_a_usb_error_raised_while_reading_endpoints(
-        self, mock_find: MagicMock, _mock_windows: MagicMock
-    ) -> None:
-        """The real scan runs; only pyusb's enumeration is faked."""
-        mock_find.return_value = [usb_bridge_device(configuration=usb_bridge_unreadable_configuration())]
-        screen = LaunchScreen()
-        screen._mode = TransportMode.SPI_USB_BRIDGE
-        label = MagicMock()
-        screen.query_one = MagicMock(return_value=label)  # type: ignore[method-assign]
-        try:
-            set_language("en")
-            screen.refresh_ports()
-        finally:
-            set_language("en")
-
-        assert label.display is True
-        assert (
-            label.update.call_args[0][0] == "SPI Bridge (bus 1, addr 8) cannot be opened: [Errno 5] Input/output error"
+            label.update.call_args[0][0] == "SPI Bridge /dev/ttyACM0：没有读写权限。 "
+            "权限不足。Linux 下请将当前用户加入 dialout 组（或为设备安装 udev 规则），然后重新打开端口。"
         )
 
 
@@ -217,6 +204,10 @@ class TestConnect:
                 return mock_port_select
             if selector == "#baud-select":
                 return mock_baud_select
+            if selector == "#database-input":
+                return MagicMock(value="")
+            if selector.startswith("#show-"):
+                return MagicMock(value=False)
             if selector == "#dir-input":
                 return mock_dir_input
             raise ValueError(f"Unexpected selector: {selector}")
@@ -311,7 +302,7 @@ class TestConnect:
 
         config = screen.dismiss.call_args[0][0]
         assert isinstance(config.log_dir, Path)
-        assert str(config.log_dir) == "/home/user/logs"
+        assert config.log_dir == Path("/home/user/logs")
 
 
 class TestTransportModeHelpers:

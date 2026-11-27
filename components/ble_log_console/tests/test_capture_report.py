@@ -119,7 +119,7 @@ def _result(
     )
 
 
-def _report(result: CapturePipelineResult, *, console_log_error: str | None = None):
+def _report(result: CapturePipelineResult, *, console_log_error: str | None = None, hci_error: str | None = None):
     return build_capture_report(
         result,
         TransportConfig(TransportMode.UART, "COM3", "COM3", 921600),
@@ -129,6 +129,8 @@ def _report(result: CapturePipelineResult, *, console_log_error: str | None = No
         console_log_paths=(Path("capture_console.log"),),
         report_path=Path("capture_report.txt"),
         console_log_error=console_log_error,
+        hci_paths=(Path("capture_hci.log"), Path("capture_hci_btsnoop.log")) if hci_error else (),
+        hci_error=hci_error,
     )
 
 
@@ -139,7 +141,8 @@ def test_ready_report_contains_sequence_and_file_evidence() -> None:
     text = format_capture_report(report)
     assert "READY FOR ANALYSIS" in text
     assert "HOST" in text
-    assert "1 -> 2" in text
+    assert "1 -> 2" not in text
+    assert ["HOST", "2"] in [line.split() for line in text.splitlines()]
     assert "capture.bin" in text
 
 
@@ -517,8 +520,7 @@ def test_shared_counter_report_keeps_one_totals_row_and_a_source_table() -> None
 
     assert "Firmware protocol: v8 (one shared counter)" in text
     assert "All frames" in section and "All sources" not in section
-    # One counter means one continuity verdict, and the sources are only an
-    # observation table: their SN ranges belong to different streams.
+    # All sources share one continuity verdict.
     assert "Missing  Segments" not in section
     assert "Frames by source" in section
 
@@ -534,6 +536,7 @@ def test_per_source_report_gives_every_source_its_own_continuity_row() -> None:
     source_rows = (line for line in section.splitlines() if line.startswith(("  HOST", "  ENCODE")))
     rows = {line.split()[0]: line.rstrip() for line in source_rows}
     assert set(rows) == {"HOST", "ENCODE"}
+    assert "0 -> 3" in rows["HOST"]
     assert rows["HOST"].endswith("GAPS DETECTED")
     assert rows["ENCODE"].endswith("CONTINUOUS")
 
@@ -764,3 +767,14 @@ def test_save_error_copy_preserves_each_recording_outcome(
     assert summary_label in summary
     if writer_error:
         assert ("Writer: raw sync EIO" if language == "en" else "写入器: raw sync EIO") in text
+
+
+def test_hci_save_error_is_in_report_without_invalidating_raw_recording():
+    report = _report(_result(), hci_error="disk full")
+    assert report.raw_complete
+    assert report.verdict is CaptureVerdict.WARNING
+    assert report.hci_error == "disk full"
+    text = format_capture_report(report)
+    assert "capture_hci.log" in text and "capture_hci_btsnoop.log" in text
+    assert "disk full" in text
+    assert any("HCI" in warning for warning in report.warnings + report.reasons)

@@ -7,7 +7,7 @@ import asyncio
 import errno
 import io
 import os
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -47,11 +47,23 @@ def _redir(text: str, received_at_ms: int = 0) -> RedirEvent:
 
 
 def _timestamp(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=" ", timespec="milliseconds")
+    instant = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=received_at_ms)
+    return instant.astimezone().isoformat(sep=" ", timespec="milliseconds")
 
 
 def _short_timestamp(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime("%H:%M:%S.%f")[:-3]
+    instant = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=received_at_ms)
+    return instant.astimezone().strftime("%H:%M:%S.%f")[:-3]
+
+
+def test_current_receive_timestamp_preserves_local_time(tmp_path: Path) -> None:
+    received = datetime.now().astimezone().replace(microsecond=123000)
+    presenter = CaptureEventPresenter(tmp_path / "capture.bin")
+    presenter.handle_event(AggregatorUpdate(console_events=(_redir("hello\n", round(received.timestamp() * 1000)),)))
+    presenter.finish()
+    assert presenter.state.saved_console_log_paths[0].read_text(encoding="utf-8") == (
+        f"[{received.isoformat(sep=' ', timespec='milliseconds')}] hello\n"
+    )
 
 
 def test_snapshot_event_becomes_stats_updated(tmp_path: Path) -> None:
@@ -406,7 +418,7 @@ def test_console_fsync_failure_stops_only_the_console_sink(
     ]
     notices = [message for message in messages if isinstance(message, UserNotice)]
     assert len(notices) == 1 and error in notices[0].text
-    assert "this error does not itself stop raw recording" in notices[0].text
+    assert "This error does not itself stop raw recording" in notices[0].text
     assert "recording continues" not in notices[0].text
     assert opened[0].read_text().endswith("first\n" if rotating else "later 2\n")
     assert presenter.state.saved_console_log_paths == (opened[0],)

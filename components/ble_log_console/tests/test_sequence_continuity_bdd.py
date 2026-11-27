@@ -59,12 +59,12 @@ _COUNTER_SOURCES = {
 _INTERNAL_PAYLOADS = {
     "SNAPSHOT": lambda: snapshot_payload(reason_flags=0b1010),
     "INIT SNAPSHOT": lambda: snapshot_payload(),
-    "TASK_BINDING": lambda: internal_payload(0, InternalSource.TASK_BINDING, b""),
+    "TASK_BINDING": lambda: internal_payload(0, InternalSource.TASK_BINDING, b"\x01" + b"task\0".ljust(17, b"\0")),
     "INIT_DONE": lambda: internal_payload(0, InternalSource.INIT_DONE, bytes([4])),
     "FLUSH": lambda: internal_payload(0, InternalSource.FLUSH, bytes([5])),
     "INFO": lambda: internal_payload(0, InternalSource.INFO, bytes([5])),
     "TIMESTAMP": lambda: internal_payload(0, InternalSource.TIMESTAMP, struct.pack("<BIII", 1, 100, 200, 300)),
-    "FINAL_STAT": lambda: final_stat_payload(0, (2, 0, 200, 0)),
+    "FINAL_STAT": lambda: final_stat_payload(0, (0, 0, 0, 0)),
 }
 
 
@@ -92,12 +92,28 @@ def send_alternating_frames(world: SimpleNamespace, first: int, last: int) -> No
 
 @when(parsers.parse("设备发送一帧 {kind}，序号为 {sn:d}"))
 def send_internal_frame(world: SimpleNamespace, kind: str, sn: int) -> None:
-    world.frames.append(_frame(kind, sn))
+    if kind == "FINAL_STAT":
+        # Terminal counters name the actual sources in this fixture, including INTERNAL.
+        counts = {0: sn}
+        for raw in world.frames:
+            source, sequence = raw[2], int.from_bytes(raw[3:6], "little")
+            counts[source] = max(counts.get(source, 0), sequence + 1)
+        payload = struct.pack("<IBB", 100, 6, 9)
+        for source in range(9):
+            payload += struct.pack("<BIIII", source, counts.get(source, 0), 0, counts.get(source, 0) * 20, 0)
+        world.frames.append(build_frame(payload, 0, sn, xor_checksum))
+    else:
+        world.frames.append(_frame(kind, sn))
 
 
 @when(parsers.parse("设备发送一帧 INIT SNAPSHOT，序号为 {sn:d}"))
 def send_init_snapshot(world: SimpleNamespace, sn: int) -> None:
     world.frames.append(_frame("INIT SNAPSHOT", sn))
+
+
+@when(parsers.parse("设备以序号 {sn:d} 发送包含版本信息的 v8 SNAPSHOT"))
+def send_v8_identity(world: SimpleNamespace, sn: int) -> None:
+    world.frames.append(build_frame(snapshot_payload(reason_flags=0b1010), 0, sn, xor_checksum))
 
 
 @when(parsers.parse("设备以序号 {sn:d} 发送固件版本 {version:d} 的 VERSION_INFO"))

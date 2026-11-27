@@ -33,7 +33,6 @@ class PortIssueKind(str, Enum):
     """
 
     PERMISSION_DENIED = "permission_denied"
-    LIBUSB_MISSING = "libusb_missing"
     DEVICE_ERROR = "device_error"
 
 
@@ -42,13 +41,8 @@ class PortIssue:
     """A device that enumerated but cannot be used, and the reason it cannot."""
 
     kind: PortIssueKind
-    # Absent when the failure happens before any single device is identified,
-    # such as a missing libusb backend.
-    bus: int | None = None
-    address: int | None = None
-    # The device path of an enumerated serial port (USJ); a USB device is
-    # identified by bus and address instead.
-    port: str | None = None
+    port: str
+    label: str
     detail: str = ""
 
 

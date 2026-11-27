@@ -13,7 +13,14 @@ from typing import Any
 import pytest
 from src.backend.analysis.aggregator import AggregatorSnapshot
 from src.backend.analysis.parser import BleLogParser
-from src.backend.analysis.parser_events import InternalEvent, ParseBatch, ParseSummary, ReceivedChunk
+from src.backend.analysis.parser_events import (
+    HostLogEvent,
+    InternalEvent,
+    ParseBatch,
+    ParseSummary,
+    ReceivedChunk,
+    UndecodedEvent,
+)
 from src.backend.analysis.stream_identification import (
     DEFAULT_IDENTIFICATION_RULES,
     IdentificationRules,
@@ -227,14 +234,15 @@ def test_invalid_rules_are_rejected_at_construction(overrides: dict[str, Any]) -
         IdentificationRules(**overrides)
 
 
-def test_parser_without_rules_keeps_no_identity_and_no_text() -> None:
+def test_parser_without_rules_skips_unframed_text_but_decodes_host() -> None:
     parser = BleLogParser()
     batch = parser.feed(BOOT_TEXT + _regular_frames(3))
     summary = parser.finalize()
 
     assert batch.identity is None and summary.identity is None
     assert summary.events == ()
-    assert all(type(event).__name__ == "FrameEvent" for event in batch.events)
+    assert not any(isinstance(event, UndecodedEvent) for event in batch.events)
+    assert [event.text for event in batch.events if isinstance(event, HostLogEvent)] == ["log\n"] * 3
 
 
 def _run_parser_loop(chunks: list[bytes]) -> list[ParseBatch | ParseSummary]:

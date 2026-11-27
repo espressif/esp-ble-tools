@@ -1,121 +1,101 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-"""Step bindings for tests/features/spi_bridge_access_hint.feature.
+"""Observe CDC diagnostics through the CLI, without opening hardware."""
 
-The observed path is the shipped one: the `ports` subcommand prints whatever the
-SPI transport scan reports. Only the pyusb enumeration is faked.
-"""
-
-from __future__ import annotations
-
-import errno
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
-import usb.core
 from click.testing import CliRunner
 from console import cli
-from pytest_bdd import given, parsers, scenarios, then, when
-from src.i18n import set_language
-
-from tests.helpers import usb_bridge_device, usb_bridge_unreadable_configuration
+from pytest_bdd import given, scenarios, then, when
 
 scenarios("features/spi_bridge_access_hint.feature")
 
 
-@pytest.fixture(autouse=True)
-def english_output() -> Any:
-    """The assertions read the shipped English catalog; Chinese is unit-tested."""
-    set_language("en")
-    yield
-    set_language("en")
-
-
 @pytest.fixture
-def world(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def world(monkeypatch, linux_serial_platform):
+    state = SimpleNamespace(devices=[], denied=set(), error=None)
+    monkeypatch.setattr("src.i18n._language", "en")
+
+    def ports():
+        if state.error:
+            raise state.error
+        return [SimpleNamespace(device=device, vid=0x303A, pid=0x4001) for device in state.devices]
+
+    monkeypatch.setattr("serial.tools.list_ports.comports", ports)
     monkeypatch.setattr(
-        "src.backend.support.transport.spi_usb_bridge_transport._is_windows",
-        lambda: False,
+        "src.backend.support.transport.serial_reader.os.access", lambda device, mode: device not in state.denied
     )
-    return SimpleNamespace(devices=None, find_error=None, output="")
+    return state
 
 
-@given(parsers.parse("系统上有一个 bus 为 {bus:d}、addr 为 {address:d} 的 SPI Bridge"), target_fixture="world")
-def one_bridge(world: SimpleNamespace, bus: int, address: int) -> SimpleNamespace:
-    world.devices = [usb_bridge_device(bus=bus, address=address)]
-    return world
+@given("系统枚举 SPI Bridge CDC 端口但用户没有读写权限")
+def denied(world):
+    world.devices = ["/dev/ttyACM0"]
+    world.denied = set(world.devices)
 
 
-@given("这个 SPI Bridge 因为缺少权限而打不开", target_fixture="world")
-def bridge_without_permission(world: SimpleNamespace) -> SimpleNamespace:
-    world.devices = [
-        usb_bridge_device(bus=1, address=8, open_error=usb.core.USBError("Access denied", errno=errno.EACCES))
-    ]
-    return world
+@given("系统同时枚举可用和无权限的 SPI Bridge CDC 端口")
+def mixed(world):
+    denied(world)
+    world.devices.append("/dev/ttyACM1")
 
 
-@given("这个 SPI Bridge 读配置里的接口时报 I/O 错误", target_fixture="world")
-def bridge_endpoints_unreadable(world: SimpleNamespace) -> SimpleNamespace:
-    world.devices = [usb_bridge_device(bus=1, address=8, configuration=usb_bridge_unreadable_configuration())]
-    return world
-
-
-@given("枚举 USB 设备时没有可用的 libusb 后端", target_fixture="world")
-def no_libusb_backend(world: SimpleNamespace) -> SimpleNamespace:
-    world.find_error = usb.core.NoBackendError("No backend available")
-    return world
-
-
-@given("系统上没有挂 SPI Bridge", target_fixture="world")
-def no_bridge(world: SimpleNamespace) -> SimpleNamespace:
+@given("系统上没有挂 SPI Bridge")
+def absent(world):
     world.devices = []
-    return world
+
+
+@given("系统枚举可用 SPI Bridge CDC 端口且 libusb 不可用")
+def no_libusb(world, monkeypatch):
+    world.devices = ["/dev/ttyACM1"]
+
+    def fail(**kwargs):
+        raise AssertionError("CDC must not use libusb")
+
+    monkeypatch.setattr("usb.core.find", fail)
+
+
+@given("串口枚举发生 I/O 错误")
+def failed_enumeration(world):
+    world.error = OSError(5, "Input/output error")
 
 
 @when("列出 SPI 模式的端口")
-def list_spi_ports(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_find(**_kwargs: object) -> list[Any]:
-        if world.find_error is not None:
-            raise world.find_error
-        return world.devices or []
-
-    monkeypatch.setattr("src.backend.support.transport.spi_usb_bridge_transport.usb.core.find", fake_find)
+def list_ports(world):
     result = CliRunner().invoke(cli, ["ports", "--mode", "spi"])
     assert result.exit_code == 0, result.output
     world.output = result.output
 
 
-@then(parsers.parse('输出显示 "{text}"'))
-def output_shows(world: SimpleNamespace, text: str) -> None:
-    assert text in world.output, world.output
+@then("输出说明 CDC 端口没有权限并给出 dialout 提示")
+def permission_hint(world):
+    assert "SPI Bridge /dev/ttyACM0: no read/write permission." in world.output
+    assert "dialout" in world.output
+    assert "--port cdc:/dev/ttyACM0" not in world.output
 
 
-@then(parsers.parse('输出列出端点 "{text}"'))
-def output_lists_endpoint(world: SimpleNamespace, text: str) -> None:
-    assert text in world.output, world.output
+@then("输出列出可用 CDC 端口并说明另一端口的权限问题")
+def mixed_hint(world):
+    permission_hint(world)
+    assert "--port cdc:/dev/ttyACM1" in world.output
 
 
-@then("输出说明没有 USB 访问权限，并给出用 sudo 运行一次工具的办法")
-def output_explains_permission(world: SimpleNamespace) -> None:
-    assert (
-        "  SPI Bridge (bus 1, addr 8): no USB access permission. "
-        "Run this tool once with sudo (no arguments), then replug the bridge.\n"
-    ) in world.output, world.output
+@then("输出为空且不提示权限或 libusb")
+def no_hint(world):
+    assert "(none)" in world.output
+    assert "permission" not in world.output
+    assert "libusb" not in world.output
 
 
-@then(parsers.parse('输出原样给出设备报告的 "{text}"'))
-def output_repeats_device_error(world: SimpleNamespace, text: str) -> None:
-    assert text in world.output, world.output
+@then("输出列出可用 CDC 端口且没有安装 libusb 的提示")
+def cdc_only(world):
+    assert "--port cdc:/dev/ttyACM1" in world.output
+    assert "libusb" not in world.output
 
 
-@then("输出说明缺少 libusb-1.0")
-def output_explains_libusb(world: SimpleNamespace) -> None:
-    assert "  libusb-1.0 not found. Install it first: sudo apt install libusb-1.0-0\n" in world.output, world.output
-
-
-@then("输出只字不提 USB 权限或 libusb")
-def output_silent_about_causes(world: SimpleNamespace) -> None:
-    assert "access permission" not in world.output, world.output
-    assert "libusb" not in world.output, world.output
+@then("输出说明枚举失败且保留原始错误")
+def error_hint(world):
+    assert "Failed to list endpoints:" in world.output
+    assert "Input/output error" in world.output

@@ -10,23 +10,25 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
 
 from textual.message import Message
 
 from src.backend.analysis.aggregator import AggregatorSnapshot, AggregatorUpdate
-from src.backend.analysis.parser_events import UndecodedEvent
+from src.backend.analysis.parser_events import HciLogEvent, HostLogEvent, UndecodedEvent
 from src.backend.analysis.stream_identification import StreamKind
 from src.backend.analysis.worker import AggregatorProcessEvent, ParserStatus
 from src.backend.io.reader import ReaderProcessEvent
 from src.backend.io.writer import CAPTURE_PART_MAX_BYTES, WriterEvent
 from src.backend.models import (
+    LOG_DISPLAY_CATEGORIES,
     InternalFrameDecoded,
     LogLine,
     StatsUpdated,
     StreamKindChanged,
+    TransportMode,
     UserNotice,
     format_bytes,
 )
@@ -56,6 +58,8 @@ class CaptureEventState:
     saved_console_log_paths: tuple[Path, ...]
     disconnected: bool
     console_log_error: str | None
+    hci_paths: tuple[Path, ...] = ()
+    hci_error: str | None = None
 
 
 def console_log_part_path(base_path: Path, part_index: int) -> Path:
@@ -93,11 +97,11 @@ def _normalize_console_log_text(text: str) -> str:
 
 
 def _format_receive_timestamp(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().isoformat(sep=" ", timespec="milliseconds")
+    return datetime.fromtimestamp(received_at_ms / 1000, UTC).astimezone().isoformat(sep=" ", timespec="milliseconds")
 
 
 def _format_receive_time(received_at_ms: int) -> str:
-    return datetime.fromtimestamp(received_at_ms / 1000).astimezone().strftime("%H:%M:%S.%f")[:-3]
+    return datetime.fromtimestamp(received_at_ms / 1000, UTC).astimezone().strftime("%H:%M:%S.%f")[:-3]
 
 
 class CaptureEventPresenter:
@@ -108,12 +112,22 @@ class CaptureEventPresenter:
         output_path: Path,
         *,
         debug: bool = False,
+        mode: TransportMode = TransportMode.UART,
+        show_logs: frozenset[str] = frozenset(LOG_DISPLAY_CATEGORIES),
         console_part_max_bytes: int = CAPTURE_PART_MAX_BYTES,
         text_file_factory: TextFileFactory = _default_text_file_factory,
         clock: Clock = time.monotonic,
     ) -> None:
         self._output_path = output_path
+        self._hci_files: dict[str, Any] = {}
+        self._hci_paths: list[Path] = []
+        self._hci_error: str | None = None
+        self._hci_error_shown = False
+        self._hci_reasons: set[str] = set()
+        self._last_hci_flush_at = clock()
         self._debug = debug
+        self._mode = mode
+        self._show_logs = show_logs
         self._console_part_max_bytes = console_part_max_bytes
         self._text_file_factory = text_file_factory
         self._clock = clock
@@ -156,6 +170,8 @@ class CaptureEventPresenter:
             saved_console_log_paths=tuple(self._saved_console_log_paths),
             disconnected=self._disconnected,
             console_log_error=self._console_log_error,
+            hci_paths=tuple(self._hci_paths),
+            hci_error=self._hci_error,
         )
 
     def handle_event(self, event: Any) -> tuple[Message, ...]:
@@ -192,6 +208,7 @@ class CaptureEventPresenter:
             self._redir_line_buf = ""
         self.close()
         messages.extend(self._console_log_failure_notice())
+        messages.extend(self._hci_failure_notice())
         self._disconnected = True
         return tuple(messages)
 
@@ -199,6 +216,7 @@ class CaptureEventPresenter:
         """Flush and close UI-owned output files; a console.log failure is kept in ``state``, not raised."""
 
         self._end_undecoded(self._console_line_received_at_ms)
+        self._close_hci_files()
         if self._console_log_file is None:
             return
         if self._console_line_buf.endswith("\r"):
@@ -327,18 +345,103 @@ class CaptureEventPresenter:
         for internal in event.internal_frames:
             messages.append(InternalFrameDecoded(internal.int_src, internal.decoded))
         for console_event in event.console_events:
-            if isinstance(console_event, UndecodedEvent):
+            if isinstance(console_event, HciLogEvent):
+                messages.extend(self._end_undecoded(console_event.received_at_ms))
+                messages.extend(self._separate_console_line(console_event.received_at_ms))
+                if "hci" in self._show_logs:
+                    self._append_redir_log_lines(
+                        messages, [console_event.text], console_event.received_at_ms, category="hci"
+                    )
+                self._write_hci(console_event)
+                if console_event.reason and console_event.reason not in self._hci_reasons:
+                    self._hci_reasons.add(console_event.reason)
+                    messages.append(
+                        UserNotice(
+                            tr(
+                                "HCI decoding incomplete ({reason}); raw data is retained.", reason=console_event.reason
+                            ),
+                            level="warning",
+                        )
+                    )
+                messages.extend(self._hci_failure_notice())
+            elif isinstance(console_event, HostLogEvent):
+                if console_event.reason:
+                    if console_event.reason == "missing_database":
+                        warning = tr(
+                            "No log database selected; compressed Host logs are not decoded. Raw data is retained."
+                        )
+                    elif console_event.reason == "unknown_protocol":
+                        warning = tr(
+                            "Live preview is waiting for protocol version information. "
+                            "The recording includes these frames for ordered export."
+                        )
+                    else:
+                        warning = tr(
+                            "Host log decoding incomplete ({reason}); raw data is retained.",
+                            reason=console_event.reason,
+                        )
+                    messages.append(UserNotice(warning, level="warning"))
+                if console_event.text:
+                    messages.extend(self._end_undecoded(console_event.received_at_ms))
+                    messages.extend(self._separate_console_line(console_event.received_at_ms))
+                    text = console_event.text
+                    if console_event.reason:
+                        text = tr("[Incomplete Host log: {reason}] ", reason=console_event.reason) + text
+                    messages.extend(self._write_redir_text(text, console_event.received_at_ms, category="host"))
+            elif isinstance(console_event, UndecodedEvent):
                 messages.extend(self._write_undecoded(console_event))
-            else:
+            elif self._mode is not TransportMode.SPI_USB_BRIDGE:
                 messages.extend(self._write_redir_text(console_event.text, console_event.received_at_ms))
         return tuple(messages)
+
+    def _write_hci(self, event: HciLogEvent) -> None:
+        if self._hci_error is not None:
+            return
+        try:
+            if "hci" not in self._hci_files:
+                path = self._output_path.with_name(f"{self._output_path.stem}_hci.log")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self._hci_files["hci"] = path.open("x", encoding="utf-8", newline="\n")
+                self._hci_paths.append(path)
+            suffix = f" [incomplete: {event.reason}]" if event.reason else ""
+            self._hci_files["hci"].write(f"[{_format_receive_timestamp(event.received_at_ms)}] {event.text}{suffix}\n")
+            if self._clock() - self._last_hci_flush_at >= CONSOLE_LOG_FLUSH_INTERVAL_SEC:
+                for file in self._hci_files.values():
+                    file.flush()
+                self._last_hci_flush_at = self._clock()
+        except OSError as error:
+            self._hci_error = str(error)
+            self._close_hci_files()
+
+    def _close_hci_files(self) -> None:
+        files, self._hci_files = self._hci_files, {}
+        for file in files.values():
+            try:
+                _flush_and_close_text_file(file)
+            except OSError as error:
+                if self._hci_error is None:
+                    self._hci_error = str(error)
+
+    def _hci_failure_notice(self) -> list[Message]:
+        if self._hci_error is None or self._hci_error_shown:
+            return []
+        self._hci_error_shown = True
+        return [
+            UserNotice(
+                tr(
+                    "HCI files could not be saved completely: {message}. Raw recording continues.",
+                    message=self._hci_error,
+                ),
+                level="warning",
+            )
+        ]
 
     def _handle_writer_event(self, event: WriterEvent) -> tuple[Message, ...]:
         if event.status is not None:
             self._saved_capture_paths = list(event.status.paths)
 
         if event.kind == "opened" and event.status is not None and event.status.paths:
-            return (LogLine(f"Saving to {event.status.paths[-1]}"),)
+            return (LogLine(f"Saving to {event.status.paths[-1]}", category=None),)
         if event.kind == "rotated" and event.status is not None and event.status.paths:
             return (UserNotice(f"Recording file rotated to {event.status.paths[-1]}"),)
         if event.kind == "error":
@@ -422,7 +525,7 @@ class CaptureEventPresenter:
         messages.extend(self._write_redir_text(text, event.received_at_ms))
         return messages
 
-    def _write_redir_text(self, text: str, received_at_ms: int) -> list[Message]:
+    def _write_redir_text(self, text: str, received_at_ms: int, *, category: str = "console") -> list[Message]:
         messages: list[Message] = []
         self._console_timestamp_pending = not self._console_line_prefixed
         old_console_path_count = len(self._saved_console_log_paths)
@@ -448,15 +551,18 @@ class CaptureEventPresenter:
             self._console_line_buf = self._console_line_buf[REDIR_LINE_BUFFER_LIMIT:]
             self._write_console_line(console_text, received_at_ms, complete=False)
 
+        messages.extend(self._console_log_failure_notice())
+        if category not in self._show_logs:
+            return messages
+
         self._redir_line_buf += text
         if "\n" in self._redir_line_buf:
             lines = self._redir_line_buf.split("\n")
             self._redir_line_buf = lines.pop()
-            self._append_redir_log_lines(messages, lines, received_at_ms)
+            self._append_redir_log_lines(messages, lines, received_at_ms, category=category)
         while len(self._redir_line_buf) > REDIR_LINE_BUFFER_LIMIT:
-            messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT]))
+            messages.append(LogLine(self._redir_line_buf[:REDIR_LINE_BUFFER_LIMIT], category=category))
             self._redir_line_buf = self._redir_line_buf[REDIR_LINE_BUFFER_LIMIT:]
-        messages.extend(self._console_log_failure_notice())
         return messages
 
     def _write_console_line(self, text: str, received_at_ms: int, *, complete: bool) -> None:
@@ -481,14 +587,16 @@ class CaptureEventPresenter:
         except OSError as error:
             self._console_log_failed(error)
 
-    def _append_redir_log_lines(self, messages: list[Message], lines: list[str], received_at_ms: int) -> None:
+    def _append_redir_log_lines(
+        self, messages: list[Message], lines: list[str], received_at_ms: int, *, category: str = "console"
+    ) -> None:
         non_empty_lines = [line for line in lines if line]
         if non_empty_lines:
             non_empty_lines[0] = f"[{_format_receive_time(received_at_ms)}]  {non_empty_lines[0]}"
         for start in range(0, len(non_empty_lines), REDIR_UI_BATCH_LINE_LIMIT):
             batch = non_empty_lines[start : start + REDIR_UI_BATCH_LINE_LIMIT]
             if batch:
-                messages.append(LogLine("\n".join(batch)))
+                messages.append(LogLine("\n".join(batch), category=category))
 
     def _flush_console_log_if_due(self) -> None:
         if self._console_log_file is None:
@@ -536,8 +644,7 @@ class CaptureEventPresenter:
         return [
             UserNotice(
                 tr(
-                    "Console log could not be saved: {message}. The text is still shown here; this error does not "
-                    "itself stop raw recording.",
+                    "Console log could not be saved: {message}. This error does not itself stop raw recording.",
                     message=self._console_log_error,
                 ),
                 level="warning",
